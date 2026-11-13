@@ -1,7 +1,7 @@
 // CasiWorks Pro - Viewport Picker and Raycaster
 import * as THREE from 'three';
-import { distance2D } from '../utils/math.js';
-import { getSketchPlaneMatrix } from '../utils/math.js';
+import { distance2D } from '../utils/math.ts';
+import { getSketchPlaneMatrix } from '../utils/math.ts';
 
 export class ViewportPicker {
   constructor() {

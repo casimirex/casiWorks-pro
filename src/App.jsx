@@ -6,9 +6,9 @@ import MaterialDialog from './components/dialogs/MaterialDialog';
 import MassPropsDialog from './components/dialogs/MassPropsDialog';
 import ResultsViewer from './simulation/ResultsViewer';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore';
-import { setupKeyboardShortcuts } from './utils/shortcuts';
+import { setupKeyboardShortcuts } from './utils/shortcuts.ts';
 import { rebuildModel } from './features/rebuildModel';
-import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants';
+import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants.ts';
 
 export default function App() {
   const needsRebuild = useCADStore(s => s.needsRebuild);

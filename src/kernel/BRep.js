@@ -26,7 +26,7 @@ import {
   sanitizePoint,
   removeConsecutiveDuplicates,
 } from './Topology.js';
-import { generateId, EPSILON } from '../utils/math.js';
+import { generateId, EPSILON } from '../utils/math.ts';
 
 // ============================================================================
 // CSG Core for Boolean Boundary Evaluation

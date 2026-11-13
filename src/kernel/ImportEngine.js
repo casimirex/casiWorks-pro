@@ -1,8 +1,8 @@
 // CasiWorks Pro - Import Engine
 // Supports STL (Binary & ASCII), OBJ, DXF (R12/2000/2018), STEP AP214/AP242 B-Rep, IGES 5.3 MSBO, and Project JSON
 import * as THREE from 'three';
-import { generateId } from '../utils/math.js';
-import { SKETCH_ENTITY_TYPES } from '../utils/constants.js';
+import { generateId } from '../utils/math.ts';
+import { SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 
 export class ImportEngine {
   /**

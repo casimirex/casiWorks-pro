@@ -6,9 +6,9 @@ import {
   Sparkles, Cpu, Move, Grid
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
-import { FEATURE_TYPES, TOOLS, MATE_TYPES, MATERIALS } from '../../utils/constants';
+import { FEATURE_TYPES, TOOLS, MATE_TYPES, MATERIALS } from '../../utils/constants.ts';
 import NumericInput from '../common/NumericInput';
-import { debounce } from '../../utils/debounce';
+import { debounce } from '../../utils/debounce.ts';
 
 export default function PropertyPanel() {
   const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);

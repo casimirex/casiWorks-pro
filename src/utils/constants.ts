@@ -1,57 +1,11 @@
 // CasiWorks Pro - Application Constants
 
-// UI theme colors
-export const COLORS = {
-  // Main UI
-  bgPrimary: '#2d2d30',
-  bgSecondary: '#3e3e42',
-  bgTertiary: '#333337',
-  bgPanel: '#252526',
-  bgHover: '#404044',
-  bgActive: '#094771',
-  bgSelected: '#094771',
-  
-  // Text
-  textPrimary: '#f0f0f0',
-  textSecondary: '#cccccc',
-  textMuted: '#888888',
-  textDisabled: '#666666',
-  
-  // Accent
-  accent: '#007acc',
-  accentHover: '#1c97ea',
-  accentLight: '#4fc3f7',
-  success: '#4caf50',
-  warning: '#ff9800',
-  error: '#f44336',
-  
-  // 3D Viewport
-  viewportBg: '#3d3d3d',
-  gridColor: '#555555',
-  gridCenterLine: '#888888',
-  
-  // Feature tree
-  sketchColor: '#ffb74d',
-  featureColor: '#4fc3f7',
-  bodyColor: '#81c784',
-  planeColor: '#ce93d8',
-  originColor: '#ef5350',
-  
-  // Sketch entities
-  sketchLine: '#ffffff',
-  sketchArc: '#ffffff',
-  sketchConstrained: '#00ff00',
-  sketchSelected: '#00bfff',
-  sketchDimension: '#ff6600',
-  sketchReference: '#808080',
-};
-
 // Application modes
 export const APP_MODES = {
   PART: 'part',
   ASSEMBLY: 'assembly',
   DRAWING: 'drawing',
-};
+} as const;
 
 // Active tool states
 export const TOOLS = {
@@ -99,7 +53,7 @@ export const TOOLS = {
   MATE: 'mate',
   INSERT_COMPONENT: 'insert_component',
   EXPLODED_VIEW: 'exploded_view',
-};
+} as const;
 
 // Feature types
 export const FEATURE_TYPES = {
@@ -122,7 +76,7 @@ export const FEATURE_TYPES = {
   BOOLEAN: 'boolean',
   REFERENCE_PLANE: 'reference_plane',
   REFERENCE_AXIS: 'reference_axis',
-};
+} as const;
 
 // Sketch entity types
 export const SKETCH_ENTITY_TYPES = {
@@ -136,7 +90,7 @@ export const SKETCH_ENTITY_TYPES = {
   POLYGON: 'polygon',
   SLOT: 'slot',
   CONSTRUCTION: 'construction',
-};
+} as const;
 
 // Constraint types
 export const CONSTRAINT_TYPES = {
@@ -154,7 +108,7 @@ export const CONSTRAINT_TYPES = {
   COLINEAR: 'colinear',
   DIMENSION: 'dimension',
   ANGLE: 'angle',
-};
+} as const;
 
 // Mate types for assembly
 export const MATE_TYPES = {
@@ -167,10 +121,19 @@ export const MATE_TYPES = {
   ANGLE: 'angle',
   WIDTH: 'width',
   PATH: 'path',
-};
+} as const;
 
-// Material database
-export const MATERIALS = {
+// Material database (SI units: density kg/m³, moduli and strengths Pa)
+export interface MaterialData {
+  name: string;
+  density: number;
+  youngsModulus: number;
+  poissonsRatio: number;
+  yieldStrength: number;
+  color: string;
+}
+
+export const MATERIALS: Readonly<Record<string, MaterialData>> = {
   'Steel_1020': { name: 'AISI 1020 Steel', density: 7900, youngsModulus: 200e9, poissonsRatio: 0.29, yieldStrength: 350e6, color: '#b0b0b0' },
   'Steel_304SS': { name: '304 Stainless Steel', density: 8000, youngsModulus: 193e9, poissonsRatio: 0.29, yieldStrength: 215e6, color: '#c0c0c0' },
   'Steel_4140': { name: 'AISI 4140 Steel', density: 7850, youngsModulus: 210e9, poissonsRatio: 0.29, yieldStrength: 655e6, color: '#a8a8a8' },
@@ -190,7 +153,26 @@ export const MATERIALS = {
 };
 
 // Default settings
-export const DEFAULT_SETTINGS = {
+export interface AppSettings {
+  units: 'mm';
+  gridSize: number;
+  gridSubdivisions: number;
+  snapToGrid: boolean;
+  snapAngle: number;
+  precision: number;
+  defaultMaterial: string;
+  backgroundColor: string;
+  showOrigin: boolean;
+  showPlanes: boolean;
+  showGrid: boolean;
+  showAxes: boolean;
+  perspectiveView: boolean;
+  edgeDisplay: boolean;
+  shadedMode: boolean;
+  antialiasing: boolean;
+}
+
+export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   units: 'mm',
   gridSize: 10,
   gridSubdivisions: 10,
@@ -209,39 +191,13 @@ export const DEFAULT_SETTINGS = {
   antialiasing: true,
 };
 
-// Keyboard shortcuts
-export const SHORTCUTS = {
-  'Ctrl+Z': 'undo',
-  'Ctrl+Y': 'redo',
-  'Ctrl+Shift+Z': 'redo',
-  'Ctrl+S': 'save',
-  'Ctrl+O': 'open',
-  'Ctrl+N': 'new',
-  'Ctrl+C': 'copy',
-  'Ctrl+V': 'paste',
-  'Ctrl+A': 'selectAll',
-  'Delete': 'delete',
-  'Escape': 'cancel',
-  'L': 'sketch_line',
-  'R': 'sketch_rect',
-  'C': 'sketch_circle',
-  'D': 'sketch_dimension',
-  'E': 'extrude',
-  'F': 'fillet',
-  'M': 'measure',
-  'S': 'section_view',
-  'F5': 'rebuild',
-  'Space': 'viewOrientation',
-  'Ctrl+1': 'viewFront',
-  'Ctrl+2': 'viewBack',
-  'Ctrl+3': 'viewLeft',
-  'Ctrl+4': 'viewRight',
-  'Ctrl+5': 'viewTop',
-  'Ctrl+6': 'viewBottom',
-  'Ctrl+7': 'viewIsometric',
-};
-
 // View orientations
+export interface ViewOrientationInfo {
+  readonly position: readonly [number, number, number];
+  readonly up: readonly [number, number, number];
+  readonly name: string;
+}
+
 export const VIEW_ORIENTATIONS = {
   front:     { position: [0, 0, 100], up: [0, 1, 0], name: 'Front' },
   back:      { position: [0, 0, -100], up: [0, 1, 0], name: 'Back' },
@@ -251,13 +207,14 @@ export const VIEW_ORIENTATIONS = {
   bottom:    { position: [0, -100, 0], up: [0, 0, 1], name: 'Bottom' },
   isometric: { position: [70, 70, 70], up: [0, 1, 0], name: 'Isometric' },
   trimetric: { position: [80, 50, 60], up: [0, 1, 0], name: 'Trimetric' },
-};
+} as const satisfies Record<string, ViewOrientationInfo>;
 
-// Export formats
-export const EXPORT_FORMATS = {
-  STL: { ext: '.stl', name: 'STL (Stereolithography)', mime: 'application/sla' },
-  OBJ: { ext: '.obj', name: 'OBJ (Wavefront)', mime: 'text/plain' },
-  STEP: { ext: '.step', name: 'STEP (ISO 10303)', mime: 'application/step' },
-  DXF: { ext: '.dxf', name: 'DXF (Drawing Exchange)', mime: 'application/dxf' },
-  JSON: { ext: '.json', name: 'CasiWorks Project', mime: 'application/json' },
-};
+// ---------------------------------------------------------------- derived types
+type ValueOf<T> = T[keyof T];
+export type AppMode = ValueOf<typeof APP_MODES>;
+export type ToolId = ValueOf<typeof TOOLS>;
+export type FeatureType = ValueOf<typeof FEATURE_TYPES>;
+export type SketchEntityType = ValueOf<typeof SKETCH_ENTITY_TYPES>;
+export type ConstraintType = ValueOf<typeof CONSTRAINT_TYPES>;
+export type MateType = ValueOf<typeof MATE_TYPES>;
+export type ViewOrientation = keyof typeof VIEW_ORIENTATIONS;

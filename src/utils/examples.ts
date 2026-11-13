@@ -1,7 +1,17 @@
 // CasiWorks Pro - Built-In Parametric Example Models
-import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './constants.js';
+import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './constants.ts';
+import type { ExampleModel, Point2 } from '../types/cad.ts';
 
-export const CAD_EXAMPLES = [
+export interface CadExample {
+  id: string;
+  name: string;
+  description: string;
+  material: string;
+  /** Build a fresh copy of the example document. */
+  create(): ExampleModel;
+}
+
+export const CAD_EXAMPLES: CadExample[] = [
   {
     id: 'l_bracket',
     name: 'Mounting L-Bracket',
@@ -118,7 +128,7 @@ export const CAD_EXAMPLES = [
       const sk2 = 'sk_bolt_shank';
 
       // 6-sided regular hexagon with radius 13mm
-      const hexPts = [];
+      const hexPts: Point2[] = [];
       for (let i = 0; i < 6; i++) {
         const ang = (i * 60 * Math.PI) / 180;
         hexPts.push({ x: 13 * Math.cos(ang), y: 13 * Math.sin(ang) });
@@ -186,7 +196,7 @@ export const CAD_EXAMPLES = [
             id: 'feat_chm_tip',
             name: 'Chamfer1 (Lead-In)',
             type: FEATURE_TYPES.CHAMFER,
-            radius: 1.5,
+            distance: 1.5,
             visible: true,
             suppressed: false,
           },
@@ -588,7 +598,7 @@ export const CAD_EXAMPLES = [
             id: 'feat_gear_chamfer',
             name: 'Chamfer1 (Rim Edges)',
             type: FEATURE_TYPES.CHAMFER,
-            radius: 1.0,
+            distance: 1.0,
             visible: true,
             suppressed: false,
           },

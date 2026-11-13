@@ -3,7 +3,7 @@
 // fillets, chamfers, shells, holes, patterns, mirrors, and CSG booleans.
 
 import * as THREE from 'three';
-import { EPSILON, vec3, generateId } from '../utils/math.js';
+import { EPSILON, vec3, generateId } from '../utils/math.ts';
 import {
   Vertex,
   Edge,

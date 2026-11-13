@@ -7,7 +7,7 @@ import {
   Ban, AlertTriangle, ArrowDownToLine, RotateCcw, ChevronUp
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
-import { FEATURE_TYPES } from '../../utils/constants';
+import { FEATURE_TYPES } from '../../utils/constants.ts';
 
 export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {
   const documentName = useCADStore(s => s.documentName);

@@ -1,7 +1,7 @@
 // CasiWorks Pro - 2D Sketching Engine
 import * as THREE from 'three';
-import { generateId, distance2D, pointToLineDistance, lineLineIntersection, EPSILON } from '../utils/math.js';
-import { SKETCH_ENTITY_TYPES } from '../utils/constants.js';
+import { generateId, distance2D, pointToLineDistance, lineLineIntersection, EPSILON } from '../utils/math.ts';
+import { SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 
 export class SketchEngine {
   constructor() {
@@ -14,6 +14,17 @@ export class SketchEngine {
       type: SKETCH_ENTITY_TYPES.LINE,
       p1: { x: p1.x, y: p1.y },
       p2: { x: p2.x, y: p2.y },
+      construction: isConstruction,
+    };
+  }
+
+  /** Sketch point in the canonical flat format { x, y } (also used by DXF import/export). */
+  createPoint(p, isConstruction = false) {
+    return {
+      id: generateId('pt'),
+      type: SKETCH_ENTITY_TYPES.POINT,
+      x: p.x,
+      y: p.y,
       construction: isConstruction,
     };
   }

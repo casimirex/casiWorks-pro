@@ -3,8 +3,8 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import * as THREE from 'three';
-import { generateId } from '../utils/math.js';
-import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES } from '../utils/constants.js';
+import { generateId } from '../utils/math.ts';
+import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES } from '../utils/constants.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.js';
 import { safeDeepClone } from '../utils/clone.ts';
 
@@ -19,6 +19,25 @@ const MAX_UNDO_HISTORY = 40;
  * parentIds/childIds. Missing parentIds are derived from sketchId/toolFeatureId,
  * and childIds are always rebuilt from parentIds so the two never drift apart.
  */
+/**
+ * Bring sketch entities loaded from older files to the canonical format.
+ * Points used to be stored as { p1: {x, y} } by the viewport; the canonical
+ * point format is flat { x, y } (what DXF import/export read and write).
+ */
+export function normalizeSketchEntities(sketchEntities) {
+  for (const entities of Object.values(sketchEntities || {})) {
+    if (!Array.isArray(entities)) continue;
+    for (const e of entities) {
+      if (e && e.type === 'point' && e.x === undefined && e.p1) {
+        e.x = e.p1.x;
+        e.y = e.p1.y;
+        delete e.p1;
+      }
+    }
+  }
+  return sketchEntities;
+}
+
 export function ensureFeatureGraph(features) {
   const byId = new Map(features.map(f => [f.id, f]));
   for (const f of features) {
@@ -724,7 +743,7 @@ export const useCADStore = create(
         state.documentName = project.documentName || 'Imported Part';
         state.appMode = project.appMode || APP_MODES.PART;
         state.features = ensureFeatureGraph(project.features || []);
-        state.sketchEntities = project.sketchEntities || {};
+        state.sketchEntities = normalizeSketchEntities(project.sketchEntities || {});
         state.sketchConstraints = project.sketchConstraints || {};
         state.sketchDimensions = project.sketchDimensions || {};
         state.rollbackIndex = project.rollbackIndex ?? (state.features.length - 1);

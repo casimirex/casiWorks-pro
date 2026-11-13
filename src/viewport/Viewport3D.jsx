@@ -4,7 +4,7 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore';
-import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants';
+import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import { viewportPicker } from './ViewportPicker';
 import { sketchEngine } from '../kernel/SketchEngine';
 import { materialLibrary } from '../kernel/MaterialLibrary';
@@ -439,11 +439,7 @@ export default function Viewport3D() {
         setSketchClickPts([]);
       }
     } else if (activeTool === TOOLS.SKETCH_POINT) {
-      addSketchEntity({
-        id: `pt_${Date.now()}`,
-        type: SKETCH_ENTITY_TYPES.POINT,
-        p1: pt,
-      });
+      addSketchEntity(sketchEngine.createPoint(pt));
     }
   }, [activeTool, sketchClickPts, addSketchEntity]);
 

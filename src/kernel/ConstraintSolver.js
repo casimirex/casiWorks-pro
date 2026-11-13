@@ -9,8 +9,8 @@
 //   perpendicular, equal, fix, midpoint, concentric, colinear, tangent, distance/dimensions,
 //   angle, symmetric.
 
-import { distance2D, EPSILON } from '../utils/math.js';
-import { CONSTRAINT_TYPES } from '../utils/constants.js';
+import { distance2D, EPSILON } from '../utils/math.ts';
+import { CONSTRAINT_TYPES } from '../utils/constants.ts';
 
 /**
  * Householder QR Decomposition with Column Pivoting

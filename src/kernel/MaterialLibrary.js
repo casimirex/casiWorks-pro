@@ -1,6 +1,6 @@
 // CasiWorks Pro - Engineering Material Library
 import * as THREE from 'three';
-import { MATERIALS } from '../utils/constants.js';
+import { MATERIALS } from '../utils/constants.ts';
 
 export class MaterialLibrary {
   constructor() {

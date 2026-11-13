@@ -3,7 +3,7 @@
 // along with geometric curves (Line, Arc, Circle, NURBS) and surfaces (Plane, Cylinder, Cone, Torus, Sphere).
 
 import * as THREE from 'three';
-import { generateId, EPSILON } from '../utils/math.js';
+import { generateId, EPSILON } from '../utils/math.ts';
 
 // ============================================================================
 // Safe Numerical & Vector Utilities

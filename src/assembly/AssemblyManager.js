@@ -15,8 +15,8 @@
 //   * Production-grade handling for 0, 1, and N components without division by zero
 
 import * as THREE from 'three';
-import { generateId } from '../utils/math.js';
-import { MATE_TYPES } from '../utils/constants.js';
+import { generateId } from '../utils/math.ts';
+import { MATE_TYPES } from '../utils/constants.ts';
 
 /**
  * Robust quaternion construction from two direction vectors.

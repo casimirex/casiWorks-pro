@@ -34,7 +34,7 @@ import { exportEngine } from '../src/kernel/ExportEngine.js';
 import { importEngine } from '../src/kernel/ImportEngine.js';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.js';
 import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.js';
-import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.js';
+import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.ts';
 
 // ============================================================================
 // 1. 2D CONSTRAINT SOLVER VERIFICATION
@@ -922,7 +922,8 @@ test('AssemblyManager Audit: Exploded view handling for 0 and 1 components witho
 
 // ==================== AUDIT REGRESSIONS (store, rebuild, IGES) ====================
 import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.js';
-import { CAD_EXAMPLES } from '../src/utils/examples.js';
+import { CAD_EXAMPLES } from '../src/utils/examples.ts';
+import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.js';
 import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.js';
 import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.js';
 
@@ -1075,4 +1076,26 @@ test('Mass properties regression: SI units, exact inertia, winding-independent c
   r = geometryEngineMP.computeMassProperties(moved, { density: 7900 });
   close(r.centerOfMass.x, 5, 'COM x with inverted winding');
   close(r.mass, m, 'mass with inverted winding');
+});
+
+test('Sketch points: UI-created points use the canonical format and survive DXF export; old files are converted', async () => {
+  const pt = sketchEngineForPoints.createPoint({ x: 12.5, y: -4 });
+  assert.equal(pt.type, 'point');
+  assert.equal(pt.x, 12.5);
+  assert.equal(pt.y, -4);
+  assert.equal(pt.p1, undefined);
+
+  const dxf = await exportEngine.exportDXF([pt]).text();
+  assert.match(dxf, /POINT/, 'point must be written to DXF');
+  assert.match(dxf, /10\n12\.5/, 'x coordinate must be written');
+
+  // A project saved by an older build stored points as { p1: {x, y} }
+  const store = useCADStore;
+  store.getState().loadProject({
+    documentName: 'Legacy',
+    features: [],
+    sketchEntities: { s1: [{ id: 'old', type: 'point', p1: { x: 3, y: 7 } }] },
+  });
+  const loaded = store.getState().sketchEntities.s1[0];
+  assert.deepEqual([loaded.x, loaded.y, loaded.p1], [3, 7, undefined]);
 });

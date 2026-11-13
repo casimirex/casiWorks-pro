@@ -12,8 +12,8 @@
 //    always current, with or without the UI running.
 //  - Units: millimetres, degrees, kilograms, kg/m³.
 
-import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.js';
-import { generateId } from '../utils/math.js';
+import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
+import { generateId } from '../utils/math.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.js';
 import { geometryEngine } from '../kernel/GeometryEngine.js';
 import { rebuildModel } from '../features/rebuildModel.js';
