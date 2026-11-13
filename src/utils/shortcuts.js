@@ -1,6 +1,6 @@
 // CasiWorks Pro - Keyboard Shortcuts Listener
-import { TOOLS } from './constants';
-import { downloadProject, openProject, newProject } from './projectFile';
+import { TOOLS } from './constants.js';
+import { downloadProject, openProject, newProject } from './projectFile.js';
 
 export function setupKeyboardShortcuts(store) {
   const handleKeyDown = (e) => {

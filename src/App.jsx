@@ -7,17 +7,11 @@ import MassPropsDialog from './components/dialogs/MassPropsDialog';
 import ResultsViewer from './simulation/ResultsViewer';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore';
 import { setupKeyboardShortcuts } from './utils/shortcuts';
-import { featureEngine } from './features/FeatureEngine';
+import { rebuildModel } from './features/rebuildModel';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants';
 
 export default function App() {
   const needsRebuild = useCADStore(s => s.needsRebuild);
-  const rollbackIndex = useCADStore(s => s.rollbackIndex);
-  const markRebuilt = useCADStore(s => s.markRebuilt);
-  const features = useCADStore(s => s.features);
-  const sketchEntities = useCADStore(s => s.sketchEntities);
-  const setBodies = useCADStore(s => s.setBodies);
-  const setStatus = useCADStore(s => s.setStatus);
 
   // Dialog states
   const [exportOpen, setExportOpen] = useState(false);
@@ -68,33 +62,10 @@ export default function App() {
     }
   }, []);
 
-  // Rebuild model whenever feature tree changes
+  // Rebuild model whenever the feature tree is marked dirty
   useEffect(() => {
-    if (needsRebuild) {
-      try {
-        const result = featureEngine.rebuild(features, sketchEntities, rollbackIndex);
-        if (result && result.bodies) {
-          // Free GPU buffers of the bodies being replaced
-          useCADStore.getState().bodies.forEach(b => b.geometry?.dispose?.());
-          const bodyObjects = result.bodies.map((geom, idx) => ({
-            id: `body_${idx}`,
-            geometry: geom,
-            visible: true,
-          }));
-          setBodies(bodyObjects);
-        }
-        markRebuilt(result?.errors || []);
-        if (result?.errors && result.errors.length > 0) {
-          setStatus(`Rebuilt with ${result.errors.length} warning(s)`);
-        } else {
-          setStatus('Model rebuild complete');
-        }
-      } catch (err) {
-        console.error('Rebuild failed:', err);
-        setStatus('Rebuild error: ' + err.message);
-      }
-    }
-  }, [needsRebuild, features, sketchEntities, rollbackIndex, setBodies, markRebuilt, setStatus]);
+    if (needsRebuild) rebuildModel(useCADStore);
+  }, [needsRebuild]);
 
   return (
     <>

@@ -52,7 +52,7 @@ Make every later step safe to take.
 One command path used by the UI, keyboard, macros and external code. This is
 the foundation of "API support": the UI becomes just one client of the API.
 
-- [ ] **1.1** `src/api/` — public `CasiWorksAPI` object over the store: documents, features, sketches, query; documented with JSDoc; unit tests
+- [x] **1.1** `src/api/` — public `CasiWorksAPI` object over the store: documents, features, sketches, query; documented with JSDoc; unit tests
 - [ ] **1.2** Expose it as `window.casiworks` (and as an ES module) with a version number (`api.version`)
 - [ ] **1.3** Command registry: every ribbon button and shortcut runs a named command (`feature.extrudeCut`, `file.save`…) through the registry
 - [ ] **1.4** Events: `api.on('rebuild' | 'selectionChanged' | 'featureAdded', …)`

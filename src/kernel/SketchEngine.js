@@ -1,7 +1,7 @@
 // CasiWorks Pro - 2D Sketching Engine
 import * as THREE from 'three';
-import { generateId, distance2D, pointToLineDistance, lineLineIntersection, EPSILON } from '../utils/math';
-import { SKETCH_ENTITY_TYPES } from '../utils/constants';
+import { generateId, distance2D, pointToLineDistance, lineLineIntersection, EPSILON } from '../utils/math.js';
+import { SKETCH_ENTITY_TYPES } from '../utils/constants.js';
 
 export class SketchEngine {
   constructor() {

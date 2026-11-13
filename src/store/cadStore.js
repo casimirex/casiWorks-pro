@@ -452,6 +452,37 @@ export const useCADStore = create(
       });
     }),
 
+    /**
+     * Create a sketch and its sketch feature in one undoable step (used by the API).
+     * Inserted after the rollback bar when the tree is rolled back.
+     */
+    createSketchFeature: ({ id, sketchId, plane = 'Front', entities = [], name }) => set(state => {
+      get()._captureUndoSnapshot(state, `Create ${name || 'Sketch'}`);
+      state.sketchEntities[sketchId] = entities;
+      state.sketchConstraints[sketchId] = state.sketchConstraints[sketchId] || [];
+      state.sketchDimensions[sketchId] = state.sketchDimensions[sketchId] || [];
+      const sketchFeature = {
+        id,
+        type: FEATURE_TYPES.SKETCH,
+        name: name || `Sketch${state.features.filter(f => f.type === FEATURE_TYPES.SKETCH).length + 1}`,
+        sketchId,
+        plane,
+        visible: true,
+        suppressed: false,
+        parentIds: [],
+        childIds: [],
+      };
+      if (state.rollbackIndex >= 0 && state.rollbackIndex < state.features.length - 1) {
+        state.features.splice(state.rollbackIndex + 1, 0, sketchFeature);
+        state.rollbackIndex++;
+      } else {
+        state.features.push(sketchFeature);
+        state.rollbackIndex = state.features.length - 1;
+      }
+      state.needsRebuild = true;
+      state.statusMessage = `Created ${sketchFeature.name}`;
+    }),
+
     toggleConstructionMode: () => set(state => {
       state.constructionMode = !state.constructionMode;
     }),

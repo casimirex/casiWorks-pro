@@ -187,6 +187,33 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
 
 ---
 
+## 🧩 Scripting API (v1)
+
+CasiWorks Pro exposes a public, versioned JavaScript API (`src/api/CasiWorksAPI.js`).
+It drives the same store as the UI, so API edits appear in the feature tree and
+are undoable, and it also runs headless in Node (no browser needed).
+
+```js
+import { useCADStore } from './src/store/cadStore.js';
+import { createCasiWorksAPI } from './src/api/CasiWorksAPI.js';
+
+const api = createCasiWorksAPI(useCADStore);
+const { sketchId } = api.sketches.create({
+  plane: 'Front',
+  entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
+});
+const boss = api.features.extrude({ sketchId, depth: 25 });
+api.features.update(boss, { depth: 40 });
+api.model.massProperties(); // { volume: 96000 (mm³), mass: 0.7584 (kg), ... }
+```
+
+Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
+Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`
+with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, `INVALID_DOCUMENT`).
+All return values are plain JSON data.
+
+---
+
 ## 🧪 Verification & Test Suite
 
 CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.js`) executed with Node.js test runner:
@@ -195,7 +222,7 @@ CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test
 npm test
 ```
 
-### Coverage (31 tests, all passing)
+### Coverage (all passing; run `npm test`)
 - **Constraint solver**: coupled systems, equal/parallel constraints, DOF analysis, conflict detection, numerical edge cases
 - **Feature engine**: midplane/through extrudes, rollback, thin features, suppressed-sketch propagation, missing-sketch errors
 - **B-Rep topology and solid ops**: Euler-Poincaré, 2-manifold checks, revolve/sweep/loft, fillet/chamfer/shell, boolean CSG
@@ -204,6 +231,7 @@ npm test
 - **FEA**: cantilever deflection vs. Euler-Bernoulli analytical solution, Tet4/Tet10 stiffness and stress tensor
 - **Drawings**: orthographic projection with hidden-line removal, dimensions, GD&T, SVG/DXF export
 - **Application state**: add/remove/suppress on every built-in example, project save/load round-trip, atomic rejection of invalid files
+- **Public API** (`tests/api.test.js`): headless modeling end-to-end, undo/redo, suppression, rollback, materials, validation error codes, copy semantics
 
 The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run build` to verify the production bundle.
 
