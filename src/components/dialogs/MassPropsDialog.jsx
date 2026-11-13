@@ -5,6 +5,8 @@ import { useCADStore } from '../../store/cadStore';
 import { materialLibrary } from '../../kernel/MaterialLibrary';
 import { geometryEngine } from '../../kernel/GeometryEngine';
 
+const formatInertia = (v) => (Number.isFinite(v) ? v.toPrecision(6) : '—');
+
 export default function MassPropsDialog({ isOpen, onClose }) {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
@@ -70,10 +72,10 @@ export default function MassPropsDialog({ isOpen, onClose }) {
               </div>
 
               <div style={{ background: '#1c1c1f', padding: 8, borderRadius: 4, fontFamily: 'monospace', fontSize: 11 }}>
-                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia (g · mm²):</div>
-                <div>Ixx: {(massProps.momentsOfInertia.Ixx * 1e9).toFixed(1)}</div>
-                <div>Iyy: {(massProps.momentsOfInertia.Iyy * 1e9).toFixed(1)}</div>
-                <div>Izz: {(massProps.momentsOfInertia.Izz * 1e9).toFixed(1)}</div>
+                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia at center of mass (kg · mm²):</div>
+                <div>Ixx: {formatInertia(massProps.momentOfInertia?.Ixx)}</div>
+                <div>Iyy: {formatInertia(massProps.momentOfInertia?.Iyy)}</div>
+                <div>Izz: {formatInertia(massProps.momentOfInertia?.Izz)}</div>
               </div>
             </div>
           ) : (

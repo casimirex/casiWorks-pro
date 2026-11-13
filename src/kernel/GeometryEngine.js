@@ -1347,11 +1347,27 @@ class GeometryEngine {
   // ==========================================================================
 
   /**
-   * Compute mass properties of a geometry.
-   * Uses the divergence theorem to compute volume from surface mesh.
+   * Compute mass properties of a closed triangle mesh.
+   *
+   * Exact for the mesh: each triangle forms a tetrahedron with the origin and
+   * the signed tetrahedron integrals are summed (divergence theorem), so the
+   * result is independent of winding direction.
+   *
+   * Units: model lengths are millimetres and density is kg/m³.
    * @param {THREE.BufferGeometry} geometry
-   * @param {Object} material - { density, youngsModulus, ... }
-   * @returns {Object} - { volume, surfaceArea, mass, centerOfMass, momentOfInertia }
+   * @param {Object} material - { density } in kg/m³
+   * @returns {{
+   *   volume: number,            // mm³
+   *   surfaceArea: number,       // mm²
+   *   mass: number,              // kg
+   *   density: number,           // kg/m³
+   *   centerOfMass: {x,y,z},     // mm
+   *   momentOfInertia: {Ixx,Iyy,Izz,Ixy,Ixz,Iyz},          // kg·mm², about the center of mass
+   *   momentOfInertiaAtOrigin: {Ixx,Iyy,Izz,Ixy,Ixz,Iyz},  // kg·mm², about the model origin
+   *   boundingBox: {min,max,size},                          // mm
+   *   units: {length, mass, density, inertia}
+   * }}
+   * Products of inertia are reported as Ixy = ∫ x·y dm (the tensor off-diagonal is −Ixy).
    */
   computeMassProperties(geometry, material = { density: 7900 }) {
     if (!geometry) return null;
@@ -1360,99 +1376,91 @@ class GeometryEngine {
     }
     const posAttr = geometry.getAttribute('position');
     const indexAttr = geometry.index;
+    if (!posAttr) return null;
 
-    let volume = 0;
+    let signedVolume = 0;
     let surfaceArea = 0;
-    const centerOfMass = new THREE.Vector3();
+    // First moments ∫x dV, ∫y dV, ∫z dV
+    let mx = 0, my = 0, mz = 0;
+    // Second moments ∫xx, ∫yy, ∫zz, ∫xy, ∫xz, ∫yz dV
+    let cxx = 0, cyy = 0, czz = 0, cxy = 0, cxz = 0, cyz = 0;
 
-    // Moments and products of inertia accumulators
-    let Ixx = 0, Iyy = 0, Izz = 0;
-    let Ixy = 0, Ixz = 0, Iyz = 0;
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const e1 = new THREE.Vector3();
+    const e2 = new THREE.Vector3();
+    const cross = new THREE.Vector3();
 
-    const getVertex = (index) => {
-      return new THREE.Vector3(
-        posAttr.getX(index),
-        posAttr.getY(index),
-        posAttr.getZ(index)
-      );
+    const processTriangle = (i0, i1, i2) => {
+      a.fromBufferAttribute(posAttr, i0);
+      b.fromBufferAttribute(posAttr, i1);
+      c.fromBufferAttribute(posAttr, i2);
+
+      surfaceArea += cross.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a)).length() / 2;
+
+      // det = a · (b × c) = 6 × signed volume of tetrahedron (origin, a, b, c)
+      const det = a.dot(cross.crossVectors(b, c));
+      if (!Number.isFinite(det) || det === 0) return;
+      signedVolume += det / 6;
+
+      const sx = a.x + b.x + c.x;
+      const sy = a.y + b.y + c.y;
+      const sz = a.z + b.z + c.z;
+      // ∫ x dV over the tetrahedron = det/24 · (a + b + c)
+      mx += det * sx / 24;
+      my += det * sy / 24;
+      mz += det * sz / 24;
+      // ∫ xi xj dV = det/120 · (Σk vk_i vk_j + s_i s_j)
+      const k = det / 120;
+      cxx += k * (a.x * a.x + b.x * b.x + c.x * c.x + sx * sx);
+      cyy += k * (a.y * a.y + b.y * b.y + c.y * c.y + sy * sy);
+      czz += k * (a.z * a.z + b.z * b.z + c.z * c.z + sz * sz);
+      cxy += k * (a.x * a.y + b.x * b.y + c.x * c.y + sx * sy);
+      cxz += k * (a.x * a.z + b.x * b.z + c.x * c.z + sx * sz);
+      cyz += k * (a.y * a.z + b.y * b.z + c.y * c.z + sy * sz);
     };
 
-    const processTriangle = (v0, v1, v2) => {
-      // Surface area
-      const ab = new THREE.Vector3().subVectors(v1, v0);
-      const ac = new THREE.Vector3().subVectors(v2, v0);
-      const cross = new THREE.Vector3().crossVectors(ab, ac);
-      const triArea = cross.length() / 2;
-      surfaceArea += triArea;
-
-      // Signed volume contribution via divergence theorem
-      // V = (1/6) * Σ (v0 · (v1 × v2))
-      const signedVol = v0.dot(new THREE.Vector3().crossVectors(v1, v2)) / 6.0;
-      volume += signedVol;
-
-      // Center of mass: weighted by tetrahedron volume
-      const triCenter = new THREE.Vector3()
-        .addVectors(v0, v1).add(v2).multiplyScalar(0.25);
-      centerOfMass.add(triCenter.multiplyScalar(signedVol));
-
-      // Moment of inertia contributions (using canonical integrals over tetrahedra)
-      // For each triangle forming a tet with origin
-      const verts = [v0, v1, v2];
-      for (let i = 0; i < 3; i++) {
-        const va = verts[i];
-        const vb = verts[(i + 1) % 3];
-        Ixx += signedVol * (va.y * va.y + va.y * vb.y + vb.y * vb.y +
-          va.z * va.z + va.z * vb.z + vb.z * vb.z) / 10;
-        Iyy += signedVol * (va.x * va.x + va.x * vb.x + vb.x * vb.x +
-          va.z * va.z + va.z * vb.z + vb.z * vb.z) / 10;
-        Izz += signedVol * (va.x * va.x + va.x * vb.x + vb.x * vb.x +
-          va.y * va.y + va.y * vb.y + vb.y * vb.y) / 10;
-        Ixy += signedVol * (va.x * va.y + va.x * vb.y / 2 + vb.x * va.y / 2 + vb.x * vb.y) / 10;
-        Ixz += signedVol * (va.x * va.z + va.x * vb.z / 2 + vb.x * va.z / 2 + vb.x * vb.z) / 10;
-        Iyz += signedVol * (va.y * va.z + va.y * vb.z / 2 + vb.y * va.z / 2 + vb.y * vb.z) / 10;
-      }
-    };
-
-    // Iterate over all triangles
     if (indexAttr) {
-      for (let i = 0; i < indexAttr.count; i += 3) {
-        processTriangle(
-          getVertex(indexAttr.getX(i)),
-          getVertex(indexAttr.getX(i + 1)),
-          getVertex(indexAttr.getX(i + 2))
-        );
+      for (let i = 0; i + 2 < indexAttr.count; i += 3) {
+        processTriangle(indexAttr.getX(i), indexAttr.getX(i + 1), indexAttr.getX(i + 2));
       }
     } else {
-      for (let i = 0; i < posAttr.count; i += 3) {
-        processTriangle(
-          getVertex(i), getVertex(i + 1), getVertex(i + 2)
-        );
+      for (let i = 0; i + 2 < posAttr.count; i += 3) {
+        processTriangle(i, i + 1, i + 2);
       }
     }
 
-    volume = Math.abs(volume);
-    if (!isFinite(volume) || isNaN(volume)) volume = 0;
-    if (!isFinite(surfaceArea) || isNaN(surfaceArea)) surfaceArea = 0;
+    // Inward-facing winding gives negative signed integrals; flip everything consistently
+    const sign = signedVolume < 0 ? -1 : 1;
+    const finite = (v) => (Number.isFinite(v) ? v : 0);
+    const volume = finite(Math.abs(signedVolume));
+    surfaceArea = finite(surfaceArea);
 
-    if (volume > EPSILON) {
-      centerOfMass.divideScalar(volume);
-    }
-    if (!isFinite(centerOfMass.x) || isNaN(centerOfMass.x)) centerOfMass.x = 0;
-    if (!isFinite(centerOfMass.y) || isNaN(centerOfMass.y)) centerOfMass.y = 0;
-    if (!isFinite(centerOfMass.z) || isNaN(centerOfMass.z)) centerOfMass.z = 0;
+    const centerOfMass = volume > EPSILON
+      ? { x: finite(sign * mx / volume), y: finite(sign * my / volume), z: finite(sign * mz / volume) }
+      : { x: 0, y: 0, z: 0 };
 
-    const density = material.density || 7900; // kg/m³
-    const mass = volume * density;
+    const density = material?.density || 7900; // kg/m³
+    const rho = density * 1e-9;                // kg/mm³
+    const mass = volume * rho;                 // kg
 
-    // Convert moment of inertia to actual values with density
-    const momentOfInertia = {
-      Ixx: isFinite(Ixx) ? Math.abs(Ixx) * density : 0,
-      Iyy: isFinite(Iyy) ? Math.abs(Iyy) * density : 0,
-      Izz: isFinite(Izz) ? Math.abs(Izz) * density : 0,
-      Ixy: isFinite(Ixy) ? Ixy * density : 0,
-      Ixz: isFinite(Ixz) ? Ixz * density : 0,
-      Iyz: isFinite(Iyz) ? Iyz * density : 0,
-    };
+    const tensor = (xx, yy, zz, xy, xz, yz) => ({
+      Ixx: finite(rho * (yy + zz)),
+      Iyy: finite(rho * (xx + zz)),
+      Izz: finite(rho * (xx + yy)),
+      Ixy: finite(rho * xy),
+      Ixz: finite(rho * xz),
+      Iyz: finite(rho * yz),
+    });
+    const [Cxx, Cyy, Czz, Cxy, Cxz, Cyz] = [cxx, cyy, czz, cxy, cxz, cyz].map(v => sign * v);
+    const momentOfInertiaAtOrigin = tensor(Cxx, Cyy, Czz, Cxy, Cxz, Cyz);
+    // Parallel-axis shift to the center of mass
+    const { x: gx, y: gy, z: gz } = centerOfMass;
+    const momentOfInertia = tensor(
+      Cxx - volume * gx * gx, Cyy - volume * gy * gy, Czz - volume * gz * gz,
+      Cxy - volume * gx * gy, Cxz - volume * gx * gz, Cyz - volume * gy * gz,
+    );
 
     // Bounding box
     geometry.computeBoundingBox();
@@ -1478,9 +1486,11 @@ class GeometryEngine {
       surfaceArea,
       mass,
       density,
-      centerOfMass: { x: centerOfMass.x, y: centerOfMass.y, z: centerOfMass.z },
+      centerOfMass,
       momentOfInertia,
+      momentOfInertiaAtOrigin,
       boundingBox,
+      units: { length: 'mm', mass: 'kg', density: 'kg/m^3', inertia: 'kg*mm^2' },
     };
   }
 

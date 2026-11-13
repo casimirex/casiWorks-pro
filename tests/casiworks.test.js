@@ -923,6 +923,7 @@ test('AssemblyManager Audit: Exploded view handling for 0 and 1 components witho
 // ==================== AUDIT REGRESSIONS (store, rebuild, IGES) ====================
 import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.js';
 import { CAD_EXAMPLES } from '../src/utils/examples.js';
+import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.js';
 import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.js';
 
 const squareSketch = (half = 10) => [
@@ -1045,4 +1046,33 @@ test('FEA regression: missing or invalid Poisson ratio falls back to 0.3 instead
     assert.ok(!json.includes('null'), `nu=${String(bad)} must not yield NaN entries`);
     assert.equal(json, ref, `nu=${String(bad)} must use the 0.3 default`);
   }
+});
+
+test('Mass properties regression: SI units, exact inertia, winding-independent center of mass', () => {
+  const m = 10 * 20 * 30 * 1e-9 * 7900; // 0.0474 kg
+  const close = (a, b, msg) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b)), `${msg}: ${a} vs ${b}`);
+
+  const box = new THREE.BoxGeometry(10, 20, 30);
+  let r = geometryEngineMP.computeMassProperties(box, { density: 7900 });
+  close(r.volume, 6000, 'volume mm³');
+  close(r.mass, m, 'mass kg (mm³ × 1e-9 × kg/m³)');
+  close(r.momentOfInertia.Ixx, m * (20 ** 2 + 30 ** 2) / 12, 'Ixx');
+  close(r.momentOfInertia.Iyy, m * (10 ** 2 + 30 ** 2) / 12, 'Iyy');
+  close(r.momentOfInertia.Izz, m * (10 ** 2 + 20 ** 2) / 12, 'Izz');
+  assert.equal(r.units.mass, 'kg');
+
+  // Translated box: parallel-axis theorem at origin, unchanged central inertia
+  const moved = new THREE.BoxGeometry(10, 20, 30);
+  moved.translate(5, 0, 0);
+  r = geometryEngineMP.computeMassProperties(moved, { density: 7900 });
+  close(r.centerOfMass.x, 5, 'COM x');
+  close(r.momentOfInertiaAtOrigin.Iyy, m * (10 ** 2 + 30 ** 2) / 12 + m * 25, 'Iyy at origin');
+  close(r.momentOfInertia.Iyy, m * (10 ** 2 + 30 ** 2) / 12, 'Iyy at COM');
+
+  // Inverted winding must not mirror the center of mass
+  const idx = moved.index.array;
+  for (let i = 0; i < idx.length; i += 3) [idx[i], idx[i + 1]] = [idx[i + 1], idx[i]];
+  r = geometryEngineMP.computeMassProperties(moved, { density: 7900 });
+  close(r.centerOfMass.x, 5, 'COM x with inverted winding');
+  close(r.mass, m, 'mass with inverted winding');
 });
