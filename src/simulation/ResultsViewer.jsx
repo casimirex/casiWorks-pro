@@ -164,8 +164,8 @@ export default function ResultsViewer() {
               onChange={(e) => setElementType(e.target.value)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
             >
-              <option value={ELEMENT_TYPES.TET10}>Tet10 (Quadratic, accurate)</option>
-              <option value={ELEMENT_TYPES.TET4}>Tet4 (Linear, quick preview; underestimates bending)</option>
+              <option value={ELEMENT_TYPES.TET10}>Tet10 (Quadratic)</option>
+              <option value={ELEMENT_TYPES.TET4} title="Quick preview: linear tetrahedra underestimate bending deflection and stress">Tet4 (Linear, preview)</option>
             </select>
           </div>
 

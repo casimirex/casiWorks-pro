@@ -124,7 +124,6 @@ export interface SheetData {
 export interface SheetOptions { sheetSize?: SheetSize; enableHLR?: boolean; title?: string; partNumber?: string; material?: string }
 export interface ProjectOptions { enableHLR?: boolean; creaseAngleDeg?: number }
 
-interface Edge3 { p1: THREE.Vector3; p2: THREE.Vector3; isSilhouette?: boolean }
 interface CamTriangle { p1: THREE.Vector3; p2: THREE.Vector3; p3: THREE.Vector3; minX: number; maxX: number; minY: number; maxY: number }
 
 /**
@@ -139,6 +138,260 @@ export function escapeXml(str: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+// =====================================================================
+// Hidden-line pipeline helpers
+// =====================================================================
+
+interface ViewTriangle { v: [number, number, number]; normal: THREE.Vector3; front: boolean }
+interface ViewMesh { verts: THREE.Vector3[]; tris: ViewTriangle[]; frontTriangles: CamTriangle[] }
+
+/**
+ * Weld coincident vertices (1e-4 mm) and transform into view coordinates
+ * (x right, y up, z towards the viewer). Degenerate triangles are dropped.
+ */
+export function buildViewMesh(geometry: THREE.BufferGeometry, projMat: THREE.Matrix4): ViewMesh {
+  const pos = geometry.getAttribute('position');
+  const index = geometry.getIndex();
+  const count = index ? index.count : pos.count;
+  const verts: THREE.Vector3[] = [];
+  const world: THREE.Vector3[] = [];
+  const ids = new Map<string, number>();
+  const q = (v: number) => Math.round(v * 1e4) / 1e4 + 0;
+  const vertexId = (i: number): number => {
+    const x = q(pos.getX(i)), y = q(pos.getY(i)), z = q(pos.getZ(i));
+    const key = `${x},${y},${z}`;
+    let id = ids.get(key);
+    if (id === undefined) {
+      id = verts.length;
+      ids.set(key, id);
+      world.push(new THREE.Vector3(x, y, z));
+      verts.push(new THREE.Vector3(x, y, z).applyMatrix4(projMat));
+    }
+    return id;
+  };
+
+  const tris: ViewTriangle[] = [];
+  const frontTriangles: CamTriangle[] = [];
+  for (let t = 0; t + 2 < count; t += 3) {
+    const v: [number, number, number] = [0, 1, 2].map(k => vertexId(index ? index.getX(t + k) : t + k)) as [number, number, number];
+    if (v[0] === v[1] || v[1] === v[2] || v[0] === v[2]) continue;
+    const [w1, w2, w3] = v.map(i => world[i]);
+    const normal = new THREE.Vector3().subVectors(w2, w1).cross(new THREE.Vector3().subVectors(w3, w1));
+    if (normal.lengthSq() < 1e-18) continue;
+    normal.normalize();
+    const [p1, p2, p3] = v.map(i => verts[i]);
+    const area2D = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y);
+    const front = area2D > 0;
+    tris.push({ v, normal, front });
+    if (front) {
+      frontTriangles.push({
+        p1, p2, p3,
+        minX: Math.min(p1.x, p2.x, p3.x), maxX: Math.max(p1.x, p2.x, p3.x),
+        minY: Math.min(p1.y, p2.y, p3.y), maxY: Math.max(p1.y, p2.y, p3.y),
+      });
+    }
+  }
+  return { verts, tris, frontTriangles };
+}
+
+/**
+ * Edges a drawing shows: creases, silhouettes and open boundaries. Edges with
+ * a single adjacent triangle are matched to collinear overlapping edges first
+ * (T-junctions left by booleans), so they are classified like normal edges.
+ */
+export function extractDrawingEdges(mesh: ViewMesh, creaseAngleDeg: number): Array<{ a: THREE.Vector3; b: THREE.Vector3 }> {
+  const edgeMap = new Map<string, { a: number; b: number; faces: number[] }>();
+  mesh.tris.forEach((tri, f) => {
+    for (let k = 0; k < 3; k++) {
+      const a = tri.v[k];
+      const b = tri.v[(k + 1) % 3];
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      const e = edgeMap.get(key);
+      if (e) e.faces.push(f);
+      else edgeMap.set(key, { a: Math.min(a, b), b: Math.max(a, b), faces: [f] });
+    }
+  });
+
+  // T-junctions (left by booleans): a single-face edge whose other side is made of
+  // several shorter collinear edges. Split every single-face edge at the vertices
+  // of collinear single-face edges that lie on it, then pair up the pieces, so each
+  // piece is classified with the faces really on both sides.
+  const V = mesh.verts;
+  const box = new THREE.Box3().setFromPoints(V);
+  // Booleans split edges in single precision: T-junction vertices sit up to
+  // ~1e-4 of the model size off their partner line
+  const tol = 1e-4 * (box.getSize(new THREE.Vector3()).length() || 1) + 1e-6;
+  const singles = [...edgeMap.entries()].filter(([, e]) => e.faces.length === 1);
+
+  // Bucket single-face edges by their infinite line (direction, closest point to the origin)
+  const buckets = new Map<string, Array<{ a: number; b: number; faces: number[] }>>();
+  for (const [, e] of singles) {
+    const a = V[e.a];
+    const d = new THREE.Vector3().subVectors(V[e.b], a);
+    if (d.lengthSq() === 0) continue;
+    d.normalize();
+    // Orient by the dominant component (a tiny noisy component must not decide the sign)
+    const ax = Math.abs(d.x), ay = Math.abs(d.y), az = Math.abs(d.z);
+    if ((ax >= ay && ax >= az ? d.x : (ay >= az ? d.y : d.z)) < 0) d.negate();
+    const o = a.clone().addScaledVector(d, -a.dot(d));
+    const key = [d.x, d.y, d.z].map(v => Math.round(v * 50)).join(',') + '|' + [o.x, o.y, o.z].map(v => Math.round(v * 2)).join(',');
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(e);
+    else buckets.set(key, [e]);
+  }
+
+  for (const bucket of buckets.values()) {
+    if (bucket.length < 2) continue;
+    const points = [...new Set(bucket.flatMap(e => [e.a, e.b]))];
+    for (const e of bucket) {
+      const A = V[e.a];
+      const ab = new THREE.Vector3().subVectors(V[e.b], A);
+      const lenSq = ab.lengthSq();
+      const inner: Array<{ id: number; t: number }> = [];
+      for (const id of points) {
+        if (id === e.a || id === e.b) continue;
+        const t = new THREE.Vector3().subVectors(V[id], A).dot(ab) / lenSq;
+        if (t > 1e-9 && t < 1 - 1e-9 && A.clone().addScaledVector(ab, t).distanceTo(V[id]) < tol) inner.push({ id, t });
+      }
+      if (inner.length === 0) continue;
+      // Replace the edge by its pieces
+      edgeMap.delete(e.a < e.b ? `${e.a}_${e.b}` : `${e.b}_${e.a}`);
+      const chain = [e.a, ...inner.sort((x, y) => x.t - y.t).map(x => x.id), e.b];
+      for (let k = 0; k + 1 < chain.length; k++) {
+        const p = chain[k], q = chain[k + 1];
+        const key = p < q ? `${p}_${q}` : `${q}_${p}`;
+        const piece = edgeMap.get(key);
+        if (piece) piece.faces.push(...e.faces);
+        else edgeMap.set(key, { a: Math.min(p, q), b: Math.max(p, q), faces: [...e.faces] });
+      }
+    }
+  }
+
+  const cosCrease = Math.cos((creaseAngleDeg * Math.PI) / 180);
+  const out: Array<{ a: THREE.Vector3; b: THREE.Vector3 }> = [];
+  for (const e of edgeMap.values()) {
+    const faces = [...new Set(e.faces)];
+    let draw = faces.length === 1; // a genuine open boundary
+    if (!draw) {
+      const tris = faces.map(f => mesh.tris[f]);
+      const anyFront = tris.some(t => t.front);
+      const anyBack = tris.some(t => !t.front);
+      const crease = tris.some((t, i) => tris.some((u, j) => j > i && t.normal.dot(u.normal) < cosCrease));
+      draw = crease || (anyFront && anyBack);
+    }
+    if (draw) out.push({ a: V[e.a], b: V[e.b] });
+  }
+  return out;
+}
+
+/** 2D grid over front-facing triangles for fast occlusion queries. */
+class TriangleGrid {
+  private cells = new Map<number, CamTriangle[]>();
+  private x0: number;
+  private y0: number;
+  private cell: number;
+  private n: number;
+
+  constructor(tris: CamTriangle[], b: { minX: number; minY: number; width: number; height: number }, n: number) {
+    this.n = n;
+    this.cell = Math.max(b.width, b.height, 1e-6) / n;
+    this.x0 = b.minX - this.cell;
+    this.y0 = b.minY - this.cell;
+    for (const t of tris) {
+      const [i0, j0, i1, j1] = [this.ix(t.minX), this.iy(t.minY), this.ix(t.maxX), this.iy(t.maxY)];
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const k = i * (this.n + 3) + j;
+        const list = this.cells.get(k);
+        if (list) list.push(t);
+        else this.cells.set(k, [t]);
+      }
+    }
+  }
+
+  private ix(x: number) { return Math.max(0, Math.min(this.n + 2, Math.floor((x - this.x0) / this.cell))); }
+  private iy(y: number) { return Math.max(0, Math.min(this.n + 2, Math.floor((y - this.y0) / this.cell))); }
+
+  /** True when a front-facing triangle lies in front of point p (view coordinates). */
+  occludes(p: THREE.Vector3, depthTol: number): boolean {
+    for (const t of this.cells.get(this.ix(p.x) * (this.n + 3) + this.iy(p.y)) ?? []) {
+      if (p.x < t.minX || p.x > t.maxX || p.y < t.minY || p.y > t.maxY) continue;
+      const d = (t.p2.y - t.p3.y) * (t.p1.x - t.p3.x) + (t.p3.x - t.p2.x) * (t.p1.y - t.p3.y);
+      if (Math.abs(d) < 1e-14) continue;
+      const l1 = ((t.p2.y - t.p3.y) * (p.x - t.p3.x) + (t.p3.x - t.p2.x) * (p.y - t.p3.y)) / d;
+      const l2 = ((t.p3.y - t.p1.y) * (p.x - t.p3.x) + (t.p1.x - t.p3.x) * (p.y - t.p3.y)) / d;
+      const l3 = 1 - l1 - l2;
+      if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
+      const z = l1 * t.p1.z + l2 * t.p2.z + l3 * t.p3.z;
+      if (z > p.z + depthTol) return true;
+    }
+    return false;
+  }
+}
+
+/** 2D grid over line segments for "is this point on a drawn line" queries. */
+class SegmentGrid {
+  private cells = new Map<number, DrawingLine[]>();
+  private x0: number;
+  private y0: number;
+  private cell: number;
+  private n: number;
+
+  constructor(lines: DrawingLine[], b: { minX: number; minY: number; width: number; height: number }, n: number) {
+    this.n = n;
+    this.cell = Math.max(b.width, b.height, 1e-6) / n;
+    this.x0 = b.minX - this.cell;
+    this.y0 = b.minY - this.cell;
+    for (const l of lines) this.add(l);
+  }
+
+  add(l: DrawingLine): void {
+    const [i0, i1] = [this.ix(Math.min(l.p1.x, l.p2.x)), this.ix(Math.max(l.p1.x, l.p2.x))];
+    const [j0, j1] = [this.iy(Math.min(l.p1.y, l.p2.y)), this.iy(Math.max(l.p1.y, l.p2.y))];
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const k = i * (this.n + 3) + j;
+      const list = this.cells.get(k);
+      if (list) list.push(l);
+      else this.cells.set(k, [l]);
+    }
+  }
+
+  private ix(x: number) { return Math.max(0, Math.min(this.n + 2, Math.floor((x - this.x0) / this.cell))); }
+  private iy(y: number) { return Math.max(0, Math.min(this.n + 2, Math.floor((y - this.y0) / this.cell))); }
+
+  /**
+   * True when (x, y) is within `tol` of a segment running parallel to the
+   * direction (dx, dy). Perpendicular lines meeting at a corner do not count,
+   * so corners are not trimmed.
+   */
+  near(x: number, y: number, tol: number, dirX = 0, dirY = 0): boolean {
+    const dirLen = Math.hypot(dirX, dirY);
+    const ci = this.ix(x), cj = this.iy(y);
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+      for (const l of this.cells.get(i * (this.n + 3) + j) ?? []) {
+        const dx = l.p2.x - l.p1.x, dy = l.p2.y - l.p1.y;
+        const lenSq = dx * dx + dy * dy;
+        if (dirLen > 0 && lenSq > 0 && Math.abs(dx * dirY - dy * dirX) / (Math.sqrt(lenSq) * dirLen) > 1e-3) continue;
+        const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - l.p1.x) * dx + (y - l.p1.y) * dy) / lenSq)) : 0;
+        if (Math.hypot(l.p1.x + t * dx - x, l.p1.y + t * dy - y) < tol) return true;
+      }
+    }
+    return false;
+  }
+}
+
+/** Group sampled states (n+1 samples at t = k/n) into runs with boundaries halfway between samples. */
+function forEachRun(states: boolean[], n: number, cb: (t0: number, t1: number, state: boolean) => void): void {
+  let start = 0;
+  for (let k = 1; k <= n + 1; k++) {
+    if (k === n + 1 || states[k] !== states[start]) {
+      const t0 = start === 0 ? 0 : (start - 0.5) / n;
+      const t1 = k === n + 1 ? 1 : (k - 0.5) / n;
+      if (t1 > t0) cb(t0, t1, states[start]);
+      start = k;
+    }
+  }
 }
 
 export class DrawingEngine {
@@ -165,236 +418,101 @@ export class DrawingEngine {
   }
 
   /**
-   * Project 3D geometry onto 2D drawing plane with Hidden Line Removal (HLR)
-   * @param {THREE.BufferGeometry} geometry
-   * @param {string} view - 'front' | 'top' | 'right' | 'left' | 'bottom' | 'back' | 'isometric'
-   * @param {Object} options - { enableHLR: true, creaseAngleDeg: 25 }
-   * @returns {Object} { visible: LineSegment[], hidden: LineSegment[], bounds: { minX, maxX, minY, maxY } }
+   * Project 3D geometry onto a 2D view with hidden line removal.
+   * Edges drawn: creases (faces meeting at more than `creaseAngleDeg`),
+   * silhouettes (front-facing meets back-facing) and open boundaries. Each edge
+   * is split into visible and hidden runs; hidden runs lying exactly behind a
+   * visible line are omitted, as on a standard drawing.
+   * Output coordinates are model units, u to the right and v up.
    */
   projectGeometry(geometry: THREE.BufferGeometry | null | undefined, view: string = PROJECTION_VIEWS.FRONT, options: ProjectOptions = {}): ProjectedView {
-    if (!geometry) {
-      return { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
-    }
+    const empty: ProjectedView = { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
+    const pos = geometry?.getAttribute('position');
+    if (!geometry || !pos || pos.count === 0) return empty;
 
-    const pos = geometry.getAttribute('position');
-    if (!pos || pos.count === 0) {
-      return { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
-    }
-
-    // Guard against zero-bounding-box models
     geometry.computeBoundingBox();
-    const box = geometry.boundingBox || new THREE.Box3();
     const bSize = new THREE.Vector3();
-    box.getSize(bSize);
-    if (!Number.isFinite(bSize.x) || !Number.isFinite(bSize.y) || !Number.isFinite(bSize.z) ||
-        (bSize.x <= 1e-6 && bSize.y <= 1e-6 && bSize.z <= 1e-6)) {
-      return { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
-    }
+    (geometry.boundingBox || new THREE.Box3()).getSize(bSize);
+    if (![bSize.x, bSize.y, bSize.z].every(Number.isFinite) || (bSize.x <= 1e-6 && bSize.y <= 1e-6 && bSize.z <= 1e-6)) return empty;
 
     const enableHLR = options.enableHLR !== undefined ? options.enableHLR : true;
     const creaseAngle = options.creaseAngleDeg || 25;
+    const { projMat } = this._getProjectionMatrix(view);
 
-    // 1. Compute 3D Camera / Projection transformation matrix
-    const { projMat, viewDir } = this._getProjectionMatrix(view);
-
-    // 2. Extract 3D candidate feature edges (creases, boundaries, and view-dependent silhouettes)
-    const candidateEdges = this._extractFeatureEdges(geometry, creaseAngle, projMat);
-
-    // 3. Project triangles to camera coordinates for depth buffer occlusion testing
-    const projectedTriangles = this._projectTriangles(geometry, projMat);
-
-    // 4. Project edges and perform Hidden Line Removal
-    const visibleLines = [];
-    const hiddenLines = [];
+    const mesh = buildViewMesh(geometry, projMat);
+    const edges = extractDrawingEdges(mesh, creaseAngle);
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const e of edges) {
+      for (const p of [e.a, e.b]) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      }
+    }
+    if (minX === Infinity) return empty;
+    const bounds = { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+    const seg = (a: THREE.Vector3, b: THREE.Vector3, type: LineType): DrawingLine =>
+      ({ p1: { x: a.x, y: a.y }, p2: { x: b.x, y: b.y }, type, length: Math.hypot(b.x - a.x, b.y - a.y) });
 
-    for (const edge of candidateEdges) {
-      const p1Cam = edge.p1.clone().applyMatrix4(projMat);
-      const p2Cam = edge.p2.clone().applyMatrix4(projMat);
+    if (!enableHLR) {
+      return { visible: edges.map(e => seg(e.a, e.b, LINE_TYPES.VISIBLE)), hidden: [], bounds, view };
+    }
 
-      minX = Math.min(minX, p1Cam.x, p2Cam.x);
-      maxX = Math.max(maxX, p1Cam.x, p2Cam.x);
-      minY = Math.min(minY, p1Cam.y, p2Cam.y);
-      maxY = Math.max(maxY, p1Cam.y, p2Cam.y);
+    const diag = Math.hypot(bounds.width, bounds.height) || 1;
+    // Edges along the line of sight project to a point: nothing to draw
+    const drawable = edges.filter(e => Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) > 1e-6 * diag);
+    const occluder = new TriangleGrid(mesh.frontTriangles, bounds, 64);
+    const depthTol = 1e-4 * diag + 1e-6;
 
-      if (!enableHLR) {
-        visibleLines.push({
-          p1: { x: p1Cam.x, y: p1Cam.y },
-          p2: { x: p2Cam.x, y: p2Cam.y },
-          type: LINE_TYPES.VISIBLE,
+    // 1. Split every edge into visible / hidden runs by dense sampling
+    const visibleRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
+    const hiddenRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
+    const stepLen = diag / 400;
+    for (const e of drawable) {
+      const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+      const n = Math.max(4, Math.min(256, Math.ceil(len / stepLen)));
+      const states: boolean[] = [];
+      for (let k = 0; k <= n; k++) {
+        const t = Math.min(1 - 1e-6, Math.max(1e-6, k / n));
+        states.push(!occluder.occludes(e.a.clone().lerp(e.b, t), depthTol));
+      }
+      forEachRun(states, n, (t0, t1, isVisible) => {
+        (isVisible ? visibleRuns : hiddenRuns).push([e.a.clone().lerp(e.b, t0), e.a.clone().lerp(e.b, t1)]);
+      });
+    }
+
+    // 2. Keep each run only where no accepted line already covers it. Visible
+    //    runs are deduplicated among themselves (different 3D edges can project
+    //    onto the same 2D line); hidden runs are also dropped behind visible lines.
+    const coverTol = 1e-3 * diag;
+    const accept = (runs: Array<[THREE.Vector3, THREE.Vector3]>, type: LineType, covering: SegmentGrid): DrawingLine[] => {
+      const out: DrawingLine[] = [];
+      for (const [a, b] of runs) {
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const n = Math.max(2, Math.min(256, Math.ceil(len / stepLen)));
+        const states: boolean[] = [];
+        for (let k = 0; k <= n; k++) {
+          const p = a.clone().lerp(b, k / n);
+          states.push(!covering.near(p.x, p.y, coverTol, b.x - a.x, b.y - a.y));
+        }
+        forEachRun(states, n, (t0, t1, show) => {
+          if (!show) return;
+          const line = seg(a.clone().lerp(b, t0), a.clone().lerp(b, t1), type);
+          if ((line.length ?? 0) <= coverTol) return;
+          out.push(line);
+          covering.add(line);
         });
-        continue;
       }
-
-      // Sample points along edge to classify visibility against front-facing triangles
-      const numSamples = 4;
-      const isVisible = this._testEdgeVisibility(p1Cam, p2Cam, projectedTriangles, numSamples);
-
-      const segment: DrawingLine = {
-        p1: { x: p1Cam.x, y: p1Cam.y },
-        p2: { x: p2Cam.x, y: p2Cam.y },
-        length: Math.hypot(p2Cam.x - p1Cam.x, p2Cam.y - p1Cam.y),
-      };
-
-      if (isVisible) {
-        segment.type = LINE_TYPES.VISIBLE;
-        visibleLines.push(segment);
-      } else {
-        segment.type = LINE_TYPES.HIDDEN;
-        hiddenLines.push(segment);
-      }
-    }
-
-    if (minX === Infinity) {
-      minX = maxX = minY = maxY = 0;
-    }
-
-    const width = Math.max(0, maxX - minX);
-    const height = Math.max(0, maxY - minY);
-
-    return {
-      visible: visibleLines,
-      hidden: hiddenLines,
-      bounds: { minX, maxX, minY, maxY, width, height },
-      view,
+      return out;
     };
+    const visibleCover = new SegmentGrid([], bounds, 64);
+    const visible = accept(visibleRuns, LINE_TYPES.VISIBLE, visibleCover);
+    const hiddenCover = new SegmentGrid(visible, bounds, 64);
+    const hidden = accept(hiddenRuns, LINE_TYPES.HIDDEN, hiddenCover);
+
+    return { visible, hidden, bounds, view };
   }
 
-  /**
-   * Extract candidate feature edges:
-   * - Creases with dihedral angle > creaseAngle
-   * - Boundary edges of open meshes
-   * - View-dependent silhouettes on curved surfaces (cylinders, spheres, rounded features)
-   */
-  _extractFeatureEdges(geometry: THREE.BufferGeometry, creaseAngleDeg: number, projMat: THREE.Matrix4 | null = null): Edge3[] {
-    const edges = [];
-    const edgeKeySet = new Set();
-
-    const makeEdgeKey = (p1: THREE.Vector3, p2: THREE.Vector3) => {
-      const k1 = `${p1.x.toFixed(2)}_${p1.y.toFixed(2)}_${p1.z.toFixed(2)}`;
-      const k2 = `${p2.x.toFixed(2)}_${p2.y.toFixed(2)}_${p2.z.toFixed(2)}`;
-      return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
-    };
-
-    // 1. Sharp dihedral crease edges
-    const edgesGeom = new THREE.EdgesGeometry(geometry, creaseAngleDeg);
-    const pos = edgesGeom.getAttribute('position');
-
-    if (pos) {
-      for (let i = 0; i < pos.count; i += 2) {
-        const p1 = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
-        const p2 = new THREE.Vector3(pos.getX(i + 1), pos.getY(i + 1), pos.getZ(i + 1));
-        const key = makeEdgeKey(p1, p2);
-        if (!edgeKeySet.has(key)) {
-          edgeKeySet.add(key);
-          edges.push({ p1, p2 });
-        }
-      }
-    }
-
-    // 2. View-dependent silhouettes for curved surfaces (cylinders, spheres, lofts)
-    if (projMat) {
-      const silhouettes = this._extractSilhouetteEdges(geometry, projMat);
-      for (const edge of silhouettes) {
-        const key = makeEdgeKey(edge.p1, edge.p2);
-        if (!edgeKeySet.has(key)) {
-          edgeKeySet.add(key);
-          edges.push(edge);
-        }
-      }
-    }
-
-    // 3. Fallback to wireframe if no edges found
-    if (edges.length === 0) {
-      const wire = new THREE.WireframeGeometry(geometry);
-      const wPos = wire.getAttribute('position');
-      if (wPos) {
-        for (let i = 0; i < wPos.count; i += 2) {
-          const p1 = new THREE.Vector3(wPos.getX(i), wPos.getY(i), wPos.getZ(i));
-          const p2 = new THREE.Vector3(wPos.getX(i + 1), wPos.getY(i + 1), wPos.getZ(i + 1));
-          const key = makeEdgeKey(p1, p2);
-          if (!edgeKeySet.has(key)) {
-            edgeKeySet.add(key);
-            edges.push({ p1, p2 });
-          }
-        }
-      }
-    }
-
-    return edges;
-  }
-
-  /**
-   * Extract view-dependent silhouette edges where adjacent face normals cross the horizon
-   */
-  _extractSilhouetteEdges(geometry: THREE.BufferGeometry, projMat: THREE.Matrix4): Edge3[] {
-    const pos = geometry.getAttribute('position');
-    if (!pos || pos.count === 0) return [];
-
-    const index = geometry.getIndex();
-    const numTris = index ? index.count / 3 : pos.count / 3;
-    const edgeMap = new Map();
-
-    const getVertex = (idx: number) => new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
-
-    for (let t = 0; t < numTris; t++) {
-      let i1, i2, i3;
-      if (index) {
-        i1 = index.getX(t * 3);
-        i2 = index.getX(t * 3 + 1);
-        i3 = index.getX(t * 3 + 2);
-      } else {
-        i1 = t * 3;
-        i2 = t * 3 + 1;
-        i3 = t * 3 + 2;
-      }
-
-      const p1 = getVertex(i1);
-      const p2 = getVertex(i2);
-      const p3 = getVertex(i3);
-
-      const p1Cam = p1.clone().applyMatrix4(projMat);
-      const p2Cam = p2.clone().applyMatrix4(projMat);
-      const p3Cam = p3.clone().applyMatrix4(projMat);
-
-      // Signed 2D area in projection indicates front vs back facing
-      const area2D = 0.5 * ((p2Cam.x - p1Cam.x) * (p3Cam.y - p1Cam.y) - (p3Cam.x - p1Cam.x) * (p2Cam.y - p1Cam.y));
-      const isFront = area2D > 1e-6;
-
-      const triEdges: Array<[number, number, THREE.Vector3, THREE.Vector3]> = [
-        [i1, i2, p1, p2],
-        [i2, i3, p2, p3],
-        [i3, i1, p3, p1],
-      ];
-
-      for (const [va, vb, ptA, ptB] of triEdges) {
-        const minIdx = Math.min(va, vb);
-        const maxIdx = Math.max(va, vb);
-        const key = `${minIdx}_${maxIdx}`;
-        if (!edgeMap.has(key)) {
-          edgeMap.set(key, { p1: ptA, p2: ptB, faces: [isFront] });
-        } else {
-          edgeMap.get(key).faces.push(isFront);
-        }
-      }
-    }
-
-    const silhouettes = [];
-    for (const entry of edgeMap.values()) {
-      if (entry.faces.length === 1) {
-        // Boundary edge of open shell
-        silhouettes.push({ p1: entry.p1, p2: entry.p2, isSilhouette: true });
-      } else if (entry.faces.length === 2) {
-        // Silhouette: front face meets back face relative to camera
-        if (entry.faces[0] !== entry.faces[1]) {
-          silhouettes.push({ p1: entry.p1, p2: entry.p2, isSilhouette: true });
-        }
-      }
-    }
-
-    return silhouettes;
-  }
 
   /**
    * Create standard engineering projection matrix for chosen view orientation
@@ -462,12 +580,10 @@ export class DrawingEngine {
       case PROJECTION_VIEWS.ISOMETRIC: {
         // Standard 30° engineering isometric projection
         // Rotation: 45° around Y, then 35.264° (arcsin 1/sqrt(3)) around X
-        const cos30 = Math.cos(Math.PI / 6);
-        const sin30 = Math.sin(Math.PI / 6);
+        // Viewed from (+1, +1, +1), like the 3D viewport: −45° about Y brings (1, 1, 1)
+        // to (0, 1, √2), then asin(1/√3) about X brings it onto the line of sight
         const invSqrt3 = 1 / Math.sqrt(3);
-        const cosIso = Math.sqrt(2 / 3);
-
-        const rY = new THREE.Matrix4().makeRotationY(Math.PI / 4);
+        const rY = new THREE.Matrix4().makeRotationY(-Math.PI / 4);
         const rX = new THREE.Matrix4().makeRotationX(Math.asin(invSqrt3));
         mat.multiplyMatrices(rX, rY);
         viewDir.set(1, 1, 1).normalize();
@@ -483,114 +599,6 @@ export class DrawingEngine {
     }
 
     return { projMat: mat, viewDir };
-  }
-
-  /**
-   * Project all triangles of geometry into camera coordinates for occlusion
-   */
-  _projectTriangles(geometry: THREE.BufferGeometry, projMat: THREE.Matrix4): CamTriangle[] {
-    const pos = geometry.getAttribute('position');
-    const index = geometry.getIndex();
-    const triangles = [];
-    const numTris = index ? index.count / 3 : (pos ? pos.count / 3 : 0);
-
-    for (let i = 0; i < numTris; i++) {
-      let i1, i2, i3;
-      if (index) {
-        i1 = index.getX(i * 3);
-        i2 = index.getX(i * 3 + 1);
-        i3 = index.getX(i * 3 + 2);
-      } else {
-        i1 = i * 3;
-        i2 = i * 3 + 1;
-        i3 = i * 3 + 2;
-      }
-
-      const p1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1)).applyMatrix4(projMat);
-      const p2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2)).applyMatrix4(projMat);
-      const p3 = new THREE.Vector3(pos.getX(i3), pos.getY(i3), pos.getZ(i3)).applyMatrix4(projMat);
-
-      // Compute 2D signed area to test if front-facing in projection
-      const area2D = 0.5 * ((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y));
-      if (area2D > 1e-4) {
-        triangles.push({
-          p1,
-          p2,
-          p3,
-          minX: Math.min(p1.x, p2.x, p3.x),
-          maxX: Math.max(p1.x, p2.x, p3.x),
-          minY: Math.min(p1.y, p2.y, p3.y),
-          maxY: Math.max(p1.y, p2.y, p3.y),
-        });
-      }
-    }
-
-    return triangles;
-  }
-
-  /**
-   * Sample edge points and test for occlusion by front-facing triangles
-   */
-  _testEdgeVisibility(p1Cam: THREE.Vector3, p2Cam: THREE.Vector3, triangles: CamTriangle[], numSamples = 4): boolean {
-    const eps = 1e-2;
-    let occludedSamples = 0;
-
-    for (let s = 1; s <= numSamples; s++) {
-      const t = s / (numSamples + 1);
-      const qx = p1Cam.x + (p2Cam.x - p1Cam.x) * t;
-      const qy = p1Cam.y + (p2Cam.y - p1Cam.y) * t;
-      const qz = p1Cam.z + (p2Cam.z - p1Cam.z) * t;
-
-      let pointOccluded = false;
-
-      for (const tri of triangles) {
-        if (qx < tri.minX - eps || qx > tri.maxX + eps || qy < tri.minY - eps || qy > tri.maxY + eps) {
-          continue;
-        }
-
-        // Avoid self-occlusion: if tri shares both endpoints with the edge, skip this triangle
-        const sharesP1 = (Math.hypot(tri.p1.x - p1Cam.x, tri.p1.y - p1Cam.y, tri.p1.z - p1Cam.z) < 1e-2 ||
-                          Math.hypot(tri.p2.x - p1Cam.x, tri.p2.y - p1Cam.y, tri.p2.z - p1Cam.z) < 1e-2 ||
-                          Math.hypot(tri.p3.x - p1Cam.x, tri.p3.y - p1Cam.y, tri.p3.z - p1Cam.z) < 1e-2);
-        const sharesP2 = (Math.hypot(tri.p1.x - p2Cam.x, tri.p1.y - p2Cam.y, tri.p1.z - p2Cam.z) < 1e-2 ||
-                          Math.hypot(tri.p2.x - p2Cam.x, tri.p2.y - p2Cam.y, tri.p2.z - p2Cam.z) < 1e-2 ||
-                          Math.hypot(tri.p3.x - p2Cam.x, tri.p3.y - p2Cam.y, tri.p3.z - p2Cam.z) < 1e-2);
-        if (sharesP1 && sharesP2) {
-          continue;
-        }
-
-        // Barycentric coordinate test
-        const v0x = tri.p3.x - tri.p1.x, v0y = tri.p3.y - tri.p1.y;
-        const v1x = tri.p2.x - tri.p1.x, v1y = tri.p2.y - tri.p1.y;
-        const v2x = qx - tri.p1.x,       v2y = qy - tri.p1.y;
-
-        const dot00 = v0x * v0x + v0y * v0y;
-        const dot01 = v0x * v1x + v0y * v1y;
-        const dot02 = v0x * v2x + v0y * v2y;
-        const dot11 = v1x * v1x + v1y * v1y;
-        const dot12 = v1x * v2x + v1y * v2y;
-
-        const invDenom = 1 / (dot00 * dot11 - dot01 * dot01 + 1e-12);
-        const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-        const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-
-        if (u >= -eps && v >= -eps && (u + v) <= 1 + eps) {
-          // Point is inside projected triangle. Check interpolated depth
-          const triZ = tri.p1.z + u * (tri.p3.z - tri.p1.z) + v * (tri.p2.z - tri.p1.z);
-          if (triZ > qz + 1e-3) {
-            pointOccluded = true;
-            break;
-          }
-        }
-      }
-
-      if (pointOccluded) {
-        occludedSamples++;
-      }
-    }
-
-    // An edge is considered visible if more than half of its samples are not occluded
-    return (occludedSamples / numSamples) < 0.5;
   }
 
   /**
@@ -630,23 +638,18 @@ export class DrawingEngine {
     const row1Y = margin + availHeight * 0.30;
     const row2Y = margin + availHeight * 0.70;
 
+    // Place a projected view (u right, v up) on the sheet (x right, y down):
+    // x = offsetX + u·scale, y = offsetY − v·scale. Views are shifted, never
+    // clamped, to stay inside the margin.
     const layoutView = (viewData: ProjectedView, centerX: number, centerY: number, label: string): SheetView => {
-      let offsetX = centerX - ((viewData.bounds.minX + viewData.bounds.maxX) / 2) * scale;
-      let offsetY = centerY - ((viewData.bounds.minY + viewData.bounds.maxY) / 2) * scale;
+      const b = viewData.bounds;
+      let offsetX = centerX - ((b.minX + b.maxX) / 2) * scale;
+      let offsetY = centerY + ((b.minY + b.maxY) / 2) * scale;
+      if (b.minX * scale + offsetX < margin) offsetX = margin - b.minX * scale;
+      if (offsetY - b.maxY * scale < margin) offsetY = margin + b.maxY * scale;
 
-      // Ensure view coordinates never drop below sheet margin (avoid negative coordinates)
-      if (viewData.bounds.minX * scale + offsetX < margin) {
-        offsetX = margin - viewData.bounds.minX * scale;
-      }
-      if (viewData.bounds.minY * scale + offsetY < margin) {
-        offsetY = margin - viewData.bounds.minY * scale;
-      }
-
-      const transformLine = (line: DrawingLine): DrawingLine => ({
-        p1: { x: Math.max(0, line.p1.x * scale + offsetX), y: Math.max(0, line.p1.y * scale + offsetY) },
-        p2: { x: Math.max(0, line.p2.x * scale + offsetX), y: Math.max(0, line.p2.y * scale + offsetY) },
-        type: line.type,
-      });
+      const place = (p: Point2D): Point2D => ({ x: p.x * scale + offsetX, y: offsetY - p.y * scale });
+      const transformLine = (line: DrawingLine): DrawingLine => ({ p1: place(line.p1), p2: place(line.p2), type: line.type });
 
       return {
         label,
@@ -657,10 +660,10 @@ export class DrawingEngine {
         visible: viewData.visible.map(transformLine),
         hidden: viewData.hidden.map(transformLine),
         bounds: {
-          minX: Math.max(0, viewData.bounds.minX * scale + offsetX),
-          maxX: Math.max(0, viewData.bounds.maxX * scale + offsetX),
-          minY: Math.max(0, viewData.bounds.minY * scale + offsetY),
-          maxY: Math.max(0, viewData.bounds.maxY * scale + offsetY),
+          minX: b.minX * scale + offsetX,
+          maxX: b.maxX * scale + offsetX,
+          minY: offsetY - b.maxY * scale,
+          maxY: offsetY - b.minY * scale,
         },
       };
     };
@@ -973,63 +976,44 @@ export class DrawingEngine {
    * @param {Object} sheetData
    * @returns {string} DXF string
    */
+  /**
+   * Export the sheet as DXF R12. Sheet coordinates are y-down (like SVG); DXF
+   * is y-up, so y is flipped about the sheet height.
+   */
   exportDXF(sheetData: SheetData | null | undefined): string {
     if (!sheetData) throw new Error('No drawing sheet to export');
     const { views, dimensions } = sheetData;
-    let dxf = '';
+    const H = sheetData.sheetSize?.height ?? 210;
+    const f = (v: number) => v.toFixed(3);
+    const line = (layer: string, p1: Point2D, p2: Point2D) =>
+      `0\nLINE\n8\n${layer}\n10\n${f(p1.x)}\n20\n${f(H - p1.y)}\n30\n0.0\n11\n${f(p2.x)}\n21\n${f(H - p2.y)}\n31\n0.0\n`;
 
-    // HEADER
-    dxf += '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n';
+    let dxf = '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n';
 
-    // TABLES: Layer table
-    dxf += '0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n5\n';
+    // TABLES: linetypes (layers may only reference defined linetypes), then layers
+    dxf += '0\nSECTION\n2\nTABLES\n';
+    dxf += '0\nTABLE\n2\nLTYPE\n70\n2\n';
+    dxf += '0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n';
+    dxf += '0\nLTYPE\n2\nDASHED\n70\n0\n3\n__ __ __ __\n72\n65\n73\n2\n40\n4.5\n49\n3.0\n49\n-1.5\n';
+    dxf += '0\nENDTAB\n';
+    dxf += '0\nTABLE\n2\nLAYER\n70\n4\n';
     dxf += '0\nLAYER\n2\nVISIBLE\n70\n0\n62\n7\n6\nCONTINUOUS\n';
     dxf += '0\nLAYER\n2\nHIDDEN\n70\n0\n62\n8\n6\nDASHED\n';
     dxf += '0\nLAYER\n2\nDIMENSION\n70\n0\n62\n4\n6\nCONTINUOUS\n';
     dxf += '0\nLAYER\n2\nBORDER\n70\n0\n62\n7\n6\nCONTINUOUS\n';
     dxf += '0\nENDTAB\n0\nENDSEC\n';
 
-    // ENTITIES
     dxf += '0\nSECTION\n2\nENTITIES\n';
-
-    // Lines from views
     for (const v of views) {
-      for (const line of v.visible) {
-        dxf += '0\nLINE\n8\nVISIBLE\n';
-        dxf += `10\n${line.p1.x.toFixed(3)}\n20\n${line.p1.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `11\n${line.p2.x.toFixed(3)}\n21\n${line.p2.y.toFixed(3)}\n31\n0.0\n`;
-      }
-      for (const line of v.hidden) {
-        dxf += '0\nLINE\n8\nHIDDEN\n';
-        dxf += `10\n${line.p1.x.toFixed(3)}\n20\n${line.p1.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `11\n${line.p2.x.toFixed(3)}\n21\n${line.p2.y.toFixed(3)}\n31\n0.0\n`;
-      }
+      for (const l of v.visible) dxf += line('VISIBLE', l.p1, l.p2);
+      for (const l of v.hidden) dxf += line('HIDDEN', l.p1, l.p2);
     }
-
-    // Dimensions
-    if (dimensions) {
-      for (const d of dimensions) {
-        // Dimension line
-        dxf += '0\nLINE\n8\nDIMENSION\n';
-        dxf += `10\n${d.dimLine.p1.x.toFixed(3)}\n20\n${d.dimLine.p1.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `11\n${d.dimLine.p2.x.toFixed(3)}\n21\n${d.dimLine.p2.y.toFixed(3)}\n31\n0.0\n`;
-
-        // Extension lines
-        dxf += '0\nLINE\n8\nDIMENSION\n';
-        dxf += `10\n${d.extLine1.p1.x.toFixed(3)}\n20\n${d.extLine1.p1.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `11\n${d.extLine1.p2.x.toFixed(3)}\n21\n${d.extLine1.p2.y.toFixed(3)}\n31\n0.0\n`;
-
-        dxf += '0\nLINE\n8\nDIMENSION\n';
-        dxf += `10\n${d.extLine2.p1.x.toFixed(3)}\n20\n${d.extLine2.p1.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `11\n${d.extLine2.p2.x.toFixed(3)}\n21\n${d.extLine2.p2.y.toFixed(3)}\n31\n0.0\n`;
-
-        // Text
-        dxf += '0\nTEXT\n8\nDIMENSION\n';
-        dxf += `10\n${d.textPos.x.toFixed(3)}\n20\n${d.textPos.y.toFixed(3)}\n30\n0.0\n`;
-        dxf += `40\n3.0\n1\n${d.text}\n`;
-      }
+    for (const d of dimensions ?? []) {
+      dxf += line('DIMENSION', d.dimLine.p1, d.dimLine.p2);
+      dxf += line('DIMENSION', d.extLine1.p1, d.extLine1.p2);
+      dxf += line('DIMENSION', d.extLine2.p1, d.extLine2.p2);
+      dxf += `0\nTEXT\n8\nDIMENSION\n10\n${f(d.textPos.x)}\n20\n${f(H - d.textPos.y)}\n30\n0.0\n40\n3.0\n1\n${d.text}\n`;
     }
-
     dxf += '0\nENDSEC\n0\nEOF\n';
     return dxf;
   }

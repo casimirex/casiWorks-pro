@@ -66,7 +66,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
   - [x] **T.5a** Assembly manager (plus mate fixes)
   - [x] **T.5b** FEA engine (plus a real quadratic Tet10 element)
-  - [ ] **T.5c** Drawing engine
+  - [x] **T.5c** Drawing engine (plus real edge extraction and hidden-line removal, upright views, correct isometric, valid DXF)
   - [ ] **T.5d** Feature engine
 - [ ] **T.6** Viewport and UI components → `.tsx`
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
@@ -125,7 +125,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 - [ ] **5.1** Views generated from exact geometry (crisp edges, true arcs)
 - [ ] **5.2** Associative dimensions that update with the model
 - [ ] **5.3** BOM tables and balloons from assemblies
-- [ ] **5.4** Sheet formats and title block editor
+- [ ] **5.4** Sheet formats and title block editor (known: the GD&T frame overlaps the front view and the right view can run under the title block)
 - [ ] **5.5** PDF and DWG/DXF export
 
 ## Phase 6 — Simulation
