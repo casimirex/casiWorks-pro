@@ -41,6 +41,10 @@ const NumericInput = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The text being edited, readable from timers without waiting for a re-render
+  // (holding a spin button steps many times between renders)
+  const editValueRef = useRef(editValue);
+  editValueRef.current = editValue;
 
   /** Format a numeric value for display (trailing zeros removed, up to `precision` decimals) */
   const formatValue = useCallback((val: number | null | undefined) => {
@@ -121,30 +125,24 @@ const NumericInput = ({
     }
   }, [commitValue, value, clamp, step, editValue, onChange, formatValue]);
 
-  /** Increment the value by step */
-  const increment = useCallback(() => {
-    const current = parseFloat(editValue) || 0;
-    const newVal = clamp(current + step);
-    setEditValue(formatValue(newVal));
+  /** Step the value up (+1) or down (−1) from the latest edit value */
+  const stepBy = useCallback((sign: 1 | -1) => {
+    const current = parseFloat(editValueRef.current) || 0;
+    const newVal = clamp(current + sign * step);
+    const text = formatValue(newVal);
+    editValueRef.current = text;
+    setEditValue(text);
     onChange?.(newVal);
-  }, [editValue, step, clamp, onChange, formatValue]);
-
-  /** Decrement the value by step */
-  const decrement = useCallback(() => {
-    const current = parseFloat(editValue) || 0;
-    const newVal = clamp(current - step);
-    setEditValue(formatValue(newVal));
-    onChange?.(newVal);
-  }, [editValue, step, clamp, onChange, formatValue]);
+  }, [step, clamp, onChange, formatValue]);
 
   /** Start holding a spin button for continuous adjustment */
   const startHold = useCallback((direction: 'up' | 'down') => {
-    const fn = direction === 'up' ? increment : decrement;
+    const fn = () => stepBy(direction === 'up' ? 1 : -1);
     fn();
     holdTimerRef.current = setTimeout(() => {
       holdIntervalRef.current = setInterval(fn, 80);
     }, 400);
-  }, [increment, decrement]);
+  }, [stepBy]);
 
   /** Stop holding */
   const stopHold = useCallback(() => {
@@ -176,9 +174,10 @@ const NumericInput = ({
       <div className="spin-buttons">
         <button
           className="spin-btn"
-          onMouseDown={(e) => { e.preventDefault(); startHold('up'); }}
-          onMouseUp={stopHold}
-          onMouseLeave={stopHold}
+          onPointerDown={(e) => { e.preventDefault(); startHold('up'); }}
+          onPointerUp={stopHold}
+          onPointerLeave={stopHold}
+          onPointerCancel={stopHold}
           disabled={disabled}
           tabIndex={-1}
           aria-label="Increment"
@@ -187,9 +186,10 @@ const NumericInput = ({
         </button>
         <button
           className="spin-btn"
-          onMouseDown={(e) => { e.preventDefault(); startHold('down'); }}
-          onMouseUp={stopHold}
-          onMouseLeave={stopHold}
+          onPointerDown={(e) => { e.preventDefault(); startHold('down'); }}
+          onPointerUp={stopHold}
+          onPointerLeave={stopHold}
+          onPointerCancel={stopHold}
           disabled={disabled}
           tabIndex={-1}
           aria-label="Decrement"

@@ -1,5 +1,5 @@
 // CasiWorks Pro - Material Selection Dialog
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Check, Sliders } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
@@ -15,6 +15,11 @@ export default function MaterialDialog({ isOpen, onClose }: DialogProps) {
 
   const [selectedKey, setSelectedKey] = useState(activeMaterial);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Start from the model's current material each time the dialog opens
+  useEffect(() => {
+    if (isOpen) setSelectedKey(activeMaterial);
+  }, [isOpen, activeMaterial]);
 
   if (!isOpen) return null;
 

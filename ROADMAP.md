@@ -69,7 +69,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.5d** Feature engine (plus hole depth/entry, pattern vectors, revolve plane fixes)
 - [ ] **T.6** Viewport and UI components → `.tsx`
   - [x] **T.6a** Viewport (plus Right-plane sketch mirroring, all entity types drawn, sketch over the model, no selection while sketching, working Ortho toggle, edge display without boolean fan lines)
-  - [ ] **T.6b** Common components and dialogs (converted; fixes pending)
+  - [x] **T.6b** Common components and dialogs (plus spin-button hold, material dialog sync, DXF exports the model, IGES in the export dialog)
   - [ ] **T.6c** Feature tree, property panel, command manager (UI only sketches on the Front plane; property panel cannot set hole position/axis or pattern count/spacing/direction)
   - [ ] **T.6d** Drawing modal, results viewer, App, entry point
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block

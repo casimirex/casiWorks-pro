@@ -12,8 +12,6 @@ interface DialogProps {
 export default function ExportDialog({ isOpen, onClose }: DialogProps) {
   const bodies = useCADStore(s => s.bodies);
   const documentName = useCADStore(s => s.documentName);
-  const activeSketchId = useCADStore(s => s.activeSketchId);
-  const sketchEntities = useCADStore(s => s.sketchEntities);
 
   const [format, setFormat] = useState('stl_binary');
 
@@ -25,7 +23,7 @@ export default function ExportDialog({ isOpen, onClose }: DialogProps) {
     // Get active or first body geometry
     const primaryGeometry = bodies.length > 0 ? bodies[0].geometry : null;
 
-    if (!primaryGeometry && !format.startsWith('dxf')) {
+    if (!primaryGeometry) {
       alert('No 3D solid bodies to export! Create an extrude or feature first.');
       return;
     }
@@ -42,9 +40,12 @@ export default function ExportDialog({ isOpen, onClose }: DialogProps) {
     } else if (format === 'step') {
       const blob = exportEngine.exportSTEP(primaryGeometry, filenameBase);
       exportEngine.downloadFile(blob, `${filenameBase}.stp`, 'application/step');
+    } else if (format === 'iges') {
+      const blob = exportEngine.exportIGES(primaryGeometry, filenameBase);
+      exportEngine.downloadFile(blob, `${filenameBase}.igs`, 'model/iges');
     } else if (format === 'dxf') {
-      const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
-      const blob = exportEngine.exportDXF(entities);
+      // The model's triangles as 3DFACE entities, as the option describes
+      const blob = exportEngine.exportDXF(primaryGeometry);
       exportEngine.downloadFile(blob, `${filenameBase}.dxf`, 'application/dxf');
     }
 
@@ -79,6 +80,10 @@ export default function ExportDialog({ isOpen, onClose }: DialogProps) {
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="radio" name="format" checked={format === 'step'} onChange={() => setFormat('step')} />
               <span><strong>STEP AP214</strong> — ISO 10303 faceted solid, opens in all major CAD tools (.stp)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="radio" name="format" checked={format === 'iges'} onChange={() => setFormat('iges')} />
+              <span><strong>IGES 5.3</strong> — Faceted solid (manifold solid B-rep, type 186) (.igs)</span>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="radio" name="format" checked={format === 'obj'} onChange={() => setFormat('obj')} />
