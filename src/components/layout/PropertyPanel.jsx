@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { FEATURE_TYPES, TOOLS, MATE_TYPES, MATERIALS } from '../../utils/constants.ts';
-import NumericInput from '../common/NumericInput';
+import NumericInput from '../common/NumericInput.tsx';
 import { debounce } from '../../utils/debounce.ts';
 
 export default function PropertyPanel() {

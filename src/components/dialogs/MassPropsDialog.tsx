@@ -1,13 +1,18 @@
 // CasiWorks Pro - Mass Properties Dialog
-import React, { useMemo } from 'react';
-import { X, Scale, Info } from 'lucide-react';
+import { useMemo } from 'react';
+import { X, Scale } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../../kernel/GeometryEngine.ts';
 
-const formatInertia = (v) => (Number.isFinite(v) ? v.toPrecision(6) : '—');
+const formatInertia = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? v.toPrecision(6) : '—');
 
-export default function MassPropsDialog({ isOpen, onClose }) {
+interface DialogProps {
+  isOpen: boolean;
+  onClose(): void;
+}
+
+export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
 

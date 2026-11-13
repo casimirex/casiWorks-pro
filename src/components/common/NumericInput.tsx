@@ -2,22 +2,27 @@
 // Provides a number input with increment/decrement buttons and unit suffix
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 
-/**
- * NumericInput - A professional numeric input with spin buttons and unit display.
- * 
- * @param {number} value - Current value
- * @param {function} onChange - Callback when value changes
- * @param {number} [min] - Minimum allowed value
- * @param {number} [max] - Maximum allowed value
- * @param {number} [step=1] - Increment/decrement step size
- * @param {string} [unit=''] - Unit suffix to display (e.g., 'mm', 'deg')
- * @param {number} [precision=4] - Decimal precision
- * @param {boolean} [disabled=false] - Whether the input is disabled
- * @param {string} [label] - Optional label
- * @param {string} [className] - Additional CSS class
- */
+export interface NumericInputProps {
+  value?: number;
+  onChange?: (value: number) => void;
+  min?: number;
+  max?: number;
+  /** Increment/decrement step size. */
+  step?: number;
+  /** Unit suffix to display (e.g. 'mm', 'deg'). */
+  unit?: string;
+  /** Decimal precision. */
+  precision?: number;
+  disabled?: boolean;
+  /** Accessible label. */
+  label?: string;
+  className?: string;
+}
+
+/** A numeric input with spin buttons and unit display. */
 const NumericInput = ({
   value = 0,
   onChange,
@@ -29,17 +34,17 @@ const NumericInput = ({
   disabled = false,
   label,
   className = '',
-}) => {
+}: NumericInputProps) => {
   // Internal string representation for editing
   const [editValue, setEditValue] = useState(String(value));
   const [isEditing, setIsEditing] = useState(false);
-  const inputRef = useRef(null);
-  const holdTimerRef = useRef(null);
-  const holdIntervalRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /** Format a numeric value for display (trailing zeros removed, up to `precision` decimals) */
-  const formatValue = useCallback((val) => {
-    if (val === null || val === undefined || isNaN(val)) return '0';
+  const formatValue = useCallback((val: number | null | undefined) => {
+    if (val === null || val === undefined || Number.isNaN(Number(val))) return '0';
     return parseFloat(Number(val).toFixed(precision)).toString();
   }, [precision]);
 
@@ -51,7 +56,7 @@ const NumericInput = ({
   }, [value, isEditing, formatValue]);
 
   /** Clamp a value between min and max */
-  const clamp = useCallback((val) => {
+  const clamp = useCallback((val: number) => {
     return Math.min(max, Math.max(min, val));
   }, [min, max]);
 
@@ -71,7 +76,7 @@ const NumericInput = ({
   }, [editValue, value, clamp, onChange, formatValue]);
 
   /** Handle text input change */
-  const handleInputChange = useCallback((e) => {
+  const handleInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setEditValue(e.target.value);
   }, []);
 
@@ -92,7 +97,7 @@ const NumericInput = ({
   }, [commitValue]);
 
   /** Handle keyboard events */
-  const handleKeyDown = useCallback((e) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     // Stop typing/arrow keys from propagating to global shortcuts (L, R, C, D, Space, etc.)
     e.stopPropagation();
 
@@ -133,7 +138,7 @@ const NumericInput = ({
   }, [editValue, step, clamp, onChange, formatValue]);
 
   /** Start holding a spin button for continuous adjustment */
-  const startHold = useCallback((direction) => {
+  const startHold = useCallback((direction: 'up' | 'down') => {
     const fn = direction === 'up' ? increment : decrement;
     fn();
     holdTimerRef.current = setTimeout(() => {

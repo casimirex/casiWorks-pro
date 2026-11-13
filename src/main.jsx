@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import ErrorBoundary from './components/common/ErrorBoundary';
+import ErrorBoundary from './components/common/ErrorBoundary.tsx';
 import './index.css';
 
 // Remove loading splash screen once mounted

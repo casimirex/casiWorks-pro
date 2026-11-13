@@ -1,9 +1,9 @@
 // CasiWorks Pro - Main Application Root
 import React, { useEffect, useState } from 'react';
-import MainLayout from './components/layout/MainLayout';
-import ExportDialog from './components/dialogs/ExportDialog';
-import MaterialDialog from './components/dialogs/MaterialDialog';
-import MassPropsDialog from './components/dialogs/MassPropsDialog';
+import MainLayout from './components/layout/MainLayout.tsx';
+import ExportDialog from './components/dialogs/ExportDialog.tsx';
+import MaterialDialog from './components/dialogs/MaterialDialog.tsx';
+import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
 import ResultsViewer from './simulation/ResultsViewer';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
 import { setupKeyboardShortcuts } from './utils/shortcuts.ts';

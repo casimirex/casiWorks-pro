@@ -1,14 +1,20 @@
 // CasiWorks Pro - Main Application Layout (Responsive Desktop & Mobile)
-import React, { useState } from 'react';
+import { useState } from 'react';
 import CommandManager from './CommandManager';
 import FeatureTree from './FeatureTree';
 import PropertyPanel from './PropertyPanel';
-import StatusBar from './StatusBar';
+import StatusBar from './StatusBar.tsx';
 import Viewport3D from '../../viewport/Viewport3D.tsx';
-import ErrorBoundary from '../common/ErrorBoundary';
+import ErrorBoundary from '../common/ErrorBoundary.tsx';
 import { useCADStore } from '../../store/cadStore.ts';
 
-export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }) {
+interface MainLayoutProps {
+  onExportClick(): void;
+  onMaterialClick(): void;
+  onMassPropsClick(): void;
+}
+
+export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }: MainLayoutProps) {
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
