@@ -37,6 +37,17 @@ export interface FeatureRebuildResult {
   errors: RebuildError[];
 }
 
+/**
+ * A unit vector from optional components: the default when no component is
+ * given, otherwise missing components are 0 (so {y: 1} means +Y, not (1, 1, 0)).
+ */
+function vectorFrom(components: Array<number | undefined>, fallback: [number, number, number], what: string): THREE.Vector3 {
+  const given = components.some(c => c !== undefined && c !== null);
+  const v = given ? new THREE.Vector3(...components.map(c => Number(c ?? 0)) as [number, number, number]) : new THREE.Vector3(...fallback);
+  if (!(v.length() > 1e-12)) throw new Error(`${what} is a zero vector`);
+  return v.normalize();
+}
+
 export class FeatureEngine {
   geometryEngine = geometryEngine;
   /** Sketches seen so far in the current rebuild, by sketch id. */
@@ -206,7 +217,7 @@ export class FeatureEngine {
 
     const angleRad = ((feature.angle ?? 360) * Math.PI) / 180;
     const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities as ProfileEntity[]);
-    const revolved = this.geometryEngine.revolveProfile(shape, null, angleRad);
+    const revolved = this.geometryEngine.revolveProfile(shape, null, angleRad, { plane: sketchData.plane });
     this.featureGeometries[feature.id] = revolved;
     return revolved;
   }
@@ -286,14 +297,19 @@ export class FeatureEngine {
     if (!currentBody) return currentBody;
     const diameter = feature.diameter ?? 10;
     const depth = feature.depth ?? 30;
-    const pos = feature.position ? new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z) : new THREE.Vector3(0, 0, 0);
-    const dir = new THREE.Vector3(0, 0, 1);
-    return this.geometryEngine.createHole(currentBody, pos, dir, diameter, depth, feature.holeType || 'simple');
+    const entry = feature.position ? new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z) : new THREE.Vector3(0, 0, 0);
+    const drill = vectorFrom(feature.axis ? [feature.axis.x, feature.axis.y, feature.axis.z] : [], [0, 0, 1], 'Hole axis');
+    // The hole runs from the entry point `depth` along the drill axis. The kernel
+    // centres its tool on the given point with the counterbore / countersink at
+    // the +axis end and the drill point at the −axis end, so aim that axis back
+    // out of the hole.
+    const centre = entry.addScaledVector(drill, depth / 2);
+    return this.geometryEngine.createHole(currentBody, centre, drill.negate(), diameter, depth, feature.holeType || 'simple');
   }
 
   _processLinearPattern(feature: LinearPatternFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
-    const dir = new THREE.Vector3(feature.directionX || 1, feature.directionY || 0, feature.directionZ || 0);
+    const dir = vectorFrom([feature.directionX, feature.directionY, feature.directionZ], [1, 0, 0], 'Pattern direction');
     const count = feature.count || 3;
     const spacing = feature.spacing || 20;
     return this.geometryEngine.linearPattern(currentBody, dir, count, spacing);
@@ -301,7 +317,7 @@ export class FeatureEngine {
 
   _processCircularPattern(feature: CircularPatternFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
-    const axis = new THREE.Vector3(feature.axisX || 0, feature.axisY || 1, feature.axisZ || 0);
+    const axis = vectorFrom([feature.axisX, feature.axisY, feature.axisZ], [0, 1, 0], 'Pattern axis');
     const count = feature.count || 4;
     const angle = (feature.angle || 360) * (Math.PI / 180);
     return this.geometryEngine.circularPattern(currentBody, axis, count, angle);

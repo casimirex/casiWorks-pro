@@ -217,3 +217,51 @@ test('Examples: all built-in models rebuild (only "not applied" warnings); hex b
     console.warn = realWarn;
   }
 });
+
+// ------------------------------------------------------------------ feature placement
+const featureSketches = { a: rect(40, 40) as never[], b: rect(10, 20, 10, 10) as never[] };
+const sketchF = (id: string, plane: 'Front' | 'Top' | 'Right' = 'Front'): FeatureData => ({ id: `s${id}`, name: 'S', type: 'sketch', sketchId: id, plane });
+const build = (features: FeatureData[]) => {
+  const r = featureEngine.rebuild(features, featureSketches);
+  assert.deepEqual(r.errors, []);
+  return r.bodies[0];
+};
+const expectBox = (g: THREE.BufferGeometry, min: number[], max: number[], msg: string) => {
+  const b = bounds(g);
+  [...b.min.toArray(), ...b.max.toArray()].forEach((v, i) => assert.ok(Math.abs(v - [...min, ...max][i]) < 1e-3, `${msg}: ${b.min.toArray()} .. ${b.max.toArray()}`));
+};
+
+test('Hole feature drills its full depth from the entry point, counterbore at the entry', () => {
+  const block: FeatureData[] = [sketchF('a'), { id: 'e', name: 'E', type: 'extrude_boss', sketchId: 'a', depth: 30 }];
+  const faceted = (r: number, h: number) => 16 * Math.sin(Math.PI / 16) * r * r * h; // 32-sided prism
+  const plain = build([...block, { id: 'h', name: 'H', type: 'hole', diameter: 10, depth: 20 }]);
+  near(48000 - signedVolume(plain), faceted(5, 20), 1e-3, 'removed volume of a Ø10 × 20 hole (was half of it)');
+
+  // Drilled down from the top face: counterbore Ø18 × 5 must be at z = 25..30
+  const cb = build([...block, { id: 'h', name: 'H', type: 'hole', diameter: 10, depth: 20, holeType: 'counterbore', position: { x: 0, y: 0, z: 30 }, axis: { x: 0, y: 0, z: -1 } }]);
+  near(48000 - signedVolume(cb), faceted(5, 15) + faceted(9, 5), 1e-3, 'removed volume of the counterbored hole');
+  const p = cb.attributes.position;
+  // Vertices inside the block (the boolean also splits the outer faces at z = 0 and 30)
+  const inner = Array.from({ length: p.count }, (_, i) => i).filter(i => p.getZ(i) > 1e-3 && p.getZ(i) < 30 - 1e-3);
+  const z = (r: number) => inner.filter(i => Math.abs(Math.hypot(p.getX(i), p.getY(i)) - r) < 0.05).map(i => p.getZ(i));
+  assert.ok(z(9).length > 0 && Math.min(...z(9)) > 24.999, `counterbore at the entry (z 25..30), found z ${Math.min(...z(9))}`);
+  assert.ok(Math.abs(Math.min(...z(5)) - 10) < 1e-3, 'hole bottom at z = 10');
+});
+
+test('Patterns keep zero vector components: along Y means along Y, about Z means about Z', () => {
+  const part: FeatureData[] = [sketchF('b'), { id: 'e', name: 'E', type: 'extrude_boss', sketchId: 'b', depth: 5 }];
+  expectBox(build([...part, { id: 'p', name: 'P', type: 'linear_pattern', count: 2, spacing: 50, directionY: 1 }]), [5, 0, 0], [15, 70, 5], 'linear pattern along +Y');
+  expectBox(build([...part, { id: 'p', name: 'P', type: 'circular_pattern', count: 2, angle: 180, axisZ: 1 }]), [-15, -20, 0], [15, 20, 5], 'circular pattern about Z');
+  const zero = featureEngine.rebuild([...part, { id: 'p', name: 'P', type: 'linear_pattern', count: 2, spacing: 50, directionX: 0, directionY: 0, directionZ: 0 }], featureSketches);
+  assert.match(zero.errors[0].error, /zero vector/);
+});
+
+test('Revolve follows its sketch plane and starts at the sketch', () => {
+  // Top plane: sketch y runs along world −Z, so the revolve axis is Z
+  const top = build([sketchF('b', 'Top'), { id: 'r', name: 'R', type: 'revolve_boss', sketchId: 'b', angle: 360 }]);
+  expectBox(top, [-15, -15, -20], [15, 15, 0], 'revolve of a Top sketch');
+  // A quarter revolve sweeps right-handed about +Y from the sketch (+X) towards −Z
+  const quarter = build([sketchF('b'), { id: 'r', name: 'R', type: 'revolve_boss', sketchId: 'b', angle: 90 }]);
+  expectBox(quarter, [0, 0, -15], [15, 20, 0], 'quarter revolve of a Front sketch');
+  assert.ok(isClosedMesh(quarter) && signedVolume(quarter) > 0);
+});

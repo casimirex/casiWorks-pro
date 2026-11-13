@@ -148,7 +148,10 @@ export interface HoleFeature extends FeatureBase {
   type: 'hole';
   diameter: number;
   depth: number;
+  /** Entry point of the hole (default: the origin). */
   position?: Point3;
+  /** Drilling direction from the entry point (default +Z). */
+  axis?: Point3;
   holeType?: 'simple' | 'counterbore' | 'countersink';
 }
 

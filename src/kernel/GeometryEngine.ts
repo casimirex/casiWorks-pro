@@ -22,7 +22,12 @@ export interface ExtrudeOptions {
   plane?: PlaneName;
 }
 
-export interface RevolveOptions { segments?: number; offset?: number }
+export interface RevolveOptions {
+  segments?: number;
+  offset?: number;
+  /** Sketch plane of the profile: the solid is oriented like an extrude from that plane. */
+  plane?: PlaneName;
+}
 export interface SweepOptions { steps?: number; closed?: boolean; twist?: number }
 export interface LoftOptions {
   steps?: number;
@@ -90,10 +95,8 @@ class GeometryEngine {
 
     // Orient to the sketch plane
     const planeName = typeof direction === 'string' ? direction : (direction ? null : plane);
-    if (planeName === 'Top' || planeName === 'XZ') {
-      geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-    } else if (planeName === 'Right' || planeName === 'YZ') {
-      geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+    if (planeName) {
+      this._orientToPlane(geometry, planeName);
     } else if (direction instanceof THREE.Vector3) {
       const defaultDir = new THREE.Vector3(0, 0, 1);
       const dir = direction.clone().normalize();
@@ -115,10 +118,20 @@ class GeometryEngine {
    * @param {Object} options - { segments, offset }
    * @returns {THREE.BufferGeometry}
    */
+  /** Map sketch coordinates (x, y, normal z) of a sketch plane to world coordinates. */
+  _orientToPlane(geometry: THREE.BufferGeometry, plane: PlaneName): void {
+    if (plane === 'Top' || plane === 'XZ') {
+      geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+    } else if (plane === 'Right' || plane === 'YZ') {
+      geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+    }
+  }
+
   /**
-   * Revolve a profile about the sketch Y axis (sketch X = radius), then align
-   * the Y axis with `axis`. Partial revolves are capped, so the result is
-   * always a closed, outward-facing solid.
+   * Revolve a profile about the sketch Y axis (sketch X = radius), right-handed,
+   * starting at the sketch itself, then align the Y axis with `axis` (or orient
+   * the result to `options.plane`). Partial revolves are capped, so the result
+   * is always a closed, outward-facing solid.
    */
   revolveProfile(shape: THREE.Shape, axis: THREE.Vector3 | null = null, angle = Math.PI * 2, options: RevolveOptions = {}): THREE.BufferGeometry {
     const { segments = 64, offset = 0 } = options;
@@ -139,7 +152,12 @@ class GeometryEngine {
       lathe.dispose();
     }
 
-    if (axis) {
+    // LatheGeometry starts at +Z (angle 0); the profile itself lies along +X
+    geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+
+    if (options.plane) {
+      this._orientToPlane(geometry, options.plane);
+    } else if (axis) {
       const defaultAxis = new THREE.Vector3(0, 1, 0);
       const targetAxis = axis.clone().normalize();
       if (targetAxis.distanceTo(defaultAxis) > EPSILON) {
