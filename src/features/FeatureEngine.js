@@ -1,6 +1,6 @@
 // CasiWorks Pro - Parametric Feature Rebuild Engine (Full Dependency Graph & Rollback)
 import * as THREE from 'three';
-import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
+import { FEATURE_TYPES } from '../utils/constants.ts';
 import { geometryEngine } from '../kernel/GeometryEngine.ts';
 
 export class FeatureEngine {
@@ -277,22 +277,23 @@ export class FeatureEngine {
       : this.geometryEngine.booleanUnion(currentBody, lofted);
   }
 
+  // Fillet, chamfer and shell need edge/face topology that the triangle-mesh
+  // kernel does not have. Rather than silently doing nothing (fillet/chamfer)
+  // or producing a wrong solid (shell), they report a rebuild warning and leave
+  // the model unchanged until the exact kernel lands (ROADMAP Phase 2).
   _processFillet(feature, currentBody) {
     if (!currentBody) return currentBody;
-    const radius = feature.radius ?? 2;
-    return this.geometryEngine.applyFillet(currentBody, [], radius);
+    throw new Error('Fillet not applied: rounding edges needs the exact geometry kernel (roadmap 2.6)');
   }
 
   _processChamfer(feature, currentBody) {
     if (!currentBody) return currentBody;
-    const dist = feature.distance ?? feature.radius ?? 2;
-    return this.geometryEngine.applyChamfer(currentBody, [], dist);
+    throw new Error('Chamfer not applied: bevelling edges needs the exact geometry kernel (roadmap 2.6)');
   }
 
   _processShell(feature, currentBody) {
     if (!currentBody) return currentBody;
-    const thickness = feature.thickness ?? 2;
-    return this.geometryEngine.applyShell(currentBody, thickness);
+    throw new Error('Shell not applied: hollowing a solid needs the exact geometry kernel (roadmap Phase 2)');
   }
 
   _processHole(feature, currentBody) {

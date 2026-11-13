@@ -174,14 +174,36 @@ test('Features: loft and sweep report missing input instead of inventing geometr
   assert.match(sweep.errors[0].error, /Sweep needs a path/);
 });
 
-test('Examples: all built-in models rebuild without errors; hex bolt matches its exact volume', () => {
+const NOT_APPLIED = /not applied: .* needs the exact geometry kernel/;
+
+test('Fillet, chamfer and shell report a warning and leave the model unchanged', () => {
+  const base = [
+    { id: 's', name: 'S', type: 'sketch', sketchId: 'k', plane: 'Front' },
+    { id: 'e', name: 'Boss', type: 'extrude_boss', sketchId: 'k', depth: 20 },
+  ];
+  const sketch = { k: rect(20, 20) as never[] };
+  for (const finish of [
+    { id: 'f', name: 'Fillet1', type: 'fillet', radius: 2 },
+    { id: 'c', name: 'Chamfer1', type: 'chamfer', distance: 2 },
+    { id: 'h', name: 'Shell1', type: 'shell', thickness: 2 },
+  ]) {
+    const result = featureEngine.rebuild([...base, finish], sketch);
+    assert.equal(result.errors.length, 1, finish.type);
+    assert.equal(result.errors[0].featureId, finish.id);
+    assert.match(result.errors[0].error, NOT_APPLIED);
+    near(signedVolume(result.bodies[0]), 8000, 1e-9, `${finish.type} leaves the body unchanged`);
+  }
+});
+
+test('Examples: all built-in models rebuild (only "not applied" warnings); hex bolt matches its exact volume', () => {
   const realWarn = console.warn;
   console.warn = () => {};
   try {
     for (const ex of CAD_EXAMPLES) {
       useCADStore.getState().loadExampleModel(ex.create());
       const result = rebuildModel(useCADStore);
-      assert.equal(result.errors.length, 0, `${ex.id}: ${JSON.stringify(result.errors)}`);
+      const unexpected = result.errors.filter(e => !NOT_APPLIED.test(e.error));
+      assert.equal(unexpected.length, 0, `${ex.id}: ${JSON.stringify(unexpected)}`);
       assert.equal(result.bodyCount, 1, `${ex.id} has a body`);
       if (ex.id === 'hex_bolt') {
         // Hexagonal head (circumradius 13, 8 thick) ∪ shank (r 6, 50 long), both from z = 0

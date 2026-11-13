@@ -20,8 +20,8 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 |------|-------|
 | UI shell | Ribbon, feature tree with rollback, property panel, 3D viewport, dialogs |
 | Geometry | **Triangle-mesh kernel** (BSP CSG on polygons). Exact B-Rep classes exist in `kernel/BRep.js` but the live model does not use them |
-| Fillet / chamfer | **Have no effect** on modelled bodies (the mesh kernel cannot round or bevel edges); needs Phase 2 |
-| Shell | Approximate: inner walls are not joined, so volume is wrong (e.g. 1600 vs 3904 mm³ for a 20 mm cube, 2 mm wall) |
+| Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); needs Phase 2 |
+| Display | Boolean cuts leave many thin triangles, so edge display shows stray fan lines around holes; resolved by the exact kernel |
 | STEP / IGES export | Faceted (triangles), not exact surfaces |
 | Sketcher | Lines, rectangles, circles, points; constraint solver exists but has little UI |
 | Assemblies | Primitive shapes only (box, cylinder…), not real part documents |

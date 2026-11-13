@@ -145,8 +145,14 @@ export interface FeaturesAPI {
   extrude(spec: ExtrudeSpec): string;
   /** Revolve a sketch. Returns the new feature id. */
   revolve(spec: RevolveSpec): string;
+  /**
+   * Add a fillet feature. Not applied yet: the rebuild reports a warning and the
+   * model is unchanged until the exact geometry kernel lands (roadmap 2.6).
+   */
   fillet(spec: FilletSpec): string;
+  /** Add a chamfer feature. Not applied yet (see fillet). */
   chamfer(spec: ChamferSpec): string;
+  /** Add a shell feature. Not applied yet: needs the exact geometry kernel (roadmap Phase 2). */
   shell(spec: ShellSpec): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
