@@ -13,7 +13,7 @@ export const PROJECTION_VIEWS = {
   BOTTOM: 'bottom',
   BACK: 'back',
   ISOMETRIC: 'isometric',
-};
+} as const;
 
 export const LINE_TYPES = {
   VISIBLE: 'visible',     // Solid thick line (0.5mm)
@@ -21,7 +21,7 @@ export const LINE_TYPES = {
   CENTER: 'center',       // Long-short dash (0.25mm)
   DIMENSION: 'dimension', // Thin solid line (0.25mm)
   BORDER: 'border',       // Border thick line (0.7mm)
-};
+} as const;
 
 export const GDT_SYMBOLS = {
   FLATNESS: { symbol: '⏥', name: 'Flatness' },
@@ -45,13 +45,93 @@ export const SHEET_SIZES = {
   A4_PORTRAIT: { width: 210, height: 297, name: 'A4 Portrait (210 x 297 mm)' },
   A3_LANDSCAPE: { width: 420, height: 297, name: 'A3 Landscape (420 x 297 mm)' },
   ANSI_B: { width: 431.8, height: 279.4, name: 'ANSI B (17 x 11 in)' },
-};
+} as const;
+
+export type ProjectionView = (typeof PROJECTION_VIEWS)[keyof typeof PROJECTION_VIEWS];
+export type LineType = (typeof LINE_TYPES)[keyof typeof LINE_TYPES];
+export interface SheetSize { width: number; height: number; name: string }
+
+export interface Point2D { x: number; y: number }
+export interface DrawingLine { p1: Point2D; p2: Point2D; type?: LineType; length?: number }
+export interface ViewBounds { minX: number; maxX: number; minY: number; maxY: number; width?: number; height?: number }
+
+/** A projected view in model units (u right, v up). */
+export interface ProjectedView {
+  visible: DrawingLine[];
+  hidden: DrawingLine[];
+  bounds: Required<ViewBounds>;
+  view: string;
+}
+
+/** A view placed on the sheet (sheet millimetres). */
+export interface SheetView {
+  label: string;
+  view: string;
+  centerX: number;
+  centerY: number;
+  scale: number;
+  visible: DrawingLine[];
+  hidden: DrawingLine[];
+  bounds: ViewBounds;
+}
+
+export interface LinearDimension {
+  type: 'linear';
+  dimLine: { p1: Point2D; p2: Point2D };
+  extLine1: { p1: Point2D; p2: Point2D };
+  extLine2: { p1: Point2D; p2: Point2D };
+  textPos: Point2D;
+  text: string;
+}
+
+export interface FeatureControlFrame {
+  type: 'gdt_fcf';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  characteristic: string;
+  tolerance: string;
+  datums: string[];
+  compartments: Array<{ label: string; width: number }>;
+}
+
+export interface DatumSymbol { type: 'gdt_datum'; x: number; y: number; letter: string; triangleSize: number; boxWidth: number; boxHeight: number }
+
+export interface TitleBlock {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  partNumber: string;
+  material: string;
+  scaleText: string;
+  date: string;
+  revision: string;
+}
+
+export interface SheetData {
+  sheetSize: SheetSize;
+  scale: number;
+  views: SheetView[];
+  dimensions: LinearDimension[];
+  gdtFrames: Array<FeatureControlFrame | DatumSymbol>;
+  border?: { x: number; y: number; width: number; height: number; innerMargin: number };
+  titleBlock?: TitleBlock;
+}
+
+export interface SheetOptions { sheetSize?: SheetSize; enableHLR?: boolean; title?: string; partNumber?: string; material?: string }
+export interface ProjectOptions { enableHLR?: boolean; creaseAngleDeg?: number }
+
+interface Edge3 { p1: THREE.Vector3; p2: THREE.Vector3; isSilhouette?: boolean }
+interface CamTriangle { p1: THREE.Vector3; p2: THREE.Vector3; p3: THREE.Vector3; minX: number; maxX: number; minY: number; maxY: number }
 
 /**
  * Robust XML string escaping for SVG export
  * Prevents XML parsing errors from unescaped &, <, >, ", '
  */
-export function escapeXml(str) {
+export function escapeXml(str: unknown): string {
   if (str === null || str === undefined) return '';
   return String(str)
     .replace(/&/g, '&amp;')
@@ -62,6 +142,8 @@ export function escapeXml(str) {
 }
 
 export class DrawingEngine {
+  sheet: { size: SheetSize; scale: number; views: SheetView[]; dimensions: LinearDimension[]; gdtFrames: unknown[]; centerlines: unknown[]; titleBlock: Record<string, string> };
+
   constructor() {
     this.sheet = {
       size: SHEET_SIZES.A4_LANDSCAPE,
@@ -89,7 +171,7 @@ export class DrawingEngine {
    * @param {Object} options - { enableHLR: true, creaseAngleDeg: 25 }
    * @returns {Object} { visible: LineSegment[], hidden: LineSegment[], bounds: { minX, maxX, minY, maxY } }
    */
-  projectGeometry(geometry, view = PROJECTION_VIEWS.FRONT, options = {}) {
+  projectGeometry(geometry: THREE.BufferGeometry | null | undefined, view: string = PROJECTION_VIEWS.FRONT, options: ProjectOptions = {}): ProjectedView {
     if (!geometry) {
       return { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
     }
@@ -149,7 +231,7 @@ export class DrawingEngine {
       const numSamples = 4;
       const isVisible = this._testEdgeVisibility(p1Cam, p2Cam, projectedTriangles, numSamples);
 
-      const segment = {
+      const segment: DrawingLine = {
         p1: { x: p1Cam.x, y: p1Cam.y },
         p2: { x: p2Cam.x, y: p2Cam.y },
         length: Math.hypot(p2Cam.x - p1Cam.x, p2Cam.y - p1Cam.y),
@@ -185,11 +267,11 @@ export class DrawingEngine {
    * - Boundary edges of open meshes
    * - View-dependent silhouettes on curved surfaces (cylinders, spheres, rounded features)
    */
-  _extractFeatureEdges(geometry, creaseAngleDeg, projMat = null) {
+  _extractFeatureEdges(geometry: THREE.BufferGeometry, creaseAngleDeg: number, projMat: THREE.Matrix4 | null = null): Edge3[] {
     const edges = [];
     const edgeKeySet = new Set();
 
-    const makeEdgeKey = (p1, p2) => {
+    const makeEdgeKey = (p1: THREE.Vector3, p2: THREE.Vector3) => {
       const k1 = `${p1.x.toFixed(2)}_${p1.y.toFixed(2)}_${p1.z.toFixed(2)}`;
       const k2 = `${p2.x.toFixed(2)}_${p2.y.toFixed(2)}_${p2.z.toFixed(2)}`;
       return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
@@ -246,7 +328,7 @@ export class DrawingEngine {
   /**
    * Extract view-dependent silhouette edges where adjacent face normals cross the horizon
    */
-  _extractSilhouetteEdges(geometry, projMat) {
+  _extractSilhouetteEdges(geometry: THREE.BufferGeometry, projMat: THREE.Matrix4): Edge3[] {
     const pos = geometry.getAttribute('position');
     if (!pos || pos.count === 0) return [];
 
@@ -254,7 +336,7 @@ export class DrawingEngine {
     const numTris = index ? index.count / 3 : pos.count / 3;
     const edgeMap = new Map();
 
-    const getVertex = (idx) => new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+    const getVertex = (idx: number) => new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
 
     for (let t = 0; t < numTris; t++) {
       let i1, i2, i3;
@@ -280,7 +362,7 @@ export class DrawingEngine {
       const area2D = 0.5 * ((p2Cam.x - p1Cam.x) * (p3Cam.y - p1Cam.y) - (p3Cam.x - p1Cam.x) * (p2Cam.y - p1Cam.y));
       const isFront = area2D > 1e-6;
 
-      const triEdges = [
+      const triEdges: Array<[number, number, THREE.Vector3, THREE.Vector3]> = [
         [i1, i2, p1, p2],
         [i2, i3, p2, p3],
         [i3, i1, p3, p1],
@@ -317,9 +399,9 @@ export class DrawingEngine {
   /**
    * Create standard engineering projection matrix for chosen view orientation
    */
-  _getProjectionMatrix(view) {
+  _getProjectionMatrix(view: string): { projMat: THREE.Matrix4; viewDir: THREE.Vector3 } {
     const mat = new THREE.Matrix4();
-    let viewDir = new THREE.Vector3(0, 0, 1);
+    const viewDir = new THREE.Vector3(0, 0, 1);
 
     switch (view) {
       case PROJECTION_VIEWS.TOP:
@@ -406,7 +488,7 @@ export class DrawingEngine {
   /**
    * Project all triangles of geometry into camera coordinates for occlusion
    */
-  _projectTriangles(geometry, projMat) {
+  _projectTriangles(geometry: THREE.BufferGeometry, projMat: THREE.Matrix4): CamTriangle[] {
     const pos = geometry.getAttribute('position');
     const index = geometry.getIndex();
     const triangles = [];
@@ -449,7 +531,7 @@ export class DrawingEngine {
   /**
    * Sample edge points and test for occlusion by front-facing triangles
    */
-  _testEdgeVisibility(p1Cam, p2Cam, triangles, numSamples = 4) {
+  _testEdgeVisibility(p1Cam: THREE.Vector3, p2Cam: THREE.Vector3, triangles: CamTriangle[], numSamples = 4): boolean {
     const eps = 1e-2;
     let occludedSamples = 0;
 
@@ -515,7 +597,7 @@ export class DrawingEngine {
    * Generates standard 4-view orthographic drawing (Top, Front, Right, Isometric)
    * arranged neatly on an engineering sheet.
    */
-  createStandardSheet(geometry, sheetOptions = {}) {
+  createStandardSheet(geometry: THREE.BufferGeometry, sheetOptions: SheetOptions = {}): SheetData {
     const sheetSize = sheetOptions.sheetSize || SHEET_SIZES.A4_LANDSCAPE;
     const enableHLR = sheetOptions.enableHLR !== undefined ? sheetOptions.enableHLR : true;
 
@@ -548,7 +630,7 @@ export class DrawingEngine {
     const row1Y = margin + availHeight * 0.30;
     const row2Y = margin + availHeight * 0.70;
 
-    const layoutView = (viewData, centerX, centerY, label) => {
+    const layoutView = (viewData: ProjectedView, centerX: number, centerY: number, label: string): SheetView => {
       let offsetX = centerX - ((viewData.bounds.minX + viewData.bounds.maxX) / 2) * scale;
       let offsetY = centerY - ((viewData.bounds.minY + viewData.bounds.maxY) / 2) * scale;
 
@@ -560,7 +642,7 @@ export class DrawingEngine {
         offsetY = margin - viewData.bounds.minY * scale;
       }
 
-      const transformLine = (line) => ({
+      const transformLine = (line: DrawingLine): DrawingLine => ({
         p1: { x: Math.max(0, line.p1.x * scale + offsetX), y: Math.max(0, line.p1.y * scale + offsetY) },
         p2: { x: Math.max(0, line.p2.x * scale + offsetX), y: Math.max(0, line.p2.y * scale + offsetY) },
         type: line.type,
@@ -638,7 +720,7 @@ export class DrawingEngine {
   /**
    * Helper: generate standard linear dimensions with witness/extension lines and arrows
    */
-  _generateStandardDimensions(frontView, topView, scale) {
+  _generateStandardDimensions(frontView: SheetView | undefined, topView: SheetView | undefined, scale: number): LinearDimension[] {
     const dims = [];
 
     if (frontView && frontView.bounds) {
@@ -684,7 +766,7 @@ export class DrawingEngine {
   /**
    * Create an ANSI / ISO linear dimension with extension lines, arrows, and formatted text
    */
-  createLinearDimension(p1, p2, options = {}) {
+  createLinearDimension(p1: Point2D, p2: Point2D, options: { offset?: number; orientation?: 'horizontal' | 'vertical' | 'aligned'; text?: string } = {}): LinearDimension {
     const offset = options.offset !== undefined ? options.offset : 10;
     const orientation = options.orientation || 'aligned';
     const text = options.text || `${Math.hypot(p2.x - p1.x, p2.y - p1.y).toFixed(1)}`;
@@ -730,7 +812,7 @@ export class DrawingEngine {
   /**
    * Create GD&T Feature Control Frame (ASME Y14.5 / ISO 1101)
    */
-  createFeatureControlFrame(origin, config) {
+  createFeatureControlFrame(origin: Point2D, config: { characteristic?: string; tolerance?: string; datums?: string[] }): FeatureControlFrame {
     const height = 10;
     const charWidth = 10;
     const tolWidth = 22;
@@ -759,7 +841,7 @@ export class DrawingEngine {
   /**
    * Create GD&T Datum Feature Symbol [ A ]
    */
-  createDatumSymbol(origin, datumLetter = 'A') {
+  createDatumSymbol(origin: Point2D, datumLetter = 'A'): DatumSymbol {
     return {
       type: 'gdt_datum',
       x: origin.x,
@@ -776,7 +858,7 @@ export class DrawingEngine {
    * @param {Object} sheetData - Data produced by createStandardSheet
    * @returns {string} SVG xml string
    */
-  exportSVG(sheetData) {
+  exportSVG(sheetData: SheetData | null | undefined): string {
     if (!sheetData) return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 297 210" width="297mm" height="210mm"></svg>';
     const { sheetSize, border, titleBlock, views, dimensions, gdtFrames } = sheetData;
     const w = Math.max(10, Number(sheetSize?.width) || 297);
@@ -891,7 +973,8 @@ export class DrawingEngine {
    * @param {Object} sheetData
    * @returns {string} DXF string
    */
-  exportDXF(sheetData) {
+  exportDXF(sheetData: SheetData | null | undefined): string {
+    if (!sheetData) throw new Error('No drawing sheet to export');
     const { views, dimensions } = sheetData;
     let dxf = '';
 

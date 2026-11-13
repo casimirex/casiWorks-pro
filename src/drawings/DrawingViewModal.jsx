@@ -1,7 +1,7 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Download, Eye, Layers, Settings2, FileText, Check } from 'lucide-react';
-import { drawingEngine, SHEET_SIZES } from './DrawingEngine.js';
+import { drawingEngine, SHEET_SIZES } from './DrawingEngine.ts';
 import { useCADStore } from '../store/cadStore.ts';
 
 export default function DrawingViewModal({ isOpen, onClose }) {

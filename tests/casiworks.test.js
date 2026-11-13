@@ -18,7 +18,7 @@ import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/Asse
 import { exportEngine } from '../src/kernel/ExportEngine.ts';
 import { importEngine } from '../src/kernel/ImportEngine.ts';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.ts';
-import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.js';
+import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.ts';
 
 // ============================================================================
