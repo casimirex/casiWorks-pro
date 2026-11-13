@@ -2,7 +2,7 @@
 // Used by the UI (App) and by the public API, so the model can be rebuilt
 // without React (scripts, tests, a future headless server).
 import type { BufferGeometry } from 'three';
-import { featureEngine } from './FeatureEngine.js';
+import { featureEngine } from './FeatureEngine.ts';
 import type { Feature, RebuildError, SketchEntityMap } from '../types/cad.ts';
 
 /** A solid body produced by a rebuild. */

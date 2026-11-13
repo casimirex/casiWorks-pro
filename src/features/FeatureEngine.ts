@@ -1,45 +1,78 @@
-// CasiWorks Pro - Parametric Feature Rebuild Engine (Full Dependency Graph & Rollback)
+// CasiWorks Pro - Parametric feature rebuild engine (sequential evaluation with rollback)
 import * as THREE from 'three';
 import { FEATURE_TYPES } from '../utils/constants.ts';
 import { geometryEngine } from '../kernel/GeometryEngine.ts';
+import type { ProfileEntity } from '../kernel/GeometryEngine.ts';
+import type {
+  BooleanFeature, CircularPatternFeature, ExtrudeFeature, FeatureData, HoleFeature, LinearPatternFeature,
+  LoftFeature, MirrorFeature, RebuildError, RevolveFeature, SketchEntity, SketchEntityMap, SketchPlane, SweepFeature,
+} from '../types/cad.ts';
+
+type Geometry = THREE.BufferGeometry;
+/** The body being built; null until the first solid feature. */
+type Body = Geometry | null;
+
+/**
+ * Fields older saved models may carry (aliases of the current ones). They are
+ * still honoured so those files rebuild the same.
+ */
+interface LegacyFeatureFields {
+  entities?: SketchEntity[];
+  sketchId?: string;
+  sketchRef?: string;
+  distance?: number;
+  symmetric?: boolean;
+  thickness?: number;
+  plane?: SketchPlane;
+}
+type AnyFeature = FeatureData & LegacyFeatureFields;
+
+interface SketchData {
+  entities: SketchEntity[];
+  plane: SketchPlane;
+}
+
+export interface FeatureRebuildResult {
+  bodies: Geometry[];
+  errors: RebuildError[];
+}
 
 export class FeatureEngine {
-  constructor() {
-    this.geometryEngine = geometryEngine;
-    this.sketchCache = {};
-    this.featureGeometries = {};
-  }
+  geometryEngine = geometryEngine;
+  /** Sketches seen so far in the current rebuild, by sketch id. */
+  sketchCache: Record<string, SketchData> = {};
+  /** Tool geometry of each solid feature in the current rebuild, by feature id. */
+  featureGeometries: Record<string, Geometry> = {};
 
   /**
-   * Rebuild the entire parametric model from the feature tree
-   * @param {Array} features - Array of feature objects from the store
-   * @param {object} sketchEntities - Map of sketchId -> entities
-   * @param {number|null} rollbackIndex - If specified, only evaluate up to this index
-   * @returns {{ bodies: THREE.BufferGeometry[], errors: Array }}
+   * Rebuild the parametric model from the feature tree.
+   * @param features Features in tree order (store features, or authored ones without dependency links)
+   * @param sketchEntities Map of sketch id → entities
+   * @param rollbackIndex If ≥ 0, only features up to this index are evaluated
    */
-  rebuild(features, sketchEntities = {}, rollbackIndex = null) {
+  rebuild(features: FeatureData[], sketchEntities: SketchEntityMap = {}, rollbackIndex: number | null = null): FeatureRebuildResult {
     this.sketchCache = {};
     this.featureGeometries = {};
-    let currentBody = null;
-    const errors = [];
+    let currentBody: Body = null;
+    const errors: RebuildError[] = [];
+    const all = features as AnyFeature[];
     // Sketch ids whose sketch feature is suppressed; consumers of these must not build.
     const suppressedSketchIds = new Set(
-      features.filter(f => f.type === FEATURE_TYPES.SKETCH && f.suppressed && f.sketchId).map(f => f.sketchId)
+      all.filter(f => f.type === FEATURE_TYPES.SKETCH && f.suppressed && f.sketchId).map(f => f.sketchId)
     );
 
     const maxIdx = (rollbackIndex !== null && rollbackIndex !== undefined && rollbackIndex >= 0)
       ? rollbackIndex
-      : features.length - 1;
+      : all.length - 1;
 
-    // Evaluate features sequentially up to maxIdx
-    for (let i = 0; i <= maxIdx && i < features.length; i++) {
-      const feature = features[i];
+    for (let i = 0; i <= maxIdx && i < all.length; i++) {
+      const feature = all[i];
       if (feature.suppressed) continue;
 
       // Dependency check: if any parent is suppressed, skip this feature
       if (feature.parentIds && feature.parentIds.length > 0) {
         const parentSuppressed = feature.parentIds.some(pid => {
-          const pf = features.find(f => f.id === pid || f.sketchId === pid);
+          const pf = all.find(f => f.id === pid || f.sketchId === pid);
           return pf && pf.suppressed;
         });
         if (parentSuppressed) continue;
@@ -53,7 +86,7 @@ export class FeatureEngine {
         }
       } catch (err) {
         console.warn(`FeatureEngine: Error in "${feature.name}" (${feature.type}):`, err);
-        errors.push({ featureId: feature.id, featureName: feature.name, error: err.message });
+        errors.push({ featureId: feature.id, featureName: feature.name, error: err instanceof Error ? err.message : String(err) });
       }
     }
 
@@ -61,66 +94,49 @@ export class FeatureEngine {
     return { bodies: currentBody ? [currentBody] : [], errors };
   }
 
-  _processFeature(feature, currentBody, sketchEntities) {
+  _processFeature(feature: AnyFeature, currentBody: Body, sketchEntities: SketchEntityMap): Body {
     switch (feature.type) {
       case FEATURE_TYPES.SKETCH:
         return this._processSketch(feature, currentBody, sketchEntities);
-
       case FEATURE_TYPES.EXTRUDE_BOSS:
         return this._processExtrudeBoss(feature, currentBody, sketchEntities);
-
       case FEATURE_TYPES.EXTRUDE_CUT:
         return this._processExtrudeCut(feature, currentBody, sketchEntities);
-
       case FEATURE_TYPES.REVOLVE_BOSS:
         return this._processRevolveBoss(feature, currentBody, sketchEntities);
-
       case FEATURE_TYPES.REVOLVE_CUT:
         return this._processRevolveCut(feature, currentBody, sketchEntities);
-
       case FEATURE_TYPES.SWEEP_BOSS:
         return this._processSweep(feature, currentBody, sketchEntities, false);
-
       case FEATURE_TYPES.SWEEP_CUT:
         return this._processSweep(feature, currentBody, sketchEntities, true);
-
       case FEATURE_TYPES.LOFT_BOSS:
         return this._processLoft(feature, currentBody, sketchEntities, false);
-
       case FEATURE_TYPES.LOFT_CUT:
         return this._processLoft(feature, currentBody, sketchEntities, true);
-
       case FEATURE_TYPES.FILLET:
         return this._processFillet(feature, currentBody);
-
       case FEATURE_TYPES.CHAMFER:
         return this._processChamfer(feature, currentBody);
-
       case FEATURE_TYPES.SHELL:
         return this._processShell(feature, currentBody);
-
       case FEATURE_TYPES.HOLE:
         return this._processHole(feature, currentBody);
-
       case FEATURE_TYPES.LINEAR_PATTERN:
         return this._processLinearPattern(feature, currentBody);
-
       case FEATURE_TYPES.CIRCULAR_PATTERN:
         return this._processCircularPattern(feature, currentBody);
-
       case FEATURE_TYPES.MIRROR:
         return this._processMirror(feature, currentBody);
-
       case FEATURE_TYPES.BOOLEAN:
         return this._processBoolean(feature, currentBody);
-
       default:
         return currentBody;
     }
   }
 
-  _processSketch(feature, currentBody, sketchEntities) {
-    const entities = feature.entities || sketchEntities[feature.sketchId] || [];
+  _processSketch(feature: AnyFeature, currentBody: Body, sketchEntities: SketchEntityMap): Body {
+    const entities = feature.entities || (feature.sketchId ? sketchEntities[feature.sketchId] : undefined) || [];
     this.sketchCache[feature.sketchId || feature.id] = {
       entities,
       plane: feature.plane || 'Front',
@@ -128,7 +144,7 @@ export class FeatureEngine {
     return currentBody;
   }
 
-  _getSketchForFeature(feature, sketchEntities) {
+  _getSketchForFeature(feature: AnyFeature, sketchEntities: SketchEntityMap): SketchData | null {
     const sketchId = feature.sketchId || feature.sketchRef;
     if (sketchId && this.sketchCache[sketchId]) {
       return this.sketchCache[sketchId];
@@ -142,11 +158,10 @@ export class FeatureEngine {
     return null;
   }
 
-  _processExtrudeBoss(feature, currentBody, sketchEntities) {
+  /** The solid an extrude feature sweeps out, or null when its sketch is empty. */
+  _extrudeTool(feature: ExtrudeFeature & LegacyFeatureFields, sketchEntities: SketchEntityMap): Geometry | null {
     const sketchData = this._getSketchForFeature(feature, sketchEntities);
-    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) {
-      return currentBody;
-    }
+    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) return null;
 
     const depth = feature.depth ?? feature.distance ?? 25;
     const isMidplane = feature.direction === 'midplane' || feature.symmetric;
@@ -156,93 +171,64 @@ export class FeatureEngine {
     const flip = feature.flip || false;
 
     // Every closed region of the sketch (several circles = several bodies or holes)
-    const shape = this.geometryEngine.shapesFromSketchEntities(sketchData.entities, {
+    const shape = this.geometryEngine.shapesFromSketchEntities(sketchData.entities as ProfileEntity[], {
       thin: isThin,
-      wallThickness: wallThickness,
+      wallThickness,
     });
 
-    const extruded = this.geometryEngine.extrudeProfile(shape, depth, sketchData.plane, {
+    const tool = this.geometryEngine.extrudeProfile(shape, depth, sketchData.plane, {
       symmetric: isMidplane,
       endCondition: isThrough ? 'through' : (isMidplane ? 'midplane' : 'blind'),
-      flip: flip,
+      flip,
       plane: sketchData.plane,
     });
+    this.featureGeometries[feature.id] = tool;
+    return tool;
+  }
 
-    this.featureGeometries[feature.id] = extruded;
+  _processExtrudeBoss(feature: ExtrudeFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap): Body {
+    const extruded = this._extrudeTool(feature, sketchEntities);
+    if (!extruded) return currentBody;
     return this.geometryEngine.booleanUnion(currentBody, extruded);
   }
 
-  _processExtrudeCut(feature, currentBody, sketchEntities) {
+  _processExtrudeCut(feature: ExtrudeFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap): Body {
     if (!currentBody) return currentBody;
-
-    const sketchData = this._getSketchForFeature(feature, sketchEntities);
-    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) {
-      return currentBody;
-    }
-
-    const depth = feature.depth ?? feature.distance ?? 25;
-    const isMidplane = feature.direction === 'midplane' || feature.symmetric;
-    const isThrough = feature.direction === 'throughall';
-    const isThin = feature.thin || false;
-    const wallThickness = feature.wallThickness || feature.thickness || 2;
-    const flip = feature.flip || false;
-
-    // Every closed region of the sketch (several circles = several bodies or holes)
-    const shape = this.geometryEngine.shapesFromSketchEntities(sketchData.entities, {
-      thin: isThin,
-      wallThickness: wallThickness,
-    });
-
-    const cutGeom = this.geometryEngine.extrudeProfile(shape, depth, sketchData.plane, {
-      symmetric: isMidplane,
-      endCondition: isThrough ? 'through' : (isMidplane ? 'midplane' : 'blind'),
-      flip: flip,
-      plane: sketchData.plane,
-    });
-
-    this.featureGeometries[feature.id] = cutGeom;
+    const cutGeom = this._extrudeTool(feature, sketchEntities);
+    if (!cutGeom) return currentBody;
     return this.geometryEngine.booleanSubtract(currentBody, cutGeom);
   }
 
-  _processRevolveBoss(feature, currentBody, sketchEntities) {
+  /** The solid a revolve feature sweeps out, or null when its sketch is empty. */
+  _revolveTool(feature: RevolveFeature & LegacyFeatureFields, sketchEntities: SketchEntityMap): Geometry | null {
     const sketchData = this._getSketchForFeature(feature, sketchEntities);
-    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) {
-      return currentBody;
-    }
+    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) return null;
 
-    const angleDeg = feature.angle ?? 360;
-    const angleRad = (angleDeg * Math.PI) / 180;
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities);
-
+    const angleRad = ((feature.angle ?? 360) * Math.PI) / 180;
+    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities as ProfileEntity[]);
     const revolved = this.geometryEngine.revolveProfile(shape, null, angleRad);
-
     this.featureGeometries[feature.id] = revolved;
+    return revolved;
+  }
+
+  _processRevolveBoss(feature: RevolveFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap): Body {
+    const revolved = this._revolveTool(feature, sketchEntities);
+    if (!revolved) return currentBody;
     return this.geometryEngine.booleanUnion(currentBody, revolved);
   }
 
-  _processRevolveCut(feature, currentBody, sketchEntities) {
+  _processRevolveCut(feature: RevolveFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap): Body {
     if (!currentBody) return currentBody;
-
-    const sketchData = this._getSketchForFeature(feature, sketchEntities);
-    if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) {
-      return currentBody;
-    }
-
-    const angleDeg = feature.angle ?? 360;
-    const angleRad = (angleDeg * Math.PI) / 180;
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities);
-
-    const revolved = this.geometryEngine.revolveProfile(shape, null, angleRad);
-
-    this.featureGeometries[feature.id] = revolved;
+    const revolved = this._revolveTool(feature, sketchEntities);
+    if (!revolved) return currentBody;
     return this.geometryEngine.booleanSubtract(currentBody, revolved);
   }
 
-  _processSweep(feature, currentBody, sketchEntities, isCut = false) {
+  _processSweep(feature: SweepFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap, isCut = false): Body {
     const sketchData = this._getSketchForFeature(feature, sketchEntities);
     if (!sketchData) return currentBody;
 
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities);
+    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities as ProfileEntity[]);
     if (!Array.isArray(feature.pathPoints) || feature.pathPoints.length < 2) {
       throw new Error('Sweep needs a path with at least 2 points');
     }
@@ -257,12 +243,12 @@ export class FeatureEngine {
       : this.geometryEngine.booleanUnion(currentBody, swept);
   }
 
-  _processLoft(feature, currentBody, sketchEntities, isCut = false) {
+  _processLoft(feature: LoftFeature & LegacyFeatureFields, currentBody: Body, _sketchEntities: SketchEntityMap, isCut = false): Body {
     const profiles = Array.isArray(feature.profiles) ? feature.profiles : [];
-    const shapes = [];
+    const shapes: THREE.Shape[] = [];
     for (const pId of profiles) {
       const data = this.sketchCache[pId];
-      if (data) shapes.push(this.geometryEngine.shapeFromSketchEntities(data.entities));
+      if (data) shapes.push(this.geometryEngine.shapeFromSketchEntities(data.entities as ProfileEntity[]));
     }
     // Never substitute made-up profiles: report the problem as a rebuild error
     if (shapes.length < 2) {
@@ -281,22 +267,22 @@ export class FeatureEngine {
   // kernel does not have. Rather than silently doing nothing (fillet/chamfer)
   // or producing a wrong solid (shell), they report a rebuild warning and leave
   // the model unchanged until the exact kernel lands (ROADMAP Phase 2).
-  _processFillet(feature, currentBody) {
+  _processFillet(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     throw new Error('Fillet not applied: rounding edges needs the exact geometry kernel (roadmap 2.6)');
   }
 
-  _processChamfer(feature, currentBody) {
+  _processChamfer(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     throw new Error('Chamfer not applied: bevelling edges needs the exact geometry kernel (roadmap 2.6)');
   }
 
-  _processShell(feature, currentBody) {
+  _processShell(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     throw new Error('Shell not applied: hollowing a solid needs the exact geometry kernel (roadmap Phase 2)');
   }
 
-  _processHole(feature, currentBody) {
+  _processHole(feature: HoleFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     const diameter = feature.diameter ?? 10;
     const depth = feature.depth ?? 30;
@@ -305,7 +291,7 @@ export class FeatureEngine {
     return this.geometryEngine.createHole(currentBody, pos, dir, diameter, depth, feature.holeType || 'simple');
   }
 
-  _processLinearPattern(feature, currentBody) {
+  _processLinearPattern(feature: LinearPatternFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     const dir = new THREE.Vector3(feature.directionX || 1, feature.directionY || 0, feature.directionZ || 0);
     const count = feature.count || 3;
@@ -313,7 +299,7 @@ export class FeatureEngine {
     return this.geometryEngine.linearPattern(currentBody, dir, count, spacing);
   }
 
-  _processCircularPattern(feature, currentBody) {
+  _processCircularPattern(feature: CircularPatternFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     const axis = new THREE.Vector3(feature.axisX || 0, feature.axisY || 1, feature.axisZ || 0);
     const count = feature.count || 4;
@@ -321,13 +307,13 @@ export class FeatureEngine {
     return this.geometryEngine.circularPattern(currentBody, axis, count, angle);
   }
 
-  _processMirror(feature, currentBody) {
+  _processMirror(feature: MirrorFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     const plane = feature.plane || 'Right';
     return this.geometryEngine.mirrorGeometry(currentBody, plane);
   }
 
-  _processBoolean(feature, currentBody) {
+  _processBoolean(feature: BooleanFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
     const tool = feature.toolFeatureId ? this.featureGeometries[feature.toolFeatureId] : null;
     if (!tool) return currentBody;

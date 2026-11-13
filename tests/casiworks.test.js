@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.ts';
-import { featureEngine } from '../src/features/FeatureEngine.js';
+import { featureEngine } from '../src/features/FeatureEngine.ts';
 import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.ts';
 import { exportEngine } from '../src/kernel/ExportEngine.ts';
 import { importEngine } from '../src/kernel/ImportEngine.ts';

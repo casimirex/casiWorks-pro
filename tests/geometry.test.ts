@@ -5,7 +5,8 @@ import * as THREE from 'three';
 
 import { geometryEngine as G } from '../src/kernel/GeometryEngine.ts';
 import type { ProfileEntity } from '../src/kernel/GeometryEngine.ts';
-import { featureEngine } from '../src/features/FeatureEngine.js';
+import { featureEngine } from '../src/features/FeatureEngine.ts';
+import type { FeatureData } from '../src/types/cad.ts';
 import { CAD_EXAMPLES } from '../src/utils/examples.ts';
 import { useCADStore } from '../src/store/cadStore.ts';
 import { rebuildModel } from '../src/features/rebuildModel.ts';
@@ -177,16 +178,17 @@ test('Features: loft and sweep report missing input instead of inventing geometr
 const NOT_APPLIED = /not applied: .* needs the exact geometry kernel/;
 
 test('Fillet, chamfer and shell report a warning and leave the model unchanged', () => {
-  const base = [
+  const base: FeatureData[] = [
     { id: 's', name: 'S', type: 'sketch', sketchId: 'k', plane: 'Front' },
     { id: 'e', name: 'Boss', type: 'extrude_boss', sketchId: 'k', depth: 20 },
   ];
   const sketch = { k: rect(20, 20) as never[] };
-  for (const finish of [
+  const finishes: FeatureData[] = [
     { id: 'f', name: 'Fillet1', type: 'fillet', radius: 2 },
     { id: 'c', name: 'Chamfer1', type: 'chamfer', distance: 2 },
     { id: 'h', name: 'Shell1', type: 'shell', thickness: 2 },
-  ]) {
+  ];
+  for (const finish of finishes) {
     const result = featureEngine.rebuild([...base, finish], sketch);
     assert.equal(result.errors.length, 1, finish.type);
     assert.equal(result.errors[0].featureId, finish.id);
