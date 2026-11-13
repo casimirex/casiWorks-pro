@@ -67,11 +67,11 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.5b** FEA engine (plus a real quadratic Tet10 element)
   - [x] **T.5c** Drawing engine (plus real edge extraction and hidden-line removal, upright views, correct isometric, valid DXF)
   - [x] **T.5d** Feature engine (plus hole depth/entry, pattern vectors, revolve plane fixes)
-- [ ] **T.6** Viewport and UI components → `.tsx`
+- [x] **T.6** Viewport and UI components → `.tsx`
   - [x] **T.6a** Viewport (plus Right-plane sketch mirroring, all entity types drawn, sketch over the model, no selection while sketching, working Ortho toggle, edge display without boolean fan lines)
   - [x] **T.6b** Common components and dialogs (plus spin-button hold, material dialog sync, DXF exports the model, IGES in the export dialog)
   - [x] **T.6c** Feature tree, property panel, command manager (plus sketches on any plane, per-type feature parameters, hole/pattern/mirror inputs, tree filter fix)
-  - [ ] **T.6d** Drawing modal, results viewer, App, entry point
+  - [x] **T.6d** Drawing modal, results viewer, App, entry point (plus Poisson's ratio passed to FEA, whole drawing sheet visible, stress tensor at the peak element)
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 
 ## Phase 1 — Command layer and public API v1
@@ -128,7 +128,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 - [ ] **5.1** Views generated from exact geometry (crisp edges, true arcs)
 - [ ] **5.2** Associative dimensions that update with the model
 - [ ] **5.3** BOM tables and balloons from assemblies
-- [ ] **5.4** Sheet formats and title block editor (known: the GD&T frame overlaps the front view and the right view can run under the title block)
+- [ ] **5.4** Sheet formats and title block editor (known: the GD&T frame overlaps the front view, the right view can run under the title block, and the front-view width dimension runs through the view label)
 - [ ] **5.5** PDF and DWG/DXF export
 
 ## Phase 6 — Simulation

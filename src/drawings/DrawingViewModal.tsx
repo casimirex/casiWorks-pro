@@ -308,13 +308,15 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
       }}>
         {sheetData ? (
           <div
+            className="drawing-sheet-view"
             style={{
               background: '#ffffff',
               boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               borderRadius: 2,
               padding: 0,
-              maxWidth: '92vw',
-              maxHeight: '82vh',
+              // Fit the whole sheet: as wide as the screen allows, or as tall, keeping its proportions
+              aspectRatio: `${sheetData.sheetSize.width} / ${sheetData.sheetSize.height}`,
+              width: `min(92vw, calc((100vh - 120px) * ${sheetData.sheetSize.width / sheetData.sheetSize.height}))`,
               overflow: 'hidden',
               display: 'flex',
             }}

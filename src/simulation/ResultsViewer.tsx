@@ -19,7 +19,11 @@ export default function ResultsViewer() {
   const [showTensors, setShowTensors] = useState(false);
   const [drawingOpen, setDrawingOpen] = useState(false);
 
-  const firstElement = results?.solidResult?.elementStresses?.[0]?.stress ? results.solidResult.elementStresses[0] : null;
+  // Stress state of the most-stressed element (by von Mises at its centre)
+  const elementStresses = results?.solidResult?.elementStresses ?? [];
+  const peakIndex = elementStresses.reduce((best, e, i) => (e?.stress && e.vonMises > (elementStresses[best]?.vonMises ?? -1) ? i : best), -1);
+  const peak = peakIndex >= 0 ? elementStresses[peakIndex] : null;
+  const mpa = (pa: number | undefined) => ((pa || 0) / 1e6).toFixed(2);
 
   const handleRunFEA = () => {
     if (bodies.length === 0 || !bodies[0]?.geometry) {
@@ -230,11 +234,11 @@ export default function ResultsViewer() {
                   justifyContent: 'space-between',
                 }}
               >
-                <span>3D Stress Tensors (Cauchy)</span>
+                <span>Stress tensor at peak element</span>
                 {showTensors ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
 
-              {showTensors && firstElement && (
+              {showTensors && peak && (
                 <div style={{
                   background: '#18181b',
                   padding: 6,
@@ -246,15 +250,12 @@ export default function ResultsViewer() {
                   flexDirection: 'column',
                   gap: 2,
                 }}>
-                  <div>σ_xx: {((firstElement.stress[0] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>σ_yy: {((firstElement.stress[1] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>σ_zz: {((firstElement.stress[2] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>τ_xy: {((firstElement.stress[3] || 0) / 1e6).toFixed(2)} MPa</div>
-                  {firstElement.principalStresses && (
+                  <div style={{ color: '#aaa' }}>Element {peakIndex} (centre), von Mises {mpa(peak.vonMises)} MPa</div>
+                  <div>σ_xx: {mpa(peak.stress[0])}  σ_yy: {mpa(peak.stress[1])}  σ_zz: {mpa(peak.stress[2])} MPa</div>
+                  <div>τ_xy: {mpa(peak.stress[3])}  τ_yz: {mpa(peak.stress[4])}  τ_zx: {mpa(peak.stress[5])} MPa</div>
+                  {peak.principalStresses && (
                     <div style={{ color: '#4fc3f7', marginTop: 2 }}>
-                      σ_1: {((firstElement.principalStresses[0] || 0) / 1e6).toFixed(2)} |
-                      σ_2: {((firstElement.principalStresses[1] || 0) / 1e6).toFixed(2)} |
-                      σ_3: {((firstElement.principalStresses[2] || 0) / 1e6).toFixed(2)}
+                      σ_1: {mpa(peak.principalStresses[0])} | σ_2: {mpa(peak.principalStresses[1])} | σ_3: {mpa(peak.principalStresses[2])} MPa
                     </div>
                   )}
                 </div>
