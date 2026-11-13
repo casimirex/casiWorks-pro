@@ -20,7 +20,8 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 |------|-------|
 | UI shell | Ribbon, feature tree with rollback, property panel, 3D viewport, dialogs |
 | Geometry | **Triangle-mesh kernel** (BSP CSG on polygons). Exact B-Rep classes exist in `kernel/BRep.js` but the live model does not use them |
-| Fillet / chamfer | Applied to the whole body, not to selected edges |
+| Fillet / chamfer | **Have no effect** on modelled bodies (the mesh kernel cannot round or bevel edges); needs Phase 2 |
+| Shell | Approximate: inner walls are not joined, so volume is wrong (e.g. 1600 vs 3904 mm³ for a 20 mm cube, 2 mm wall) |
 | STEP / IGES export | Faceted (triangles), not exact surfaces |
 | Sketcher | Lines, rectangles, circles, points; constraint solver exists but has little UI |
 | Assemblies | Primitive shapes only (box, cylinder…), not real part documents |
@@ -59,7 +60,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [x] **T.3** Store and rebuild → `.ts`
 - [ ] **T.4** Kernel → `.ts`
   - [x] **T.4a** Sketch engine and constraint solver
-  - [ ] **T.4b** Geometry engine
+  - [x] **T.4b** Geometry engine (plus profile builder and CSG modules; geometry fixes with tests)
   - [ ] **T.4c** B-Rep and topology
   - [ ] **T.4d** Import / export and material library
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`

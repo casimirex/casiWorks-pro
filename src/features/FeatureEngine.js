@@ -155,7 +155,8 @@ export class FeatureEngine {
     const wallThickness = feature.wallThickness || feature.thickness || 2;
     const flip = feature.flip || false;
 
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities, {
+    // Every closed region of the sketch (several circles = several bodies or holes)
+    const shape = this.geometryEngine.shapesFromSketchEntities(sketchData.entities, {
       thin: isThin,
       wallThickness: wallThickness,
     });
@@ -186,7 +187,8 @@ export class FeatureEngine {
     const wallThickness = feature.wallThickness || feature.thickness || 2;
     const flip = feature.flip || false;
 
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities, {
+    // Every closed region of the sketch (several circles = several bodies or holes)
+    const shape = this.geometryEngine.shapesFromSketchEntities(sketchData.entities, {
       thin: isThin,
       wallThickness: wallThickness,
     });
@@ -241,11 +243,10 @@ export class FeatureEngine {
     if (!sketchData) return currentBody;
 
     const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities);
-    const pts = (feature.pathPoints || [
-      { x: 0, y: 0, z: 0 },
-      { x: 0, y: 20, z: 10 },
-      { x: 10, y: 40, z: 20 },
-    ]).map(p => new THREE.Vector3(p.x, p.y, p.z));
+    if (!Array.isArray(feature.pathPoints) || feature.pathPoints.length < 2) {
+      throw new Error('Sweep needs a path with at least 2 points');
+    }
+    const pts = feature.pathPoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
 
     const path = new THREE.CatmullRomCurve3(pts);
     const swept = this.geometryEngine.sweepProfile(shape, path);
@@ -257,23 +258,15 @@ export class FeatureEngine {
   }
 
   _processLoft(feature, currentBody, sketchEntities, isCut = false) {
+    const profiles = Array.isArray(feature.profiles) ? feature.profiles : [];
     const shapes = [];
-    const profiles = feature.profiles || ['sketch_01', 'sketch_02'];
-
     for (const pId of profiles) {
       const data = this.sketchCache[pId];
-      if (data) {
-        shapes.push(this.geometryEngine.shapeFromSketchEntities(data.entities));
-      }
+      if (data) shapes.push(this.geometryEngine.shapeFromSketchEntities(data.entities));
     }
-
+    // Never substitute made-up profiles: report the problem as a rebuild error
     if (shapes.length < 2) {
-      // Fallback 2-layer loft
-      const s1 = new THREE.Shape();
-      s1.moveTo(-15, -15); s1.lineTo(15, -15); s1.lineTo(15, 15); s1.lineTo(-15, 15); s1.closePath();
-      const s2 = new THREE.Shape();
-      s2.absarc(0, 0, 10, 0, Math.PI * 2);
-      shapes.push(s1, s2);
+      throw new Error(`Loft needs at least 2 profile sketches (found ${shapes.length})`);
     }
 
     const lofted = this.geometryEngine.loftProfiles(shapes, { height: feature.height || 40 });

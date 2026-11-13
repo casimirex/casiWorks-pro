@@ -291,7 +291,7 @@ export const CAD_EXAMPLES: CadExample[] = [
             type: FEATURE_TYPES.EXTRUDE_CUT,
             sketchId: sk3,
             depth: 40,
-            direction: 'throughall',
+            direction: 'midplane', // body is midplane: cut both ways so the hole goes all the way through
             visible: true,
             suppressed: false,
             parentIds: ['feat_pb_sk3'],
@@ -589,7 +589,7 @@ export const CAD_EXAMPLES: CadExample[] = [
             type: FEATURE_TYPES.EXTRUDE_CUT,
             sketchId: sk2,
             depth: 30,
-            direction: 'throughall',
+            direction: 'midplane', // body is midplane: cut both ways so the hole goes all the way through
             visible: true,
             suppressed: false,
             parentIds: ['feat_gear_sk2'],
@@ -716,7 +716,7 @@ export const CAD_EXAMPLES: CadExample[] = [
             type: FEATURE_TYPES.EXTRUDE_CUT,
             sketchId: sk4,
             depth: 30,
-            direction: 'throughall',
+            direction: 'midplane', // body is midplane: cut both ways so the hole goes all the way through
             visible: true,
             suppressed: false,
             parentIds: ['feat_rod_sk4'],

@@ -6,62 +6,32 @@ import * as THREE from 'three';
 import { EPSILON } from '../utils/math.ts';
 import { safeNormalize } from './Topology.js';
 import { csgUnion, csgSubtract, csgIntersect } from './csg.ts';
-import type { InertiaTensor, MassProperties, Point2 } from '../types/cad.ts';
+import { profileLoops, shapesFromLoops } from './profile.ts';
+import type { ProfileEntity } from './profile.ts';
 
-/**
- * Sketch entity as read by the profile builder. Besides the canonical fields it
- * accepts legacy aliases (start/end, x1..y2, cx/cy/r, corner1/corner2, rx/ry).
- */
-export interface ProfileEntity {
-  id?: string;
-  type: string;
-  construction?: boolean;
-  p1?: Point2;
-  p2?: Point2;
-  start?: Point2;
-  end?: Point2;
-  x1?: number;
-  y1?: number;
-  x2?: number;
-  y2?: number;
-  center?: Point2;
-  cx?: number;
-  cy?: number;
-  radius?: number;
-  r?: number;
-  /** Radians. */
-  startAngle?: number;
-  /** Radians. */
-  endAngle?: number;
-  corner1?: Point2;
-  corner2?: Point2;
-  controlPoints?: Point2[];
-  radiusX?: number;
-  radiusY?: number;
-  rx?: number;
-  ry?: number;
-}
+export type { ProfileEntity };
+import type { InertiaTensor, MassProperties, Point2 } from '../types/cad.ts';
 
 export type PlaneName = 'Front' | 'Top' | 'Right' | 'XY' | 'XZ' | 'YZ';
 
 export interface ExtrudeOptions {
   symmetric?: boolean;
   endCondition?: 'blind' | 'through' | 'upTo' | 'midplane';
-  draft?: boolean;
-  /** Degrees. */
-  draftAngle?: number;
   steps?: number;
-  bevelEnabled?: boolean;
-  bevelThickness?: number;
-  bevelSize?: number;
-  bevelSegments?: number;
+  /** Extrude in the opposite direction (−normal of the sketch plane). */
   flip?: boolean;
   plane?: PlaneName;
 }
 
 export interface RevolveOptions { segments?: number; offset?: number }
 export interface SweepOptions { steps?: number; closed?: boolean; twist?: number }
-export interface LoftOptions { steps?: number; closed?: boolean; heights?: number[] | null }
+export interface LoftOptions {
+  steps?: number;
+  /** Z height of each profile; defaults to evenly spaced from 0 to `height`. */
+  heights?: number[] | null;
+  /** Total loft height when `heights` is not given (default 100). */
+  height?: number;
+}
 export interface HoleOptions { cbDiameter?: number; cbDepth?: number; csAngle?: number; segments?: number }
 export interface ShapeOptions { thin?: boolean; wallThickness?: number }
 export type HoleType = 'through' | 'blind' | 'counterbore' | 'countersink' | 'simple';
@@ -88,67 +58,50 @@ class GeometryEngine {
    * @param {Object} options - { symmetric, endCondition, draft, draftAngle }
    * @returns {THREE.BufferGeometry}
    */
-  extrudeProfile(shape: THREE.Shape, depth: number, direction: PlaneName | THREE.Vector3 | null = null, options: ExtrudeOptions = {}): THREE.BufferGeometry {
-    const {
-      symmetric = false,
-      endCondition = 'blind', // 'blind', 'through', 'upTo', 'midplane'
-      draft = false,
-      draftAngle = 0,
-      steps = 1,
-      bevelEnabled = false,
-      bevelThickness = 0,
-      bevelSize = 0,
-      bevelSegments = 1,
-      flip = false,
-      plane = 'Front',
-    } = options;
+  /**
+   * Extrude one or more 2D shapes (with holes) along the sketch-plane normal.
+   * Blind: 0..depth. Midplane: −depth/2..depth/2. Through: 500 mm. Flip: −depth..0.
+   */
+  extrudeProfile(
+    shape: THREE.Shape | THREE.Shape[],
+    depth: number,
+    direction: PlaneName | THREE.Vector3 | null = null,
+    options: ExtrudeOptions = {},
+  ): THREE.BufferGeometry {
+    const { symmetric = false, endCondition = 'blind', steps = 1, flip = false, plane = 'Front' } = options;
 
     const isMidplane = symmetric || endCondition === 'midplane';
-    let actualDepth = depth;
-    if (endCondition === 'through') {
-      actualDepth = 500;
+    const actualDepth = endCondition === 'through' ? 500 : depth;
+
+    // Extrude each region separately and union them: regions may overlap, and
+    // concatenating overlapping solids would make a non-manifold mesh
+    const shapes = Array.isArray(shape) ? shape : [shape];
+    let geometry: THREE.BufferGeometry = new THREE.ExtrudeGeometry(shapes[0] ?? new THREE.Shape(), { steps, depth: actualDepth, bevelEnabled: false });
+    for (const region of shapes.slice(1)) {
+      const part = new THREE.ExtrudeGeometry(region, { steps, depth: actualDepth, bevelEnabled: false });
+      geometry = this.booleanUnion(geometry, part) ?? geometry;
+      part.dispose();
     }
 
-    const extrudeSettings = {
-      steps: steps,
-      depth: actualDepth,
-      bevelEnabled: bevelEnabled || draft,
-      bevelThickness: draft ? Math.tan(draftAngle * Math.PI / 180) * actualDepth : bevelThickness,
-      bevelSize: draft ? Math.tan(draftAngle * Math.PI / 180) * actualDepth : bevelSize,
-      bevelSegments: bevelSegments,
-    };
-
-    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-    // Symmetric / Mid-plane: center around sketch plane
     if (isMidplane) {
       geometry.translate(0, 0, -actualDepth / 2);
+    } else if (flip) {
+      // Same solid on the other side of the sketch plane. A translation keeps the
+      // winding valid (mirroring z would turn the solid inside out).
+      geometry.translate(0, 0, -actualDepth);
     }
 
-    // Direction flip
-    if (flip) {
-      geometry.translate(0, 0, isMidplane ? 0 : -actualDepth);
-      const pos = geometry.getAttribute('position');
-      for (let i = 0; i < pos.count; i++) {
-        pos.setZ(i, -pos.getZ(i));
-      }
-      geometry.computeVertexNormals();
-    }
-
-    // Transform by sketch plane orientation if specified
-    const planeName = typeof direction === 'string' ? direction : plane;
-    if (planeName) {
-      if (planeName === 'Top' || planeName === 'XZ') {
-        geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-      } else if (planeName === 'Right' || planeName === 'YZ') {
-        geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
-      }
+    // Orient to the sketch plane
+    const planeName = typeof direction === 'string' ? direction : (direction ? null : plane);
+    if (planeName === 'Top' || planeName === 'XZ') {
+      geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+    } else if (planeName === 'Right' || planeName === 'YZ') {
+      geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
     } else if (direction instanceof THREE.Vector3) {
       const defaultDir = new THREE.Vector3(0, 0, 1);
       const dir = direction.clone().normalize();
       if (dir.distanceTo(defaultDir) > EPSILON) {
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultDir, dir);
-        geometry.applyQuaternion(quaternion);
+        geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(defaultDir, dir));
       }
     }
 
@@ -165,36 +118,63 @@ class GeometryEngine {
    * @param {Object} options - { segments, offset }
    * @returns {THREE.BufferGeometry}
    */
+  /**
+   * Revolve a profile about the sketch Y axis (sketch X = radius), then align
+   * the Y axis with `axis`. Partial revolves are capped, so the result is
+   * always a closed, outward-facing solid.
+   */
   revolveProfile(shape: THREE.Shape, axis: THREE.Vector3 | null = null, angle = Math.PI * 2, options: RevolveOptions = {}): THREE.BufferGeometry {
-    const {
-      segments = 64,
-      offset = 0,
-    } = options;
+    const { segments = 64, offset = 0 } = options;
 
-    // Extract points from the shape for LatheGeometry
-    const points = shape.getPoints(50);
+    let profile = shape.getPoints(50).map(p => new THREE.Vector2(Math.abs(p.x) + offset, p.y));
+    if (profile.length > 1 && profile[0].distanceTo(profile[profile.length - 1]) < 1e-9) profile.pop();
+    // A counter-clockwise profile (in radius/height) gives outward-facing lathe triangles
+    if (THREE.ShapeUtils.isClockWise(profile)) profile = profile.reverse();
 
-    // Offset points from axis if needed
-    const lathePoints = points.map(p =>
-      new THREE.Vector2(Math.abs(p.x) + offset, p.y)
-    );
+    const sweep = Math.min(Math.abs(angle), Math.PI * 2);
+    const isFull = sweep >= Math.PI * 2 - 1e-9;
+    // Close the profile loop so the lathe surface has no seam gap
+    const lathe = new THREE.LatheGeometry([...profile, profile[0].clone()], segments, 0, sweep);
 
-    // LatheGeometry revolves around the Y-axis
-    const geometry = new THREE.LatheGeometry(lathePoints, segments, 0, angle);
+    let geometry: THREE.BufferGeometry = lathe;
+    if (!isFull) {
+      geometry = this._mergeGeometries([lathe, this._revolveCap(profile, 0, -1), this._revolveCap(profile, sweep, 1)]);
+      lathe.dispose();
+    }
 
-    // Rotate to align with the specified axis if not Y
     if (axis) {
       const defaultAxis = new THREE.Vector3(0, 1, 0);
       const targetAxis = axis.clone().normalize();
       if (targetAxis.distanceTo(defaultAxis) > EPSILON) {
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultAxis, targetAxis);
-        geometry.applyQuaternion(quaternion);
+        geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(defaultAxis, targetAxis));
       }
     }
 
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     return geometry;
+  }
+
+  /**
+   * Planar cap of a partial revolve at angle `phi`; `side` −1 faces back along
+   * the sweep (start cap), +1 forward (end cap). LatheGeometry maps (r, y) at
+   * phi to (r·sin phi, y, r·cos phi).
+   */
+  _revolveCap(profile: THREE.Vector2[], phi: number, side: 1 | -1): THREE.BufferGeometry {
+    const to3 = (p: THREE.Vector2) => new THREE.Vector3(p.x * Math.sin(phi), p.y, p.x * Math.cos(phi));
+    const outward = new THREE.Vector3(Math.cos(phi), 0, -Math.sin(phi)).multiplyScalar(side);
+    const positions: number[] = [];
+    for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(profile, [])) {
+      const a = to3(profile[i]);
+      let b = to3(profile[j]);
+      let c = to3(profile[k]);
+      const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+      if (n.dot(outward) < 0) [b, c] = [c, b];
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    }
+    const cap = new THREE.BufferGeometry();
+    cap.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return cap;
   }
 
   /**
@@ -253,105 +233,77 @@ class GeometryEngine {
   }
 
   /**
-   * Create geometry by interpolating between multiple cross-section shapes.
-   * @param {THREE.Shape[]} shapes - Array of cross-section profiles
-   * @param {Object} options - { steps, closed }
-   * @returns {THREE.BufferGeometry}
+   * Loft between closed cross-sections stacked along Z. Each profile is made
+   * counter-clockwise, resampled by arc length to the same point count and
+   * aligned to start at the same angle; the side wall is closed around the
+   * seam and both ends are capped, so the result is a closed solid.
    */
   loftProfiles(shapes: THREE.Shape[], options: LoftOptions = {}): THREE.BufferGeometry {
-    const {
-      steps = 32,
-      closed = false,
-      heights = null, // Array of Z-heights for each cross-section
-    } = options;
+    const { steps = 32, heights = null, height = 100 } = options;
+    if (shapes.length < 2) throw new Error('Loft requires at least 2 cross-section shapes');
 
-    if (shapes.length < 2) {
-      throw new Error('Loft requires at least 2 cross-section shapes');
-    }
-
-    // Extract points from each shape
-    const pointsPerShape = 64;
-    const profiles = shapes.map(s => s.getPoints(pointsPerShape));
-
-    // Ensure all profiles have the same number of points by resampling
-    const maxPoints = Math.max(...profiles.map(p => p.length));
-    const normalizedProfiles = profiles.map(profile => {
-      if (profile.length === maxPoints) return profile;
-      return this._resamplePoints(profile, maxPoints);
+    const N = 64;
+    const profiles = shapes.map(shape => {
+      let loop = shape.getPoints(N);
+      if (loop.length > 1 && loop[0].distanceTo(loop[loop.length - 1]) < 1e-9) loop.pop();
+      if (THREE.ShapeUtils.isClockWise(loop)) loop = loop.reverse();
+      // Start at the point whose direction from the centroid is closest to +X
+      const c = loop.reduce((acc, p) => acc.add(p), new THREE.Vector2()).divideScalar(loop.length);
+      let startIdx = 0;
+      let best = Infinity;
+      loop.forEach((p, i) => {
+        const ang = Math.abs(Math.atan2(p.y - c.y, p.x - c.x));
+        if (ang < best) { best = ang; startIdx = i; }
+      });
+      loop = [...loop.slice(startIdx), ...loop.slice(0, startIdx)];
+      return this._resamplePoints([...loop, loop[0].clone()], N + 1).slice(0, N);
     });
 
-    // Compute heights for each profile if not provided
-    const zHeights = heights || normalizedProfiles.map((_, i) =>
-      i / (normalizedProfiles.length - 1) * 100
-    );
+    const zHeights = heights && heights.length === profiles.length
+      ? heights
+      : profiles.map((_, i) => (i / (profiles.length - 1)) * height);
 
-    // Build geometry by interpolating between profiles
-    const positions: number[] = [];
-    const uvs: number[] = [];
-    const indices = [];
-
-    const numProfiles = normalizedProfiles.length;
-    const totalSteps = (numProfiles - 1) * steps;
-
-    // Generate interpolated profiles at each step
-    const interpolatedProfiles = [];
+    // Interpolated rings
+    const totalSteps = (profiles.length - 1) * steps;
+    const rings: THREE.Vector3[][] = [];
     for (let s = 0; s <= totalSteps; s++) {
-      const t = s / totalSteps;
-      const globalT = t * (numProfiles - 1);
-      const profileIdx = Math.min(Math.floor(globalT), numProfiles - 2);
-      const localT = globalT - profileIdx;
-
-      const profile = normalizedProfiles[profileIdx].map((p, i) => {
-        const nextP = normalizedProfiles[profileIdx + 1][i];
-        const x = p.x + (nextP.x - p.x) * localT;
-        const y = p.y + (nextP.y - p.y) * localT;
-        const z = zHeights[profileIdx] + (zHeights[profileIdx + 1] - zHeights[profileIdx]) * localT;
-        return new THREE.Vector3(x, y, z);
-      });
-      interpolatedProfiles.push(profile);
+      const globalT = (s / totalSteps) * (profiles.length - 1);
+      const idx = Math.min(Math.floor(globalT), profiles.length - 2);
+      const t = globalT - idx;
+      const z = zHeights[idx] + (zHeights[idx + 1] - zHeights[idx]) * t;
+      rings.push(profiles[idx].map((p, i) => {
+        const q = profiles[idx + 1][i];
+        return new THREE.Vector3(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t, z);
+      }));
     }
 
-    // Build mesh from interpolated profiles
-    const numPoints = maxPoints;
-    for (let s = 0; s < interpolatedProfiles.length; s++) {
-      for (let p = 0; p < numPoints; p++) {
-        const v = interpolatedProfiles[s][p];
-        positions.push(v.x, v.y, v.z);
+    const positions: number[] = [];
+    const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
 
-        // Compute normal (approximate)
-        const u0 = s / interpolatedProfiles.length;
-        const v0 = p / numPoints;
-        uvs.push(u0, v0);
+    // Side wall, wrapping around the seam
+    for (let s = 0; s < rings.length - 1; s++) {
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        tri(rings[s][i], rings[s][j], rings[s + 1][j]);
+        tri(rings[s][i], rings[s + 1][j], rings[s + 1][i]);
       }
     }
 
-    // Compute normals and build faces
-    for (let s = 0; s < interpolatedProfiles.length - 1; s++) {
-      for (let p = 0; p < numPoints - 1; p++) {
-        const a = s * numPoints + p;
-        const b = s * numPoints + (p + 1);
-        const c = (s + 1) * numPoints + (p + 1);
-        const d = (s + 1) * numPoints + p;
-
-        indices.push(a, b, d);
-        indices.push(b, c, d);
+    // End caps facing −Z (bottom) and +Z (top)
+    const cap = (ring: THREE.Vector3[], outward: number) => {
+      const flat = ring.map(v => new THREE.Vector2(v.x, v.y));
+      for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
+        const [a, b, c] = [ring[i], ring[j], ring[k]];
+        const nz = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (nz * outward >= 0) tri(a, b, c);
+        else tri(a, c, b);
       }
-      // Close the loop if the profile is closed
-      if (closed) {
-        const a = s * numPoints + (numPoints - 1);
-        const b = s * numPoints;
-        const c = (s + 1) * numPoints;
-        const d = (s + 1) * numPoints + (numPoints - 1);
-
-        indices.push(a, b, d);
-        indices.push(b, c, d);
-      }
-    }
+    };
+    cap(rings[0], -1);
+    cap(rings[rings.length - 1], 1);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     return geometry;
@@ -685,7 +637,7 @@ class GeometryEngine {
     const dir = safeNormalize(direction, new THREE.Vector3(0, 0, 1));
 
     // Create the hole cylinder tool
-    let holeGeometry;
+    let holeGeometry: THREE.BufferGeometry;
 
     switch (holeType) {
       case 'through': {
@@ -696,9 +648,10 @@ class GeometryEngine {
         const cylinderGeom = new THREE.CylinderGeometry(radius, radius, depth, segments);
         const tipHeight = radius * Math.tan((Math.PI - (118 * Math.PI / 180)) / 2);
         const coneGeom = new THREE.ConeGeometry(radius, tipHeight, segments);
+        coneGeom.rotateX(Math.PI); // apex down: the drill point continues past the hole bottom
         coneGeom.translate(0, -(depth / 2 + tipHeight / 2), 0);
 
-        holeGeometry = this._mergeGeometries([cylinderGeom, coneGeom]);
+        holeGeometry = csgUnion(cylinderGeom, coneGeom);
         cylinderGeom.dispose();
         coneGeom.dispose();
         break;
@@ -709,7 +662,7 @@ class GeometryEngine {
         const cbCylinder = new THREE.CylinderGeometry(cbRadius, cbRadius, cbDepth, segments);
         cbCylinder.translate(0, (depth || 500) / 2 - cbDepth / 2, 0);
 
-        holeGeometry = this._mergeGeometries([mainCylinder, cbCylinder]);
+        holeGeometry = csgUnion(mainCylinder, cbCylinder);
         mainCylinder.dispose();
         cbCylinder.dispose();
         break;
@@ -722,7 +675,7 @@ class GeometryEngine {
         const csCone = new THREE.CylinderGeometry(radius, csRadius, csHeight, segments);
         csCone.translate(0, (depth || 500) / 2 - csHeight / 2, 0);
 
-        holeGeometry = this._mergeGeometries([mainCyl, csCone]);
+        holeGeometry = csgUnion(mainCyl, csCone);
         mainCyl.dispose();
         csCone.dispose();
         break;
@@ -754,20 +707,14 @@ class GeometryEngine {
    */
   linearPattern(geometry: THREE.BufferGeometry, direction: THREE.Vector3, count: number, spacing: number): THREE.BufferGeometry {
     const dir = safeNormalize(direction, new THREE.Vector3(1, 0, 0));
-    const geometries = [geometry];
-    const clonesToDispose = [];
-
+    let result = geometry.clone();
     for (let i = 1; i < count; i++) {
-      const clone = geometry.clone();
+      const instance = geometry.clone();
       const offset = dir.clone().multiplyScalar(spacing * i);
-      clone.translate(offset.x, offset.y, offset.z);
-      geometries.push(clone);
-      clonesToDispose.push(clone);
-    }
-
-    const result = this._mergeGeometries(geometries);
-    for (const c of clonesToDispose) {
-      c.dispose();
+      instance.translate(offset.x, offset.y, offset.z);
+      // Union (not concatenation) so overlapping instances are not counted twice
+      result = this.booleanUnion(result, instance) ?? result;
+      instance.dispose();
     }
     return result;
   }
@@ -782,21 +729,16 @@ class GeometryEngine {
    */
   circularPattern(geometry: THREE.BufferGeometry, axis: THREE.Vector3, count: number, angle = Math.PI * 2): THREE.BufferGeometry {
     const normalizedAxis = safeNormalize(axis, new THREE.Vector3(0, 1, 0));
-    const geometries = [geometry];
-    const clonesToDispose = [];
-    const angleStep = angle / Math.max(1, count);
-
+    // A full circle spaces instances by angle/count; a partial arc puts the
+    // first instance at 0 and the last at `angle`.
+    const isFullCircle = Math.abs(angle) >= Math.PI * 2 - 1e-9;
+    const angleStep = isFullCircle ? angle / Math.max(1, count) : angle / Math.max(1, count - 1);
+    let result = geometry.clone();
     for (let i = 1; i < count; i++) {
-      const clone = geometry.clone();
-      const rotationMatrix = new THREE.Matrix4().makeRotationAxis(normalizedAxis, angleStep * i);
-      clone.applyMatrix4(rotationMatrix);
-      geometries.push(clone);
-      clonesToDispose.push(clone);
-    }
-
-    const result = this._mergeGeometries(geometries);
-    for (const c of clonesToDispose) {
-      c.dispose();
+      const instance = geometry.clone();
+      instance.applyMatrix4(new THREE.Matrix4().makeRotationAxis(normalizedAxis, angleStep * i));
+      result = this.booleanUnion(result, instance) ?? result;
+      instance.dispose();
     }
     return result;
   }
@@ -811,16 +753,18 @@ class GeometryEngine {
     const mirrorMatrix = new THREE.Matrix4();
 
     if (typeof plane === 'string') {
+      // Sketch-plane names map to the coordinate planes (Front = XY, Top = XZ, Right = YZ)
       switch (plane) {
-        case 'YZ':
-          mirrorMatrix.makeScale(-1, 1, 1);
-          break;
         case 'XZ':
+        case 'Top':
           mirrorMatrix.makeScale(1, -1, 1);
           break;
         case 'XY':
+        case 'Front':
           mirrorMatrix.makeScale(1, 1, -1);
           break;
+        case 'YZ':
+        case 'Right':
         default:
           mirrorMatrix.makeScale(-1, 1, 1);
       }
@@ -858,7 +802,8 @@ class GeometryEngine {
 
     mirrored.computeVertexNormals();
 
-    const result = this._mergeGeometries([geometry, mirrored]);
+    // Union so a body touching or crossing the mirror plane is not doubled
+    const result = this.booleanUnion(geometry, mirrored) ?? geometry.clone();
     mirrored.dispose();
     return result;
   }
@@ -1136,75 +1081,19 @@ class GeometryEngine {
     return shape;
   }
 
+  /**
+   * All solid regions of a sketch as shapes with holes (largest first).
+   * Construction geometry is ignored; loops nest by containment.
+   */
+  shapesFromSketchEntities(entities: ProfileEntity[] | null | undefined, options: ShapeOptions = {}): THREE.Shape[] {
+    if (!entities || entities.length === 0) return [];
+    if (options.thin) return [this.createThinProfileShape(entities, options.wallThickness || 2.0)];
+    return shapesFromLoops(profileLoops(entities));
+  }
+
+  /** The largest solid region of a sketch (use shapesFromSketchEntities for all regions). */
   shapeFromSketchEntities(entities: ProfileEntity[] | null | undefined, options: ShapeOptions = {}): THREE.Shape {
-    if (!entities || entities.length === 0) return new THREE.Shape();
-
-    // Check if Thin Feature is requested
-    if (options.thin) {
-      return this.createThinProfileShape(entities, options.wallThickness || 2.0);
-    }
-
-    // Separate circles from other entities
-    const circles = entities.filter(e => e.type === 'circle');
-    const otherEntities = entities.filter(e => e.type !== 'circle');
-
-    // If only a single circle, return a circle shape
-    if (circles.length > 0 && otherEntities.length === 0) {
-      const c = circles[0];
-      const shape = new THREE.Shape();
-      const cx = c.center?.x || c.cx || 0;
-      const cy = c.center?.y || c.cy || 0;
-      const r = c.radius || c.r || 10;
-      shape.absarc(cx, cy, r, 0, Math.PI * 2, false);
-      return shape;
-    }
-
-    // For other entities, build ordered chains of points
-    const chains = this._buildEntityChains(otherEntities);
-
-    if (chains.length === 0) {
-      // Fallback: extract all points and create a shape
-      const points = this._extractPointsFromEntities(entities);
-      if (points.length < 3) return new THREE.Shape();
-      const shape = new THREE.Shape();
-      shape.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        shape.lineTo(points[i].x, points[i].y);
-      }
-      shape.closePath();
-
-      // Add circle holes
-      for (const c of circles) {
-        const hole = new THREE.Path();
-        const cx = c.center?.x || c.cx || 0;
-        const cy = c.center?.y || c.cy || 0;
-        const r = c.radius || c.r || 10;
-        hole.absarc(cx, cy, r, 0, Math.PI * 2, true);
-        shape.holes.push(hole);
-      }
-      return shape;
-    }
-
-    // Build shape from the first (outer) chain
-    const shape = this._chainToShape(chains[0], entities);
-
-    // Additional chains become holes
-    for (let i = 1; i < chains.length; i++) {
-      const holePath = this._chainToPath(chains[i], entities);
-      if (holePath) shape.holes.push(holePath);
-    }
-
-    // Add standalone circles as holes
-    for (const c of circles) {
-      const hole = new THREE.Path();
-      const cx = c.center?.x || c.cx || 0;
-      const cy = c.center?.y || c.cy || 0;
-      const r = c.radius || c.r || 10;
-      hole.absarc(cx, cy, r, 0, Math.PI * 2, true);
-      shape.holes.push(hole);
-    }
-
-    return shape;
+    return this.shapesFromSketchEntities(entities, options)[0] ?? new THREE.Shape();
   }
 
   // ==========================================================================
@@ -1499,280 +1388,6 @@ class GeometryEngine {
     return merged;
   }
 
-  /** Build chains of connected entities for shape creation */
-  _buildEntityChains(entities: ProfileEntity[]): ProfileEntity[][] {
-    if (entities.length === 0) return [];
-
-    const chains = [];
-    const used = new Set();
-
-    // Build adjacency from entity endpoints
-    const getEndpoints = (entity: ProfileEntity): Point2[] => {
-      switch (entity.type) {
-        case 'line':
-          return [
-            { x: entity.p1?.x ?? entity.start?.x ?? entity.x1 ?? 0, y: entity.p1?.y ?? entity.start?.y ?? entity.y1 ?? 0 },
-            { x: entity.p2?.x ?? entity.end?.x ?? entity.x2 ?? 0, y: entity.p2?.y ?? entity.end?.y ?? entity.y2 ?? 0 },
-          ];
-        case 'arc':
-          return [
-            this._arcEndpoint(entity, 'start'),
-            this._arcEndpoint(entity, 'end'),
-          ];
-        case 'rect':
-          // Rectangle has 4 corners: treat as 4 lines
-          return [
-            { x: entity.x1 ?? entity.corner1?.x ?? 0, y: entity.y1 ?? entity.corner1?.y ?? 0 },
-            { x: entity.x2 ?? entity.corner2?.x ?? 0, y: entity.y2 ?? entity.corner2?.y ?? 0 },
-          ];
-        case 'spline':
-          if (entity.controlPoints && entity.controlPoints.length > 0) {
-            return [entity.controlPoints[0], entity.controlPoints[entity.controlPoints.length - 1]];
-          }
-          return [];
-        default:
-          return [];
-      }
-    };
-
-    // Greedily build chains
-    const tolerance = 0.01;
-    const pointsMatch = (a: Point2, b: Point2) =>
-      Math.abs(a.x - b.x) < tolerance && Math.abs(a.y - b.y) < tolerance;
-
-    while (used.size < entities.length) {
-      // Find first unused entity
-      let startIdx = -1;
-      for (let i = 0; i < entities.length; i++) {
-        if (!used.has(i) && entities[i].type !== 'point') {
-          startIdx = i;
-          break;
-        }
-      }
-      if (startIdx === -1) break;
-
-      const chain = [startIdx];
-      used.add(startIdx);
-
-      const endpoints = getEndpoints(entities[startIdx]);
-      if (endpoints.length < 2) continue;
-
-      let currentEnd = endpoints[1];
-      let changed = true;
-
-      // Extend chain forward
-      while (changed) {
-        changed = false;
-        for (let i = 0; i < entities.length; i++) {
-          if (used.has(i) || entities[i].type === 'point') continue;
-          const eps = getEndpoints(entities[i]);
-          if (eps.length < 2) continue;
-
-          if (pointsMatch(currentEnd, eps[0])) {
-            chain.push(i);
-            used.add(i);
-            currentEnd = eps[1];
-            changed = true;
-            break;
-          } else if (pointsMatch(currentEnd, eps[1])) {
-            chain.push(i);
-            used.add(i);
-            currentEnd = eps[0];
-            changed = true;
-            break;
-          }
-        }
-      }
-
-      chains.push(chain.map(i => entities[i]));
-    }
-
-    return chains;
-  }
-
-  /** Convert a chain of entities to a THREE.Shape */
-  _chainToShape(chain: ProfileEntity[], _allEntities: ProfileEntity[]): THREE.Shape {
-    const shape = new THREE.Shape();
-    const points = this._extractPointsFromEntities(chain);
-
-    if (points.length < 2) return shape;
-
-    shape.moveTo(points[0].x, points[0].y);
-
-    for (let i = 0; i < chain.length; i++) {
-      const entity = chain[i];
-      switch (entity.type) {
-        case 'line':
-          shape.lineTo(
-            entity.p2?.x ?? entity.end?.x ?? entity.x2 ?? 0,
-            entity.p2?.y ?? entity.end?.y ?? entity.y2 ?? 0
-          );
-          break;
-        case 'arc': {
-          const cx = entity.center?.x ?? entity.cx ?? 0;
-          const cy = entity.center?.y ?? entity.cy ?? 0;
-          const r = entity.radius ?? entity.r ?? 10;
-          const startAngle = entity.startAngle ?? 0;
-          const endAngle = entity.endAngle ?? Math.PI * 2;
-          shape.absarc(cx, cy, r, startAngle, endAngle, false);
-          break;
-        }
-        case 'rect': {
-          const x1 = entity.x1 ?? entity.corner1?.x ?? 0;
-          const y1 = entity.y1 ?? entity.corner1?.y ?? 0;
-          const x2 = entity.x2 ?? entity.corner2?.x ?? 0;
-          const y2 = entity.y2 ?? entity.corner2?.y ?? 0;
-          shape.lineTo(x2, y1);
-          shape.lineTo(x2, y2);
-          shape.lineTo(x1, y2);
-          shape.lineTo(x1, y1);
-          break;
-        }
-        case 'spline': {
-          if (entity.controlPoints && entity.controlPoints.length > 0) {
-            const splinePoints = entity.controlPoints.map(p =>
-              new THREE.Vector2(p.x, p.y)
-            );
-            shape.splineThru(splinePoints.slice(1));
-          }
-          break;
-        }
-        case 'ellipse': {
-          const cx = entity.center?.x ?? entity.cx ?? 0;
-          const cy = entity.center?.y ?? entity.cy ?? 0;
-          const rx = entity.radiusX ?? entity.rx ?? 10;
-          const ry = entity.radiusY ?? entity.ry ?? 5;
-          shape.absellipse(cx, cy, rx, ry, 0, Math.PI * 2, false, 0);
-          break;
-        }
-        default: {
-          // Generic: use extracted points
-          const ep = this._extractPointsFromEntity(entity);
-          for (const p of ep) {
-            shape.lineTo(p.x, p.y);
-          }
-        }
-      }
-    }
-
-    shape.closePath();
-    return shape;
-  }
-
-  /** Convert a chain of entities to a THREE.Path (for holes) */
-  _chainToPath(chain: ProfileEntity[], _allEntities: ProfileEntity[]): THREE.Path | null {
-    const path = new THREE.Path();
-    const points = this._extractPointsFromEntities(chain);
-    if (points.length < 2) return null;
-
-    path.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      path.lineTo(points[i].x, points[i].y);
-    }
-    path.closePath();
-    return path;
-  }
-
-  /** Extract all endpoints from a list of entities */
-  _extractPointsFromEntities(entities: ProfileEntity[]): Point2[] {
-    const points = [];
-    const tolerance = 0.01;
-
-    for (const entity of entities) {
-      const eps = this._extractPointsFromEntity(entity);
-      for (const p of eps) {
-        // Only add if not duplicate of last point
-        if (points.length === 0 ||
-          Math.abs(p.x - points[points.length - 1].x) > tolerance ||
-          Math.abs(p.y - points[points.length - 1].y) > tolerance) {
-          points.push(p);
-        }
-      }
-    }
-
-    return points;
-  }
-
-  /** Extract points from a single entity */
-  _extractPointsFromEntity(entity: ProfileEntity): Point2[] {
-    switch (entity.type) {
-      case 'line':
-        return [
-          { x: entity.p1?.x ?? entity.start?.x ?? entity.x1 ?? 0, y: entity.p1?.y ?? entity.start?.y ?? entity.y1 ?? 0 },
-          { x: entity.p2?.x ?? entity.end?.x ?? entity.x2 ?? 0, y: entity.p2?.y ?? entity.end?.y ?? entity.y2 ?? 0 },
-        ];
-      case 'arc': {
-        const cx = entity.center?.x ?? entity.cx ?? 0;
-        const cy = entity.center?.y ?? entity.cy ?? 0;
-        const r = entity.radius ?? entity.r ?? 10;
-        const sa = entity.startAngle ?? 0;
-        const ea = entity.endAngle ?? Math.PI * 2;
-        const points = [];
-        const steps = 32;
-        for (let i = 0; i <= steps; i++) {
-          const angle = sa + (ea - sa) * (i / steps);
-          points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
-        }
-        return points;
-      }
-      case 'circle': {
-        const cx = entity.center?.x ?? entity.cx ?? 0;
-        const cy = entity.center?.y ?? entity.cy ?? 0;
-        const r = entity.radius ?? entity.r ?? 10;
-        const points = [];
-        const steps = 64;
-        for (let i = 0; i <= steps; i++) {
-          const angle = (Math.PI * 2 * i) / steps;
-          points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
-        }
-        return points;
-      }
-      case 'rect': {
-        const x1 = entity.x1 ?? entity.corner1?.x ?? 0;
-        const y1 = entity.y1 ?? entity.corner1?.y ?? 0;
-        const x2 = entity.x2 ?? entity.corner2?.x ?? 0;
-        const y2 = entity.y2 ?? entity.corner2?.y ?? 0;
-        return [
-          { x: x1, y: y1 },
-          { x: x2, y: y1 },
-          { x: x2, y: y2 },
-          { x: x1, y: y2 },
-        ];
-      }
-      case 'spline': {
-        if (entity.controlPoints) {
-          return entity.controlPoints.map(p => ({ x: p.x, y: p.y }));
-        }
-        return [];
-      }
-      case 'ellipse': {
-        const cx = entity.center?.x ?? entity.cx ?? 0;
-        const cy = entity.center?.y ?? entity.cy ?? 0;
-        const rx = entity.radiusX ?? entity.rx ?? 10;
-        const ry = entity.radiusY ?? entity.ry ?? 5;
-        const points = [];
-        const steps = 64;
-        for (let i = 0; i <= steps; i++) {
-          const angle = (Math.PI * 2 * i) / steps;
-          points.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
-        }
-        return points;
-      }
-      default:
-        return [];
-    }
-  }
-
-  /** Get endpoint of an arc */
-  _arcEndpoint(arc: ProfileEntity, which: 'start' | 'end'): Point2 {
-    const cx = arc.center?.x ?? arc.cx ?? 0;
-    const cy = arc.center?.y ?? arc.cy ?? 0;
-    const r = arc.radius ?? arc.r ?? 10;
-    const angle = which === 'start'
-      ? (arc.startAngle ?? 0)
-      : (arc.endAngle ?? Math.PI * 2);
-    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-  }
 }
 
 // Export singleton instance
