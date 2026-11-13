@@ -126,7 +126,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 ## Phase 5 — Drawings
 
 - [ ] **5.1** Views generated from exact geometry (crisp edges, true arcs)
-- [ ] **5.2** Associative dimensions that update with the model
+- [ ] **5.2** Associative dimensions that update with the model (known: the property panel's drawing view, dimension and GD&T cards collect settings that nothing uses yet; the drawing sheet is generated with fixed views)
 - [ ] **5.3** BOM tables and balloons from assemblies
 - [ ] **5.4** Sheet formats and title block editor (known: the GD&T frame overlaps the front view, the right view can run under the title block, and the front-view width dimension runs through the view label)
 - [ ] **5.5** PDF and DWG/DXF export
@@ -135,7 +135,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 
 - [ ] **6.1** Solver in a Web Worker with progress and cancel
 - [ ] **6.2** Meshing from exact geometry with local refinement
-- [ ] **6.3** Fixtures and loads picked on faces
+- [ ] **6.3** Fixtures and loads picked on faces (known: the property panel's FEA setup card is not connected; studies run from the FEA panel with a fixed end and a tip load, and results are not yet shown as a colour plot on the model)
 - [ ] **6.4** Results: deformed shape, probes, report export
 - [ ] **6.5** Modal (frequency) analysis
 
