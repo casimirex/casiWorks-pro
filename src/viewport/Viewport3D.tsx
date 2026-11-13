@@ -1,18 +1,30 @@
 // CasiWorks Pro - 3D Viewport Component
-import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Html } from '@react-three/drei';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import type { ElementRef } from 'react';
+import { Canvas, useThree, extend } from '@react-three/fiber';
+import type { Object3DNode, ThreeEvent } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants.ts';
-import { viewportPicker } from './ViewportPicker';
+import type { ToolId, ViewOrientation } from '../utils/constants.ts';
+import type { Point2, SketchEntityMap } from '../types/cad.ts';
+import { viewportPicker } from './ViewportPicker.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
+
+// <line> is the SVG element in JSX typings; register three's Line under its own tag
+extend({ ThreeLine: THREE.Line });
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    threeLine: Object3DNode<THREE.Line, typeof THREE.Line>;
+  }
+}
 
 /**
  * Standard reference planes (Front, Top, Right)
  */
-function ReferencePlanes({ showPlanes, activePlane }) {
+function ReferencePlanes({ showPlanes, activePlane }: { showPlanes: boolean; activePlane: string }) {
   if (!showPlanes) return null;
 
   const planeSize = 80;
@@ -59,7 +71,7 @@ function ReferencePlanes({ showPlanes, activePlane }) {
 /**
  * Coordinate Axes / Origin Display
  */
-function OriginDisplay({ showOrigin, showAxes }) {
+function OriginDisplay({ showOrigin, showAxes }: { showOrigin: boolean; showAxes: boolean }) {
   if (!showOrigin && !showAxes) return null;
 
   return (
@@ -80,8 +92,24 @@ function OriginDisplay({ showOrigin, showAxes }) {
 /**
  * Render a single CAD body with engineering-style shading and crisp edge lines
  */
-function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, edgeDisplay, materialKey }) {
-  const meshRef = useRef();
+/** Anything the viewport can draw as a solid: a model body or an assembly component. */
+interface DisplayBody {
+  id: string;
+  geometry: THREE.BufferGeometry | null;
+}
+
+interface CADBodyMeshProps {
+  body: DisplayBody;
+  isSelected: boolean;
+  onSelect(body: DisplayBody): void;
+  shadedMode: boolean;
+  wireframeMode: boolean;
+  edgeDisplay: boolean;
+  materialKey: string;
+}
+
+function CADBodyMesh({ body, isSelected, onSelect, wireframeMode, edgeDisplay, materialKey }: CADBodyMeshProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
 
   const material = useMemo(() => {
     if (!body || !body.geometry) return null;
@@ -93,7 +121,7 @@ function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, ed
         mat.emissiveIntensity = 0.5;
       }
       return mat;
-    } catch (e) {
+    } catch {
       return new THREE.MeshStandardMaterial({ color: '#cccccc' });
     }
   }, [body, materialKey, wireframeMode, isSelected]);
@@ -106,7 +134,7 @@ function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, ed
       const pos = bodyGeometry.getAttribute ? bodyGeometry.getAttribute('position') : bodyGeometry.attributes?.position;
       if (!pos || pos.count < 3) return null;
       return new THREE.EdgesGeometry(bodyGeometry, 25);
-    } catch (e) {
+    } catch {
       return null;
     }
   }, [bodyGeometry]);
@@ -123,7 +151,7 @@ function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, ed
         ref={meshRef}
         geometry={body.geometry}
         material={material}
-        onClick={(e) => {
+        onClick={(e: ThreeEvent<MouseEvent>) => {
           e.stopPropagation();
           if (body && onSelect) onSelect(body);
         }}
@@ -142,11 +170,19 @@ function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, ed
 /**
  * Sketch Canvas Overlay inside 3D Viewport
  */
-function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, activeTool }) {
+interface ActiveSketchOverlayProps {
+  activeSketchId: string | null;
+  activeSketchPlane: string;
+  sketchEntities: SketchEntityMap;
+  currentPoints: Point2[];
+  activeTool: ToolId;
+}
+
+function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints }: ActiveSketchOverlayProps) {
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
   // Transform 2D sketch points to 3D based on sketch plane
-  const transformPoint = useCallback((pt) => {
+  const transformPoint = useCallback((pt: Point2 | null | undefined): [number, number, number] => {
     if (!pt) return [0, 0, 0];
     if (activeSketchPlane === 'Top' || activeSketchPlane === 'XZ') {
       return [pt.x, 0, -pt.y];
@@ -168,18 +204,13 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
             new THREE.Vector3(...p2),
           ]);
           return (
-            <line key={ent.id} geometry={geom}>
-              <lineBasicMaterial
-                color={ent.construction ? '#888888' : '#00e5ff'}
-                linewidth={2}
-                dashSize={ent.construction ? 2 : 0}
-                gapSize={ent.construction ? 1 : 0}
-              />
-            </line>
+            <threeLine key={ent.id} geometry={geom}>
+              <lineBasicMaterial color={ent.construction ? '#888888' : '#00e5ff'} linewidth={2} />
+            </threeLine>
           );
         } else if (ent.type === SKETCH_ENTITY_TYPES.CIRCLE && ent.center) {
           const segments = 64;
-          const pts = [];
+          const pts: THREE.Vector3[] = [];
           for (let i = 0; i <= segments; i++) {
             const angle = (i * Math.PI * 2) / segments;
             const pt2D = {
@@ -190,9 +221,9 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
           }
           const geom = new THREE.BufferGeometry().setFromPoints(pts);
           return (
-            <line key={ent.id} geometry={geom}>
+            <threeLine key={ent.id} geometry={geom}>
               <lineBasicMaterial color={ent.construction ? '#888888' : '#00e5ff'} linewidth={2} />
-            </line>
+            </threeLine>
           );
         }
         return null;
@@ -208,13 +239,13 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
             </mesh>
           ))}
           {currentPoints.length >= 2 && (
-            <line
+            <threeLine
               geometry={new THREE.BufferGeometry().setFromPoints(
                 currentPoints.map(p => new THREE.Vector3(...transformPoint(p)))
               )}
             >
               <lineBasicMaterial color="#ff9800" linewidth={2} />
-            </line>
+            </threeLine>
           )}
         </group>
       )}
@@ -226,26 +257,27 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
  * Viewport Interaction Handler (Desktop & Mobile Touch)
  * Prevents two-finger pinch/pan from conflicting with single-touch rotate or falsely placing sketch entities
  */
-function ViewportController({ onPointerMoveInSketch, onSketchClick }) {
+interface ViewportControllerProps {
+  onPointerMoveInSketch(pt: Point2): void;
+  onSketchClick(pt: Point2): void;
+}
+
+function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportControllerProps) {
   const { camera, gl } = useThree();
-  const activeTool = useCADStore(s => s.activeTool);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const activeSketchPlane = useCADStore(s => s.activeSketchPlane);
   const snapEnabled = useCADStore(s => s.snapEnabled);
 
   useEffect(() => {
     const dom = gl.domElement;
-    const activePointers = new Set();
+    const activePointers = new Set<number>();
     let isMultiTouch = false;
     let lastMultiTouchTime = 0;
 
-    const getCoords = (e) => {
-      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0));
-      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : 0));
-      return { clientX, clientY };
-    };
+    // Pointer events always carry client coordinates
+    const getCoords = (e: PointerEvent) => ({ clientX: e.clientX, clientY: e.clientY });
 
-    const handlePointerDown = (e) => {
+    const handlePointerDown = (e: PointerEvent) => {
       activePointers.add(e.pointerId);
       if (activePointers.size >= 2) {
         isMultiTouch = true;
@@ -253,7 +285,7 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }) {
       }
     };
 
-    const handlePointerMove = (e) => {
+    const handlePointerMove = (e: PointerEvent) => {
       // If user is currently doing a two-finger pinch/pan, don't update sketch hover preview
       if (isMultiTouch || activePointers.size >= 2) return;
 
@@ -271,7 +303,7 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }) {
       }
     };
 
-    const handlePointerUp = (e) => {
+    const handlePointerUp = (e: PointerEvent) => {
       activePointers.delete(e.pointerId);
 
       const wasPinchPan = isMultiTouch || (Date.now() - lastMultiTouchTime < 400);
@@ -296,7 +328,7 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }) {
       }
     };
 
-    const handlePointerCancel = (e) => {
+    const handlePointerCancel = (e: PointerEvent) => {
       activePointers.delete(e.pointerId);
       if (activePointers.size === 0) {
         isMultiTouch = false;
@@ -322,7 +354,7 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }) {
 /**
  * Orientation ViewCube HUD overlay (Responsive & Collapsible on Mobile)
  */
-function OrientationCubeHUD({ setViewOrientation }) {
+function OrientationCubeHUD({ setViewOrientation }: { setViewOrientation(view: ViewOrientation): void }) {
   const [expanded, setExpanded] = useState(window.innerWidth > 768);
 
   return (
@@ -390,10 +422,10 @@ export default function Viewport3D() {
   const activeTool = useCADStore(s => s.activeTool);
   const addSketchEntity = useCADStore(s => s.addSketchEntity);
 
-  const [mouseSketchPt, setMouseSketchPt] = useState(null);
-  const [sketchClickPts, setSketchClickPts] = useState([]);
+  const [mouseSketchPt, setMouseSketchPt] = useState<Point2 | null>(null);
+  const [sketchClickPts, setSketchClickPts] = useState<Point2[]>([]);
 
-  const controlsRef = useRef();
+  const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
 
   // Switch camera when viewOrientation changes
   useEffect(() => {
@@ -401,8 +433,8 @@ export default function Viewport3D() {
     const info = VIEW_ORIENTATIONS[viewOrientation] || VIEW_ORIENTATIONS.isometric;
     const camera = controlsRef.current.object;
     if (camera && info) {
-      camera.position.set(...info.position);
-      camera.up.set(...info.up);
+      camera.position.set(...(info.position as [number, number, number]));
+      camera.up.set(...(info.up as [number, number, number]));
       camera.lookAt(0, 0, 0);
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
@@ -410,7 +442,7 @@ export default function Viewport3D() {
   }, [viewOrientation]);
 
   // Sketch drawing logic
-  const handleSketchClick = useCallback((pt) => {
+  const handleSketchClick = useCallback((pt: Point2) => {
     if (activeTool === TOOLS.SKETCH_LINE) {
       if (sketchClickPts.length === 0) {
         setSketchClickPts([pt]);
@@ -460,7 +492,7 @@ export default function Viewport3D() {
         <ambientLight intensity={0.7} />
         <directionalLight position={[100, 150, 100]} intensity={1.2} castShadow />
         <directionalLight position={[-100, 80, -100]} intensity={0.5} />
-        <hemisphereLight skyColor="#ffffff" groundColor="#333333" intensity={0.4} />
+        <hemisphereLight color="#ffffff" groundColor="#333333" intensity={0.4} />
 
         <OrbitControls
           ref={controlsRef}
@@ -471,7 +503,8 @@ export default function Viewport3D() {
           minDistance={1}
           enableRotate={!isSketchActive}
           touches={{
-            ONE: isSketchActive ? null : THREE.TOUCH.ROTATE,
+            // No one-finger gesture while sketching (taps place points)
+            ONE: isSketchActive ? (null as unknown as THREE.TOUCH) : THREE.TOUCH.ROTATE,
             TWO: THREE.TOUCH.DOLLY_PAN,
           }}
         />
@@ -489,7 +522,7 @@ export default function Viewport3D() {
             key={body.id}
             body={body}
             isSelected={selectedEntities.some(e => e.id === body.id)}
-            onSelect={(b) => setSelection(b)}
+            onSelect={(b) => setSelection({ id: b.id })}
             shadedMode={shadedMode}
             wireframeMode={wireframeMode}
             edgeDisplay={edgeDisplay}
@@ -503,11 +536,11 @@ export default function Viewport3D() {
             key={comp.id}
             body={comp}
             isSelected={selectedEntities.some(e => e.id === comp.id)}
-            onSelect={(b) => setSelection(b)}
+            onSelect={(b) => setSelection({ id: b.id })}
             shadedMode={shadedMode}
             wireframeMode={wireframeMode}
             edgeDisplay={edgeDisplay}
-            materialKey={comp.materialKey || activeMaterial}
+            materialKey={activeMaterial}
           />
         ))}
 

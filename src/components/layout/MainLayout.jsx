@@ -4,7 +4,7 @@ import CommandManager from './CommandManager';
 import FeatureTree from './FeatureTree';
 import PropertyPanel from './PropertyPanel';
 import StatusBar from './StatusBar';
-import Viewport3D from '../../viewport/Viewport3D';
+import Viewport3D from '../../viewport/Viewport3D.tsx';
 import ErrorBoundary from '../common/ErrorBoundary';
 import { useCADStore } from '../../store/cadStore.ts';
 
