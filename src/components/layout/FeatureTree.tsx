@@ -8,6 +8,7 @@ import {
   Ban, AlertTriangle, ArrowDownToLine, RotateCcw, ChevronUp
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
+import { runCommand } from '../../commands/index.ts';
 import { FEATURE_TYPES } from '../../utils/constants.ts';
 import type { Feature } from '../../types/cad.ts';
 
@@ -30,7 +31,6 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   const toggleFeatureSuppressed = useCADStore(s => s.toggleFeatureSuppressed);
   const removeFeature = useCADStore(s => s.removeFeature);
   const editSketch = useCADStore(s => s.editSketch);
-  const startSketch = useCADStore(s => s.startSketch);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const openPropertyPanel = useCADStore(s => s.openPropertyPanel);
 
@@ -113,7 +113,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   const planeNode = (plane: 'Front' | 'Top' | 'Right', label: string, color: string) => (
     <div
       className="tree-node-item plane-node"
-      onDoubleClick={() => { if (!isSketchActive) startSketch(plane); }}
+      onDoubleClick={() => { if (!isSketchActive) runCommand('sketch.new', { plane }); }}
       title={`Double-click to sketch on the ${plane} plane`}
       style={{ cursor: 'pointer' }}
     >

@@ -1,5 +1,6 @@
 // CasiWorks Pro - Bottom Status Bar (Modern Engineering Pill Layout)
 import { useCADStore } from '../../store/cadStore.ts';
+import { runCommand } from '../../commands/index.ts';
 import { Grid, Layers, Box, Compass } from 'lucide-react';
 
 export default function StatusBar() {
@@ -7,13 +8,9 @@ export default function StatusBar() {
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const showGrid = useCADStore(s => s.showGrid);
-  const toggleGrid = useCADStore(s => s.toggleGrid);
   const wireframeMode = useCADStore(s => s.wireframeMode);
-  const toggleWireframe = useCADStore(s => s.toggleWireframe);
   const edgeDisplay = useCADStore(s => s.edgeDisplay);
-  const toggleEdges = useCADStore(s => s.toggleEdges);
   const perspectiveView = useCADStore(s => s.perspectiveView);
-  const togglePerspective = useCADStore(s => s.togglePerspective);
 
   return (
     <footer className="status-bar">
@@ -35,7 +32,7 @@ export default function StatusBar() {
         {/* Quick Viewport Visual Toggles */}
         <button
           className={`status-btn-pill ${showGrid ? 'active' : ''}`}
-          onClick={toggleGrid}
+          onClick={() => runCommand('view.toggleGrid')}
           title="Toggle Model Grid"
         >
           <Grid size={12} />
@@ -44,7 +41,7 @@ export default function StatusBar() {
 
         <button
           className={`status-btn-pill ${edgeDisplay ? 'active' : ''}`}
-          onClick={toggleEdges}
+          onClick={() => runCommand('view.toggleEdges')}
           title="Toggle Sharp Edges"
         >
           <Box size={12} />
@@ -53,7 +50,7 @@ export default function StatusBar() {
 
         <button
           className={`status-btn-pill ${wireframeMode ? 'active' : ''}`}
-          onClick={toggleWireframe}
+          onClick={() => runCommand('view.toggleWireframe')}
           title="Toggle Wireframe Mode"
         >
           <Layers size={12} />
@@ -62,7 +59,7 @@ export default function StatusBar() {
 
         <button
           className="status-btn-pill"
-          onClick={togglePerspective}
+          onClick={() => runCommand('view.togglePerspective')}
           title="Switch Perspective / Orthographic Camera"
         >
           <Compass size={12} />

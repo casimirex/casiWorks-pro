@@ -5,6 +5,8 @@ import ExportDialog from './components/dialogs/ExportDialog.tsx';
 import MaterialDialog from './components/dialogs/MaterialDialog.tsx';
 import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
 import ResultsViewer from './simulation/ResultsViewer.tsx';
+import DrawingViewModal from './drawings/DrawingViewModal.tsx';
+import { commands } from './commands/index.ts';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
 import { setupKeyboardShortcuts } from './utils/shortcuts.ts';
 import { rebuildModel } from './features/rebuildModel.ts';
@@ -18,11 +20,25 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [massPropsOpen, setMassPropsOpen] = useState(false);
+  const [drawingOpen, setDrawingOpen] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false);
 
-  // Keyboard shortcuts
+  // The UI that commands open dialogs in, and keyboard shortcuts that run commands
   useEffect(() => {
-    const cleanup = setupKeyboardShortcuts(useCADStore);
-    return cleanup;
+    commands.setUIHost({
+      openDialog: (name) => {
+        if (name === 'export') setExportOpen(true);
+        else if (name === 'material') setMaterialOpen(true);
+        else if (name === 'massProperties') setMassPropsOpen(true);
+        else if (name === 'drawing') setDrawingOpen(true);
+      },
+      toggleFeatureTree: () => setTreeOpen(open => !open),
+    });
+    const removeShortcuts = setupKeyboardShortcuts(commands, (message) => useCADStore.getState().setStatus(message));
+    return () => {
+      removeShortcuts();
+      commands.setUIHost(null);
+    };
   }, []);
 
   // Seed a starter part once, on first launch only. "New" and deleting every
@@ -69,11 +85,7 @@ export default function App() {
 
   return (
     <>
-      <MainLayout
-        onExportClick={() => setExportOpen(true)}
-        onMaterialClick={() => setMaterialOpen(true)}
-        onMassPropsClick={() => setMassPropsOpen(true)}
-      />
+      <MainLayout treeOpen={treeOpen} onCloseTree={() => setTreeOpen(false)} />
 
       <ExportDialog isOpen={exportOpen} onClose={() => setExportOpen(false)} />
       <MaterialDialog isOpen={materialOpen} onClose={() => setMaterialOpen(false)} />
@@ -81,6 +93,7 @@ export default function App() {
 
       {/* FEA stress simulation overlay */}
       <ResultsViewer />
+      <DrawingViewModal isOpen={drawingOpen} onClose={() => setDrawingOpen(false)} />
     </>
   );
 }

@@ -25,7 +25,6 @@ import type {
 } from '../types/cad.ts';
 import type { Body, RebuildState } from '../features/rebuildModel.ts';
 import type { ApiStoreState } from '../api/CasiWorksAPI.ts';
-import type { ShortcutState } from '../utils/shortcuts.ts';
 
 const MAX_UNDO_HISTORY = 40;
 
@@ -896,6 +895,5 @@ type Satisfies<T, Contract> = T extends Contract ? true : false;
 type Assert<T extends true> = T;
 export type _StoreContracts = [
   Assert<Satisfies<CADStore, ApiStoreState>>,
-  Assert<Satisfies<CADStore, ShortcutState>>,
   Assert<Satisfies<CADStore, RebuildState>>,
 ];

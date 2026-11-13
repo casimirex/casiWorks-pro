@@ -7,12 +7,13 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, VIEW_ORIENTATIONS } from '../utils/constants.ts';
-import type { ToolId, ViewOrientation } from '../utils/constants.ts';
+import type { ToolId } from '../utils/constants.ts';
 import type { Point2, SketchEntity, SketchEntityMap } from '../types/cad.ts';
 import { sketchToWorld } from '../utils/math.ts';
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
+import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
@@ -395,7 +396,7 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportCo
 /**
  * Orientation ViewCube HUD overlay (Responsive & Collapsible on Mobile)
  */
-function OrientationCubeHUD({ setViewOrientation }: { setViewOrientation(view: ViewOrientation): void }) {
+function OrientationCubeHUD() {
   const [expanded, setExpanded] = useState(window.innerWidth > 768);
 
   return (
@@ -423,12 +424,12 @@ function OrientationCubeHUD({ setViewOrientation }: { setViewOrientation(view: V
       </div>
       {expanded && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
-          <button className="view-btn" onClick={() => setViewOrientation('top')}>Top</button>
-          <button className="view-btn" onClick={() => setViewOrientation('isometric')}>Iso</button>
-          <button className="view-btn" onClick={() => setViewOrientation('bottom')}>Btm</button>
-          <button className="view-btn" onClick={() => setViewOrientation('front')}>Frnt</button>
-          <button className="view-btn" onClick={() => setViewOrientation('right')}>Rght</button>
-          <button className="view-btn" onClick={() => setViewOrientation('left')}>Left</button>
+          <button className="view-btn" onClick={() => runCommand('view.top')}>Top</button>
+          <button className="view-btn" onClick={() => runCommand('view.isometric')}>Iso</button>
+          <button className="view-btn" onClick={() => runCommand('view.bottom')}>Btm</button>
+          <button className="view-btn" onClick={() => runCommand('view.front')}>Frnt</button>
+          <button className="view-btn" onClick={() => runCommand('view.right')}>Rght</button>
+          <button className="view-btn" onClick={() => runCommand('view.left')}>Left</button>
         </div>
       )}
     </div>
@@ -457,7 +458,6 @@ export default function Viewport3D() {
   const perspectiveView = useCADStore(s => s.perspectiveView);
   const viewOrientation = useCADStore(s => s.viewOrientation);
   const viewRequest = useCADStore(s => s.viewRequest);
-  const setViewOrientation = useCADStore(s => s.setViewOrientation);
 
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const activeSketchId = useCADStore(s => s.activeSketchId);
@@ -608,7 +608,7 @@ export default function Viewport3D() {
         />
       </Canvas>
 
-      <OrientationCubeHUD setViewOrientation={setViewOrientation} />
+      <OrientationCubeHUD />
     </div>
   );
 }

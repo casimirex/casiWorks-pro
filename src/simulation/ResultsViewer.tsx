@@ -5,7 +5,7 @@ import { useCADStore } from '../store/cadStore.ts';
 import { feaEngine, ELEMENT_TYPES } from './FEAEngine.ts';
 import type { ElementType, FEAResults } from './FEAEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
-import DrawingViewModal from '../drawings/DrawingViewModal.tsx';
+import { runCommand } from '../commands/index.ts';
 
 export default function ResultsViewer() {
   const bodies = useCADStore(s => s.bodies);
@@ -17,7 +17,6 @@ export default function ResultsViewer() {
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
-  const [drawingOpen, setDrawingOpen] = useState(false);
 
   // Stress state of the most-stressed element (by von Mises at its centre)
   const elementStresses = results?.solidResult?.elementStresses ?? [];
@@ -78,7 +77,7 @@ export default function ResultsViewer() {
           </button>
 
           <button
-            onClick={() => setDrawingOpen(true)}
+            onClick={() => runCommand('drawing.open')}
             title="Open 2D Engineering Drawing"
             style={{
               background: 'rgba(16, 85, 45, 0.92)',
@@ -120,7 +119,7 @@ export default function ResultsViewer() {
             <span style={{ fontWeight: 600, fontSize: 12, color: '#4fc3f7' }}>3D Solid FEA Simulation</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
-                onClick={() => setDrawingOpen(true)}
+                onClick={() => runCommand('drawing.open')}
                 title="2D Engineering Drawing"
                 style={{
                   background: '#059669',
@@ -265,7 +264,6 @@ export default function ResultsViewer() {
         </div>
       )}
 
-      <DrawingViewModal isOpen={drawingOpen} onClose={() => setDrawingOpen(false)} />
     </>
   );
 }

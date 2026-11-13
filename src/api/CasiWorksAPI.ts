@@ -12,6 +12,7 @@
 //    always current, with or without the UI running.
 //  - Units: millimetres, degrees, kilograms, kg/m³.
 
+import type { CommandInfo } from '../commands/CommandRegistry.ts';
 import type { BufferGeometry } from 'three';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
@@ -32,7 +33,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.0.0';
+export const API_VERSION = '1.1.0';
 
 // =====================================================================
 // Public types
@@ -198,6 +199,33 @@ export interface ApiUnits {
   readonly density: 'kg/m^3';
 }
 
+/** A command as listed by `api.commands.list()`. */
+export type { CommandInfo };
+
+/**
+ * Named commands: everything the ribbon, status bar and keyboard do
+ * (`file.save`, `feature.extrudeCut`, `sketch.new` { plane }, `view.top`…).
+ * Commands that open dialogs or files need the running app.
+ */
+export interface CommandsAPI {
+  list(): CommandInfo[];
+  has(id: string): boolean;
+  /** Run a command. Errors: NOT_FOUND (unknown id), INVALID_ARGUMENT, OPERATION_FAILED (incl. needs the UI). */
+  execute(id: string, args?: unknown): unknown;
+}
+
+/** The part of a command registry the API uses. */
+export interface ApiCommandRegistry {
+  list(): CommandInfo[];
+  has(id: string): boolean;
+  execute(id: string, args?: unknown): unknown;
+}
+
+export interface CasiWorksAPIOptions {
+  /** Registry behind `api.commands` (without one, the namespace is empty). */
+  commands?: ApiCommandRegistry;
+}
+
 /** The CasiWorks public API. */
 export interface CasiWorksAPI {
   readonly version: string;
@@ -208,6 +236,8 @@ export interface CasiWorksAPI {
   readonly model: ModelAPI;
   readonly materials: MaterialsAPI;
   readonly history: HistoryAPI;
+  /** Since 1.1. */
+  readonly commands: CommandsAPI;
 }
 
 /** Error thrown by every API call that rejects its input or cannot complete. */
@@ -381,7 +411,7 @@ function toFeatureInfo(f: Feature, index: number): FeatureInfo {
 // =====================================================================
 
 /** Create the public API bound to a CasiWorks store (useCADStore). */
-export function createCasiWorksAPI(store: ApiStore): CasiWorksAPI {
+export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions = {}): CasiWorksAPI {
   const get = () => store.getState();
 
   const findFeature = (id: unknown): { feature: Feature; index: number } => {
@@ -608,6 +638,27 @@ export function createCasiWorksAPI(store: ApiStore): CasiWorksAPI {
     },
   });
 
+  const registry = options.commands;
+  const commandErrorCodes: Record<string, CasiWorksAPIErrorCode> = {
+    UNKNOWN_COMMAND: 'NOT_FOUND',
+    INVALID_ARGUMENT: 'INVALID_ARGUMENT',
+  };
+  const commands: CommandsAPI = Object.freeze({
+    list: () => registry?.list() ?? [],
+    has: (id: string) => registry?.has(id) ?? false,
+    execute(id: string, args?: unknown) {
+      if (typeof id !== 'string') fail('INVALID_ARGUMENT', 'Command id must be a string');
+      if (!registry?.has(id)) fail('NOT_FOUND', `Unknown command ${JSON.stringify(id)}`);
+      try {
+        return registry.execute(id, args);
+      } catch (err) {
+        if (err instanceof CasiWorksAPIError) throw err;
+        const code = (err as { code?: string } | null)?.code;
+        fail(commandErrorCodes[code ?? ''] ?? 'OPERATION_FAILED', err instanceof Error ? err.message : String(err));
+      }
+    },
+  });
+
   return Object.freeze({
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),
@@ -617,6 +668,7 @@ export function createCasiWorksAPI(store: ApiStore): CasiWorksAPI {
     model,
     materials,
     history,
+    commands,
   });
 }
 

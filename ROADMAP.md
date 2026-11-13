@@ -81,7 +81,7 @@ the foundation of "API support": the UI becomes just one client of the API.
 
 - [x] **1.1** `src/api/` — public `CasiWorksAPI` object over the store: documents, features, sketches, query; documented with JSDoc; unit tests
 - [x] **1.2** Expose it as `window.casiworks` (and as an ES module) with a version number (`api.version`); `casiworks:ready` event; `casiworks-pro/api` with `createHeadlessAPI()`
-- [ ] **1.3** Command registry: every ribbon button and shortcut runs a named command (`feature.extrudeCut`, `file.save`…) through the registry
+- [x] **1.3** Command registry: every ribbon button and shortcut runs a named command (`feature.extrudeCut`, `file.save`…) through the registry; `api.commands` (API 1.1)
 - [ ] **1.4** Events: `api.on('rebuild' | 'selectionChanged' | 'featureAdded', …)`
 - [ ] **1.5** Macro recorder: record commands to a replayable JS script; run macro from file
 - [ ] **1.6** Scripting console panel (run API snippets in-app)

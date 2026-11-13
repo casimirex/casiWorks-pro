@@ -1,5 +1,4 @@
 // CasiWorks Pro - Main Application Layout (Responsive Desktop & Mobile)
-import { useState } from 'react';
 import CommandManager from './CommandManager.tsx';
 import FeatureTree from './FeatureTree.tsx';
 import PropertyPanel from './PropertyPanel.tsx';
@@ -8,31 +7,27 @@ import Viewport3D from '../../viewport/Viewport3D.tsx';
 import ErrorBoundary from '../common/ErrorBoundary.tsx';
 import { useCADStore } from '../../store/cadStore.ts';
 
+import { runCommand } from '../../commands/index.ts';
+
 interface MainLayoutProps {
-  onExportClick(): void;
-  onMaterialClick(): void;
-  onMassPropsClick(): void;
+  /** Feature tree drawer state on small screens (toggled by the view.toggleFeatureTree command). */
+  treeOpen: boolean;
+  onCloseTree(): void;
 }
 
-export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }: MainLayoutProps) {
-  const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
+export default function MainLayout({ treeOpen, onCloseTree }: MainLayoutProps) {
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
 
   return (
     <div className="app-container">
-      <CommandManager
-        onExportClick={onExportClick}
-        onMaterialClick={onMaterialClick}
-        onMassPropsClick={onMassPropsClick}
-        onToggleTree={() => setMobileTreeOpen(prev => !prev)}
-      />
+      <CommandManager />
 
       <div className="workspace-middle">
         {/* Mobile backdrop for FeatureTree drawer */}
-        {mobileTreeOpen && (
+        {treeOpen && (
           <div
             className="mobile-backdrop"
-            onClick={() => setMobileTreeOpen(false)}
+            onClick={onCloseTree}
             title="Tap to close"
           />
         )}
@@ -40,9 +35,9 @@ export default function MainLayout({ onExportClick, onMaterialClick, onMassProps
         {/* Feature Tree Drawer */}
         <ErrorBoundary name="Feature tree" panel>
           <FeatureTree
-            onMaterialClick={onMaterialClick}
-            isOpen={mobileTreeOpen}
-            onClose={() => setMobileTreeOpen(false)}
+            onMaterialClick={() => runCommand('model.material')}
+            isOpen={treeOpen}
+            onClose={onCloseTree}
           />
         </ErrorBoundary>
 

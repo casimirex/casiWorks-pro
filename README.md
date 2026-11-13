@@ -19,6 +19,9 @@ casiworks/
 │   ├── api/
 │   │   ├── CasiWorksAPI.ts       # Public, typed scripting API v1
 │   │   └── index.ts              # API entry: window.casiworks, casiworks-pro/api module
+│   ├── commands/                 # Command registry: ribbon, shortcuts and API run named commands
+│   │   ├── CommandRegistry.ts    # Registry, key bindings, execution listeners
+│   │   └── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
 │   │
 │   ├── types/
 │   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
@@ -81,7 +84,8 @@ casiworks/
     ├── casiworks.test.ts         # Solver, features, assembly, data exchange, FEA, drawings, store
     ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
-    └── api.test.ts               # Public API (headless)
+    ├── api.test.ts               # Public API (headless)
+    └── commands.test.ts          # Command registry, keymap, built-in commands
 ```
 
 ---
@@ -208,7 +212,7 @@ viewport, and can be undone like any other edit.
 **In the running app** it is `window.casiworks` — try it in the browser console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.0.0'
+const api = window.casiworks;          // api.version === '1.1.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -233,6 +237,19 @@ const api = createHeadlessAPI();   // same API, no browser or React
 
 `api.version` follows semantic versioning: minor versions only add, major
 versions may break.
+
+**Commands** (since 1.1): every ribbon button, status-bar toggle and keyboard
+shortcut runs a named command, and scripts can run the same ones:
+
+```js
+api.commands.list();                                  // [{ id: 'feature.extrudeCut', label, category, shortcuts }, …]
+api.commands.execute('sketch.new', { plane: 'Right' });
+api.commands.execute('view.isometric');
+api.commands.execute('assembly.mate', { type: 'concentric' });
+```
+
+Commands that open dialogs or files (`file.open`, `model.material`, `drawing.open`…)
+need the running app; headless they fail with `OPERATION_FAILED`.
 
 Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
 Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`

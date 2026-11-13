@@ -10,45 +10,22 @@ import {
   ArrowDownToLine, Move, Crosshair
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { TOOLS, FEATURE_TYPES } from '../../utils/constants.ts';
+import { TOOLS } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
-import { downloadProject, openProject, newProject as newProjectFile } from '../../utils/projectFile.ts';
+import { runCommand } from '../../commands/index.ts';
 
 /** Same colours as the reference planes in the viewport and tree. */
 const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
 
-interface CommandManagerProps {
-  onExportClick(): void;
-  onMaterialClick(): void;
-  onMassPropsClick(): void;
-  /** Opens or closes the feature tree drawer (small screens). */
-  onToggleTree?: () => void;
-}
-
-export default function CommandManager({ onExportClick, onMaterialClick, onMassPropsClick, onToggleTree }: CommandManagerProps) {
+export default function CommandManager() {
   const activeTab = useCADStore(s => s.activeCommandTab);
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
-  const setActiveTool = useCADStore(s => s.setActiveTool);
   const isSketchActive = useCADStore(s => s.isSketchActive);
-  const startSketch = useCADStore(s => s.startSketch);
-  const endSketch = useCADStore(s => s.endSketch);
-  const openPropertyPanel = useCADStore(s => s.openPropertyPanel);
-  const undo = useCADStore(s => s.undo);
-  const redo = useCADStore(s => s.redo);
-  const rebuild = useCADStore(s => s.rebuild);
-  const toggleConstruction = useCADStore(s => s.toggleConstructionMode);
   const constructionMode = useCADStore(s => s.constructionMode);
-  const toggleSectionView = useCADStore(s => s.toggleSectionView);
   const sectionActive = useCADStore(s => s.sectionViewActive);
   const documentName = useCADStore(s => s.documentName);
   const isModified = useCADStore(s => s.isModified);
-  const loadExampleModel = useCADStore(s => s.loadExampleModel);
-  const insertAssemblyPart = useCADStore(s => s.insertAssemblyPart);
-  const addAssemblyMate = useCADStore(s => s.addAssemblyMate);
-  const solveAssembly = useCADStore(s => s.solveAssembly);
-  const clearAssembly = useCADStore(s => s.clearAssembly);
-  const assemblyComponents = useCADStore(s => s.assemblyComponents);
 
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
@@ -63,17 +40,13 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
     { id: 'Drawing', label: 'Drawing', icon: <FileText size={14} /> },
   ];
 
-  const handleSave = () => downloadProject(useCADStore);
-  const handleOpen = () => openProject(useCADStore);
-  const handleNew = () => newProjectFile(useCADStore);
-
   return (
     <header className="top-header">
       {/* Quick Access Toolbar */}
       <div className="quick-access-bar">
         <div className="qa-group">
-          {onToggleTree && (
-            <button className="qa-btn tree-toggle-btn" onClick={onToggleTree} title="Feature Tree (Sidebar)">
+          {(
+            <button className="qa-btn tree-toggle-btn" onClick={() => runCommand('view.toggleFeatureTree')} title="Feature Tree (Sidebar)">
               <Menu size={16} color="#38bdf8" />
               <span className="qa-label">Tree</span>
             </button>
@@ -88,22 +61,22 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
 
           <div className="qa-separator" />
 
-          <button className="qa-btn" onClick={handleNew} title="New Part (Ctrl+Alt+N)">
+          <button className="qa-btn" onClick={() => runCommand('file.new')} title="New Part (Ctrl+Alt+N)">
             <FilePlus size={14} /> <span className="qa-label">New</span>
           </button>
-          <button className="qa-btn" onClick={handleOpen} title="Open Document (Ctrl+O)">
+          <button className="qa-btn" onClick={() => runCommand('file.open')} title="Open Document (Ctrl+O)">
             <FolderOpen size={14} /> <span className="qa-label">Open</span>
           </button>
-          <button className="qa-btn" onClick={handleSave} title="Save Document (Ctrl+S)">
+          <button className="qa-btn" onClick={() => runCommand('file.save')} title="Save Document (Ctrl+S)">
             <Save size={14} /> <span className="qa-label">Save</span>
           </button>
-          <button className="qa-btn" onClick={undo} title="Undo (Ctrl+Z)">
+          <button className="qa-btn" onClick={() => runCommand('edit.undo')} title="Undo (Ctrl+Z)">
             <Undo2 size={14} />
           </button>
-          <button className="qa-btn" onClick={redo} title="Redo (Ctrl+Y)">
+          <button className="qa-btn" onClick={() => runCommand('edit.redo')} title="Redo (Ctrl+Y)">
             <Redo2 size={14} />
           </button>
-          <button className="qa-btn rebuild-btn" onClick={rebuild} title="Rebuild Feature Tree (F5)">
+          <button className="qa-btn rebuild-btn" onClick={() => runCommand('model.rebuild')} title="Rebuild Feature Tree (F5)">
             <RefreshCw size={14} color="#38bdf8" /> <span className="qa-label">Rebuild</span>
           </button>
 
@@ -142,7 +115,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                     key={ex.id}
                     className="example-item-btn"
                     onClick={() => {
-                      loadExampleModel(ex.create());
+                      runCommand('file.loadExample', { id: ex.id });
                       setExamplesOpen(false);
                     }}
                     style={{
@@ -177,13 +150,13 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
 
         {/* Right Tools */}
         <div className="qa-group">
-          <button className="qa-btn" onClick={onMaterialClick} title="Material Library">
+          <button className="qa-btn" onClick={() => runCommand('model.material')} title="Material Library">
             <Sliders size={14} /> <span className="qa-label">Material</span>
           </button>
-          <button className="qa-btn" onClick={onMassPropsClick} title="Mass Properties">
+          <button className="qa-btn" onClick={() => runCommand('evaluate.massProperties')} title="Mass Properties">
             <Scale size={14} /> <span className="qa-label">Mass Props</span>
           </button>
-          <button className="qa-btn export-btn" onClick={onExportClick} title="Export CAD Model">
+          <button className="qa-btn export-btn" onClick={() => runCommand('file.export')} title="Export CAD Model">
             <Download size={14} /> <span className="qa-label">Export</span>
           </button>
           <button
@@ -223,10 +196,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.EXTRUDE ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.EXTRUDE);
-                      openPropertyPanel({ type: FEATURE_TYPES.EXTRUDE_BOSS });
-                    }}
+                    onClick={() => runCommand('feature.extrude')}
                     title="Extruded Boss/Base"
                   >
                     <Maximize2 size={19} color="#38bdf8" />
@@ -234,10 +204,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.EXTRUDE_CUT ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.EXTRUDE_CUT);
-                      openPropertyPanel({ type: FEATURE_TYPES.EXTRUDE_CUT });
-                    }}
+                    onClick={() => runCommand('feature.extrudeCut')}
                     title="Extruded Cut"
                   >
                     <Scissors size={19} color="#fb923c" />
@@ -245,10 +212,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.REVOLVE ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.REVOLVE);
-                      openPropertyPanel({ type: FEATURE_TYPES.REVOLVE_BOSS });
-                    }}
+                    onClick={() => runCommand('feature.revolve')}
                     title="Revolved Boss/Base"
                   >
                     <RotateCw size={19} color="#38bdf8" />
@@ -256,10 +220,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SWEEP ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.SWEEP);
-                      openPropertyPanel({ type: FEATURE_TYPES.SWEEP_BOSS });
-                    }}
+                    onClick={() => runCommand('feature.sweep')}
                     title="Swept Boss/Base"
                   >
                     <Spline size={19} color="#4ade80" />
@@ -267,10 +228,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.LOFT ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.LOFT);
-                      openPropertyPanel({ type: FEATURE_TYPES.LOFT_BOSS });
-                    }}
+                    onClick={() => runCommand('feature.loft')}
                     title="Lofted Boss/Base"
                   >
                     <Layers size={19} color="#c084fc" />
@@ -284,10 +242,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.FILLET ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.FILLET);
-                      openPropertyPanel({ type: FEATURE_TYPES.FILLET });
-                    }}
+                    onClick={() => runCommand('feature.fillet')}
                     title="Fillet Edges"
                   >
                     <CircleDot size={19} color="#2dd4bf" />
@@ -295,10 +250,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.CHAMFER ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.CHAMFER);
-                      openPropertyPanel({ type: FEATURE_TYPES.CHAMFER });
-                    }}
+                    onClick={() => runCommand('feature.chamfer')}
                     title="Chamfer Edges"
                   >
                     <Shield size={19} color="#fde047" />
@@ -306,10 +258,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SHELL ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.SHELL);
-                      openPropertyPanel({ type: FEATURE_TYPES.SHELL });
-                    }}
+                    onClick={() => runCommand('feature.shell')}
                     title="Shell Hollow Part"
                   >
                     <Box size={19} color="#fbbf24" />
@@ -317,10 +266,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.HOLE ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.HOLE);
-                      openPropertyPanel({ type: FEATURE_TYPES.HOLE });
-                    }}
+                    onClick={() => runCommand('feature.hole')}
                     title="Hole Wizard"
                   >
                     <CircleDot size={19} color="#f87171" />
@@ -334,10 +280,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.LINEAR_PATTERN ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.LINEAR_PATTERN);
-                      openPropertyPanel({ type: FEATURE_TYPES.LINEAR_PATTERN });
-                    }}
+                    onClick={() => runCommand('feature.linearPattern')}
                     title="Linear Pattern"
                   >
                     <Grid size={19} color="#93c5fd" />
@@ -345,10 +288,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.CIRCULAR_PATTERN ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.CIRCULAR_PATTERN);
-                      openPropertyPanel({ type: FEATURE_TYPES.CIRCULAR_PATTERN });
-                    }}
+                    onClick={() => runCommand('feature.circularPattern')}
                     title="Circular Pattern"
                   >
                     <RotateCw size={19} color="#93c5fd" />
@@ -356,10 +296,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.MIRROR ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTool(TOOLS.MIRROR);
-                      openPropertyPanel({ type: FEATURE_TYPES.MIRROR });
-                    }}
+                    onClick={() => runCommand('feature.mirror')}
                     title="Mirror Feature"
                   >
                     <Copy size={19} color="#e879f9" />
@@ -381,7 +318,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                       <button
                         key={plane}
                         className="ribbon-btn primary-action-btn"
-                        onClick={() => startSketch(plane)}
+                        onClick={() => runCommand('sketch.new', { plane })}
                         title={`Sketch on the ${plane} plane`}
                       >
                         <PenTool size={19} color={PLANE_COLORS[plane]} />
@@ -390,11 +327,11 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                     ))
                   ) : (
                     <>
-                      <button className="ribbon-btn active exit-sketch-btn" onClick={() => endSketch(true)} title="Confirm & Exit Sketch">
+                      <button className="ribbon-btn active exit-sketch-btn" onClick={() => runCommand('sketch.exit')} title="Confirm & Exit Sketch">
                         <CheckCircle2 size={19} color="#4ade80" />
                         <span>Exit Sketch</span>
                       </button>
-                      <button className="ribbon-btn cancel-sketch-btn" onClick={() => endSketch(false)} title="Discard Sketch Changes">
+                      <button className="ribbon-btn cancel-sketch-btn" onClick={() => runCommand('sketch.discard')} title="Discard Sketch Changes">
                         <XCircle size={19} color="#f87171" />
                         <span>Discard</span>
                       </button>
@@ -408,7 +345,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_LINE ? 'active' : ''}`}
-                    onClick={() => setActiveTool(TOOLS.SKETCH_LINE)}
+                    onClick={() => runCommand('sketch.line')}
                     title="Line Tool (L)"
                   >
                     <PenTool size={19} color="#f1f5f9" />
@@ -416,7 +353,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_RECT ? 'active' : ''}`}
-                    onClick={() => setActiveTool(TOOLS.SKETCH_RECT)}
+                    onClick={() => runCommand('sketch.rectangle')}
                     title="Corner Rectangle (R)"
                   >
                     <Square size={19} color="#f1f5f9" />
@@ -424,7 +361,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_CIRCLE ? 'active' : ''}`}
-                    onClick={() => setActiveTool(TOOLS.SKETCH_CIRCLE)}
+                    onClick={() => runCommand('sketch.circle')}
                     title="Center Circle (C)"
                   >
                     <Circle size={19} color="#f1f5f9" />
@@ -432,7 +369,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_POINT ? 'active' : ''}`}
-                    onClick={() => setActiveTool(TOOLS.SKETCH_POINT)}
+                    onClick={() => runCommand('sketch.point')}
                     title="Sketch Point"
                   >
                     <CircleDot size={19} color="#f1f5f9" />
@@ -446,7 +383,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className={`ribbon-btn ${constructionMode ? 'active' : ''}`}
-                    onClick={toggleConstruction}
+                    onClick={() => runCommand('sketch.toggleConstruction')}
                     title="Toggle Construction Line"
                   >
                     <Hash size={19} color="#fbbf24" />
@@ -454,7 +391,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_DIMENSION ? 'active' : ''}`}
-                    onClick={() => setActiveTool(TOOLS.SKETCH_DIMENSION)}
+                    onClick={() => runCommand('sketch.dimension')}
                     title="Smart Dimension (D)"
                   >
                     <Scale size={19} color="#f97316" />
@@ -470,13 +407,13 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
           {activeTab === 'Evaluate' && (
             <div className="tool-group">
               <div className="tool-group-buttons">
-                <button className="ribbon-btn" onClick={onMassPropsClick} title="Compute Mass Properties">
+                <button className="ribbon-btn" onClick={() => runCommand('evaluate.massProperties')} title="Compute Mass Properties">
                   <Scale size={19} color="#38bdf8" />
                   <span>Mass Props</span>
                 </button>
                 <button
                   className={`ribbon-btn ${sectionActive ? 'active' : ''}`}
-                  onClick={toggleSectionView}
+                  onClick={() => runCommand('view.toggleSection')}
                   title="Cross-Section Cut View"
                 >
                   <Eye size={19} color="#fbbf24" />
@@ -495,7 +432,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={() => insertAssemblyPart('Base_Plate', 'box', { width: 50, height: 12, depth: 50 })}
+                    onClick={() => runCommand('assembly.insertPart', { name: 'Base_Plate', shape: 'box', dims: { width: 50, height: 12, depth: 50 } })}
                     title="Insert Base Mounting Plate"
                   >
                     <Box size={19} color="#38bdf8" />
@@ -503,7 +440,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => insertAssemblyPart('Pin_Shaft', 'pin')}
+                    onClick={() => runCommand('assembly.insertPart', { name: 'Pin_Shaft', shape: 'pin' })}
                     title="Insert Cylindrical Alignment Pin"
                   >
                     <CircleDot size={19} color="#fbbf24" />
@@ -511,7 +448,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => insertAssemblyPart('Flange_Ring', 'flange')}
+                    onClick={() => runCommand('assembly.insertPart', { name: 'Flange_Ring', shape: 'flange' })}
                     title="Insert Circular Bolt Flange"
                   >
                     <Circle size={19} color="#2dd4bf" />
@@ -519,7 +456,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => insertAssemblyPart('Cylinder_Rod', 'cylinder', { radius: 12, height: 35 })}
+                    onClick={() => runCommand('assembly.insertPart', { name: 'Cylinder_Rod', shape: 'cylinder', dims: { radius: 12, height: 35 } })}
                     title="Insert Cylinder Rod"
                   >
                     <Box size={19} color="#a78bfa" />
@@ -534,13 +471,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      addAssemblyMate('coincident', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'bottom', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'coincident' })}
                     title="Coincident Mate (Align top and bottom faces)"
                   >
                     <Layers size={19} color="#38bdf8" />
@@ -548,13 +479,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      addAssemblyMate('distance', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'bottom', 15);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'distance' })}
                     title="Distance Mate (15mm Offset)"
                   >
                     <ArrowRight size={19} color="#fb923c" />
@@ -562,14 +487,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      // three.js cylinders (pin, flange, rod) have their axis along Y
-                      addAssemblyMate('concentric', assemblyComponents[0].id, 'y', assemblyComponents[1].id, 'y', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'concentric' })}
                     title="Concentric Mate (Align cylindrical axes)"
                   >
                     <CircleDot size={19} color="#2dd4bf" />
@@ -577,13 +495,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      addAssemblyMate('parallel', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'top', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'parallel' })}
                     title="Parallel Mate (Align face normals)"
                   >
                     <Spline size={19} color="#fde047" />
@@ -591,13 +503,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      addAssemblyMate('perpendicular', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'front', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'perpendicular' })}
                     title="Perpendicular Mate (90° face normal orientation)"
                   >
                     <ArrowDownToLine size={19} color="#c084fc" />
@@ -605,14 +511,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      // Second component's cylinder axis (Y) tangent to the first component's top face
-                      addAssemblyMate('tangent', assemblyComponents[1].id, 'y', assemblyComponents[0].id, 'top', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'tangent' })}
                     title="Tangent Mate (Cylinder to planar surface contact)"
                   >
                     <Circle size={19} color="#f472b6" />
@@ -620,14 +519,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 2) {
-                        alert('Please insert at least two components to mate.');
-                        return;
-                      }
-                      // Centre the second component between the first component's left and right faces
-                      addAssemblyMate('width', assemblyComponents[0].id, 'left', assemblyComponents[1].id, 'left', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'width' })}
                     title="Width Mate (Centers component between two boundary faces)"
                   >
                     <Maximize2 size={19} color="#34d399" />
@@ -635,14 +527,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => {
-                      if (assemblyComponents.length < 1) {
-                        alert('Please insert at least one component to mate to a path.');
-                        return;
-                      }
-                      // Keep the second component on the first component's top centre line
-                      addAssemblyMate('path', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'top', 0);
-                    }}
+                    onClick={() => runCommand('assembly.mate', { type: 'path' })}
                     title="Path Mate (Restrains component along guide curve)"
                   >
                     <Spline size={19} color="#fbbf24" />
@@ -657,7 +542,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={solveAssembly}
+                    onClick={() => runCommand('assembly.solve')}
                     title="Re-solve all assembly mates numerically"
                   >
                     <Play size={19} color="#4ade80" />
@@ -665,7 +550,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'exploded_view' })}
+                    onClick={() => runCommand('assembly.explodedView')}
                     title="Configure Exploded View"
                   >
                     <Move size={19} color="#38bdf8" />
@@ -673,7 +558,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={clearAssembly}
+                    onClick={() => runCommand('assembly.clear')}
                     title="Remove all components and mates"
                   >
                     <Scissors size={19} color="#f87171" />
@@ -693,7 +578,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_view', viewType: 'standard_3_view' })}
+                    onClick={() => runCommand('drawing.view', { viewType: 'standard_3_view' })}
                     title="Insert Standard 3-View (Front, Top, Right)"
                   >
                     <Grid size={19} color="#38bdf8" />
@@ -701,7 +586,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_view', viewType: 'projected' })}
+                    onClick={() => runCommand('drawing.view', { viewType: 'projected' })}
                     title="Projected Orthographic View"
                   >
                     <Box size={19} color="#4ade80" />
@@ -709,7 +594,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_view', viewType: 'section' })}
+                    onClick={() => runCommand('drawing.view', { viewType: 'section' })}
                     title="Cross-Section Cut View"
                   >
                     <Scissors size={19} color="#fb923c" />
@@ -717,7 +602,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_view', viewType: 'isometric' })}
+                    onClick={() => runCommand('drawing.view', { viewType: 'isometric' })}
                     title="Isometric 3D Projected View"
                   >
                     <Layers size={19} color="#c084fc" />
@@ -732,7 +617,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_dimension', dimType: 'smart' })}
+                    onClick={() => runCommand('drawing.dimension')}
                     title="Smart Dimension (Linear, Radius, Diameter, Angle)"
                   >
                     <Scale size={19} color="#f97316" />
@@ -740,7 +625,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_gdt', gdtType: 'fcf' })}
+                    onClick={() => runCommand('drawing.gdt', { gdtType: 'fcf' })}
                     title="Feature Control Frame (Geometric Tolerance)"
                   >
                     <Shield size={19} color="#38bdf8" />
@@ -748,7 +633,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                   </button>
                   <button
                     className="ribbon-btn"
-                    onClick={() => openPropertyPanel({ type: 'drawing_gdt', gdtType: 'datum' })}
+                    onClick={() => runCommand('drawing.gdt', { gdtType: 'datum' })}
                     title="Datum Feature Symbol (A, B, C)"
                   >
                     <Crosshair size={19} color="#fbbf24" />
@@ -763,7 +648,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                 <div className="tool-group-buttons">
                   <button
                     className="ribbon-btn"
-                    onClick={() => onExportClick && onExportClick()}
+                    onClick={() => runCommand('drawing.open')}
                     title="Export 2D Drawing to DXF / SVG"
                   >
                     <Download size={19} color="#4ade80" />
@@ -781,10 +666,7 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
               <div className="tool-group-buttons">
                 <button
                   className="ribbon-btn"
-                  onClick={() => {
-                    setActiveTool(TOOLS.EXTRUDE);
-                    openPropertyPanel({ type: FEATURE_TYPES.EXTRUDE_BOSS, mode: activeTab });
-                  }}
+                  onClick={() => runCommand('feature.extrude')}
                 >
                   <Box size={19} color="#38bdf8" />
                   <span>{activeTab} Tool</span>

@@ -24,8 +24,9 @@
 // Both give the same object; it is versioned with semantic versioning
 // (`api.version`): minor versions only add, major versions may break.
 import { createCasiWorksAPI } from './CasiWorksAPI.ts';
-import type { ApiStore, CasiWorksAPI } from './CasiWorksAPI.ts';
+import type { ApiStore, CasiWorksAPI, CasiWorksAPIOptions } from './CasiWorksAPI.ts';
 import { useCADStore } from '../store/cadStore.ts';
+import { commands } from '../commands/index.ts';
 
 export * from './CasiWorksAPI.ts';
 
@@ -54,7 +55,7 @@ declare global {
  * every call returns an API over the same document.
  */
 export function createHeadlessAPI(): CasiWorksAPI {
-  return createCasiWorksAPI(useCADStore);
+  return createCasiWorksAPI(useCADStore, { commands });
 }
 
 /** Where the API is installed: `window` in the app, any object in tests. */
@@ -67,8 +68,8 @@ interface GlobalTarget {
  * and announce it with a `casiworks:ready` event. Installing again (e.g. after
  * a hot reload) replaces the previous instance.
  */
-export function exposeGlobalAPI(store: ApiStore, target: GlobalTarget = globalThis as GlobalTarget): CasiWorksAPI {
-  const api = createCasiWorksAPI(store);
+export function exposeGlobalAPI(store: ApiStore, target: GlobalTarget = globalThis as GlobalTarget, options: CasiWorksAPIOptions = {}): CasiWorksAPI {
+  const api = createCasiWorksAPI(store, options);
   Object.defineProperty(target, 'casiworks', {
     value: api,
     enumerable: true,
