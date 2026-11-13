@@ -685,19 +685,22 @@ test('AssemblyManager Audit: Null checks for deleted/missing components, faces &
   const c1 = mgr.insertComponent('Comp1', new THREE.BoxGeometry(20, 20, 20), true);
   const c2 = mgr.insertComponent('Comp2', new THREE.BoxGeometry(20, 20, 20), false);
 
-  // Add mate with deleted component ID
-  mgr.addMate(MATE_TYPES.COINCIDENT, c1.id, 'top', 'deleted_comp_id_999', 'bottom', 0);
+  // Adding a mate to a component that does not exist is rejected
+  assert.throws(() => mgr.addMate(MATE_TYPES.COINCIDENT, c1.id, 'top', 'deleted_comp_id_999', 'bottom', 0), /unknown component/);
+  // A stale mate already stored (e.g. loaded from an old file) is skipped by the solver
+  mgr.mates.push({ ...mgr.mates[0], id: 'stale', type: MATE_TYPES.COINCIDENT, comp1Id: c1.id, comp2Id: 'deleted_comp_id_999', ref1: 'top', ref2: 'bottom', offset: 0 });
   const resMissing = mgr.solve();
   assert.ok(resMissing.converged, 'Solve must gracefully handle mate referencing non-existent component');
+  mgr.mates = [];
 
   // Add valid mate between c1 and c2
   mgr.addMate(MATE_TYPES.COINCIDENT, c1.id, 'top', c2.id, 'bottom', 5.0);
-  assert.equal(mgr.mates.length, 2, 'Must have 2 mates');
+  assert.equal(mgr.mates.length, 1, 'Must have 1 mate (the stale one was cleared)');
 
   // removeComponent should remove component and cleanup dangling mates
   mgr.removeComponent(c2.id);
   assert.equal(mgr.components.length, 1, 'Component count must be 1 after removal');
-  assert.equal(mgr.mates.length, 1, 'Dangling mate referencing removed component must be pruned');
+  assert.equal(mgr.mates.length, 0, 'Dangling mate referencing removed component must be pruned');
 
   // Custom face reference with degenerate/missing normal
   const degenFace = c1.getFaceReference({ point: new THREE.Vector3(0, 0, 0), normal: new THREE.Vector3(0, 0, 0) });

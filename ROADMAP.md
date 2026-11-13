@@ -64,6 +64,10 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.4c** B-Rep and topology — removed instead of converted: unused by the app, a duplicate of the mesh CSG, and measured wrong (see commit)
   - [x] **T.4d** Import / export and material library (plus standards-compliant faceted STEP and IGES 5.3)
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
+  - [x] **T.5a** Assembly manager (plus mate fixes)
+  - [ ] **T.5b** FEA engine
+  - [ ] **T.5c** Drawing engine
+  - [ ] **T.5d** Feature engine
 - [ ] **T.6** Viewport and UI components → `.tsx`
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 

@@ -727,7 +727,12 @@ export const useCADStore = create<CADStore>()(
 
     addAssemblyMate: (type, comp1Id, ref1, comp2Id, ref2, offset = 0, extra = {}) => set(state => {
       // Options go to addMate so they are in place before it solves
-      assemblyManager.addMate(type, comp1Id, ref1, comp2Id, ref2, offset, extra);
+      try {
+        assemblyManager.addMate(type, comp1Id, ref1, comp2Id, ref2, offset, extra);
+      } catch (err) {
+        state.statusMessage = `Mate not added: ${err instanceof Error ? err.message : String(err)}`;
+        return;
+      }
       state.mates = [...assemblyManager.mates] as Draft<AssemblyMate>[];
       state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
       state.statusMessage = `Added ${type} mate between components`;
@@ -743,7 +748,9 @@ export const useCADStore = create<CADStore>()(
     solveAssembly: () => set(state => {
       const res = assemblyManager.solve();
       state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
-      state.statusMessage = `Assembly solved (residual: ${(res?.error ?? 0).toFixed(5)}mm)`;
+      state.statusMessage = res?.converged
+        ? `Assembly solved (residual: ${(res.error ?? 0).toFixed(5)})`
+        : `Mates not satisfied — they may conflict (largest error: ${(res?.error ?? 0).toFixed(3)})`;
     }),
 
     clearAssembly: () => set(state => {

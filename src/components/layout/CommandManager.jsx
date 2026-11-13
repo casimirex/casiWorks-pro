@@ -553,7 +553,8 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                         alert('Please insert at least two components to mate.');
                         return;
                       }
-                      addAssemblyMate('concentric', assemblyComponents[0].id, 'z', assemblyComponents[1].id, 'z', 0);
+                      // three.js cylinders (pin, flange, rod) have their axis along Y
+                      addAssemblyMate('concentric', assemblyComponents[0].id, 'y', assemblyComponents[1].id, 'y', 0);
                     }}
                     title="Concentric Mate (Align cylindrical axes)"
                   >
@@ -595,7 +596,8 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                         alert('Please insert at least two components to mate.');
                         return;
                       }
-                      addAssemblyMate('tangent', assemblyComponents[0].id, 'cylinder', assemblyComponents[1].id, 'top', 0);
+                      // Second component's cylinder axis (Y) tangent to the first component's top face
+                      addAssemblyMate('tangent', assemblyComponents[1].id, 'y', assemblyComponents[0].id, 'top', 0);
                     }}
                     title="Tangent Mate (Cylinder to planar surface contact)"
                   >
@@ -609,7 +611,8 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                         alert('Please insert at least two components to mate.');
                         return;
                       }
-                      addAssemblyMate('width', assemblyComponents[0].id, 'tab', assemblyComponents[1].id, 'boundary', 0);
+                      // Centre the second component between the first component's left and right faces
+                      addAssemblyMate('width', assemblyComponents[0].id, 'left', assemblyComponents[1].id, 'left', 0);
                     }}
                     title="Width Mate (Centers component between two boundary faces)"
                   >
@@ -623,7 +626,8 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                         alert('Please insert at least one component to mate to a path.');
                         return;
                       }
-                      addAssemblyMate('path', assemblyComponents[0].id, 'origin', 'path_curve', 'guide', 0);
+                      // Keep the second component on the first component's top centre line
+                      addAssemblyMate('path', assemblyComponents[0].id, 'top', assemblyComponents[1].id, 'top', 0);
                     }}
                     title="Path Mate (Restrains component along guide curve)"
                   >

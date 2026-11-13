@@ -81,11 +81,12 @@ export interface LeaderLine {
   points: THREE.Vector3[];
 }
 
-export type ExplodedViewResult = ExplodedComponent[] & {
-  leaderLines: LeaderLine[];
-  distance: number;
+export interface ExplodedViewResult {
   components: ExplodedComponent[];
-};
+  leaderLines: LeaderLine[];
+  /** Base explosion step (mm). */
+  distance: number;
+}
 
 export type ExplodeOptions = number | { distance?: number; axis?: THREE.Vector3 | 'x' | 'y' | 'z'; leaderLines?: boolean };
 
@@ -368,6 +369,9 @@ export class AssemblyManager {
    * @param {object} options - Advanced options (e.g. pathPoints, secondary references)
    */
   addMate(type: string, comp1Id: string, ref1: MateRef | MateRef[], comp2Id: string, ref2: MateRef | MateRef[], offset = 0, options: MateOptions = {}): Mate {
+    for (const id of [comp1Id, comp2Id]) {
+      if (!this.components.some(c => c.id === id)) throw new Error(`Mate references unknown component ${JSON.stringify(id)}`);
+    }
     const mate: Mate = {
       id: generateId('mate'),
       type: type || MATE_TYPES.COINCIDENT,
@@ -455,8 +459,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 1. COINCIDENT MATE (face-to-face contact or point/axis)
           // ----------------------------------------------------
-          case MATE_TYPES.COINCIDENT:
-          case 'coincident': {
+          case MATE_TYPES.COINCIDENT: {
             const f1 = c1.getFaceReference(mate.ref1);
             const f2 = c2.getFaceReference(mate.ref2);
 
@@ -482,8 +485,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 2. CONCENTRIC MATE (axis collinear alignment)
           // ----------------------------------------------------
-          case MATE_TYPES.CONCENTRIC:
-          case 'concentric': {
+          case MATE_TYPES.CONCENTRIC: {
             const a1 = c1.getAxisReference(mate.ref1);
             const a2 = c2.getAxisReference(mate.ref2);
 
@@ -511,8 +513,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 3. PARALLEL MATE (normals or axes parallel)
           // ----------------------------------------------------
-          case MATE_TYPES.PARALLEL:
-          case 'parallel': {
+          case MATE_TYPES.PARALLEL: {
             const f1 = c1.getFaceReference(mate.ref1);
             const f2 = c2.getFaceReference(mate.ref2);
 
@@ -534,8 +535,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 4. PERPENDICULAR MATE (normals or axes perpendicular)
           // ----------------------------------------------------
-          case MATE_TYPES.PERPENDICULAR:
-          case 'perpendicular': {
+          case MATE_TYPES.PERPENDICULAR: {
             const f1 = c1.getFaceReference(mate.ref1);
             const f2 = c2.getFaceReference(mate.ref2);
 
@@ -565,8 +565,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 5. DISTANCE MATE (planar offset distance)
           // ----------------------------------------------------
-          case MATE_TYPES.DISTANCE:
-          case 'distance': {
+          case MATE_TYPES.DISTANCE: {
             const f1 = c1.getFaceReference(mate.ref1);
             const f2 = c2.getFaceReference(mate.ref2);
 
@@ -591,8 +590,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 6. ANGLE MATE (angular relation between faces or axes)
           // ----------------------------------------------------
-          case MATE_TYPES.ANGLE:
-          case 'angle': {
+          case MATE_TYPES.ANGLE: {
             const f1 = c1.getFaceReference(mate.ref1);
             const f2 = c2.getFaceReference(mate.ref2);
 
@@ -624,8 +622,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 7. TANGENT MATE (cylinder surface tangent to plane/cylinder)
           // ----------------------------------------------------
-          case MATE_TYPES.TANGENT:
-          case 'tangent': {
+          case MATE_TYPES.TANGENT: {
             let cylComp = c1;
             let planeComp = c2;
             let cylRef = mate.ref1;
@@ -643,14 +640,15 @@ export class AssemblyManager {
             const cyl = cylComp.getAxisReference(cylRef);
             const plane = planeComp.getFaceReference(planeRef);
 
-            // 1. Cylinder axis must be perpendicular to plane normal
+            // 1. Cylinder axis must be perpendicular to the plane normal. Rotate the
+            //    cylinder towards that; if it is fixed, rotate the plane the opposite way.
             const dot = cyl.axis.dot(plane.normal);
             const perpAxis = cyl.axis.clone().sub(plane.normal.clone().multiplyScalar(dot));
-            if (perpAxis.lengthSq() > 1e-6) {
+            if (Math.abs(dot) > 1e-9 && perpAxis.lengthSq() > 1e-12) {
               perpAxis.normalize();
               const rotDelta = safeQuaternionFromVectors(cyl.axis, perpAxis);
-              if (!inverted) this._applyRotationDelta(c1, c2, rotDelta, 1.0, 0);
-              else this._applyRotationDelta(c1, c2, rotDelta, 0, 1.0);
+              if (!cylComp.isFixed) this._rotateComponent(cylComp, rotDelta);
+              else if (!planeComp.isFixed) this._rotateComponent(planeComp, rotDelta.clone().invert());
             }
 
             // 2. Centerline distance from plane equals cylinder radius + offset
@@ -659,7 +657,8 @@ export class AssemblyManager {
             const d = cyl_u.point.clone().sub(plane_u.point).dot(plane_u.normal);
             const targetD = (d >= 0 ? 1 : -1) * (cyl_u.radius + mate.offset);
 
-            const tanError = Math.abs(Math.abs(d) - cyl_u.radius - mate.offset);
+            const orientationError = Math.abs(cyl_u.axis.dot(plane_u.normal));
+            const tanError = Math.max(Math.abs(Math.abs(d) - cyl_u.radius - mate.offset), orientationError);
             if (tanError > maxError) maxError = tanError;
 
             const shift = plane_u.normal.clone().multiplyScalar(targetD - d);
@@ -674,8 +673,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 8. WIDTH MATE (centers tab symmetrically between two boundary faces)
           // ----------------------------------------------------
-          case MATE_TYPES.WIDTH:
-          case 'width': {
+          case MATE_TYPES.WIDTH: {
             const ref1A = mate.ref1 || 'left';
             const ref1B = mate.ref1Secondary || c1.getOpposingFaceName(ref1A);
             const f1A = c1.getFaceReference(ref1A);
@@ -709,8 +707,7 @@ export class AssemblyManager {
           // ----------------------------------------------------
           // 9. PATH MATE (restrains component along guide curve polyline)
           // ----------------------------------------------------
-          case MATE_TYPES.PATH:
-          case 'path': {
+          case MATE_TYPES.PATH: {
             const given = mate.pathPoints;
             let points: THREE.Vector3[];
             if (!given || given.length < 2) {
@@ -773,6 +770,13 @@ export class AssemblyManager {
       converged: maxError < tolerance,
       iterations: iter,
     };
+  }
+
+  /** Rotate one component about its own origin. */
+  _rotateComponent(comp: AssemblyComponent, rotation: THREE.Quaternion): void {
+    if (comp.isFixed || ![rotation.x, rotation.y, rotation.z, rotation.w].every(Number.isFinite)) return;
+    comp.quaternion.premultiply(rotation).normalize();
+    comp.updateMatrix();
   }
 
   /**
@@ -842,94 +846,60 @@ export class AssemblyManager {
       if (options.leaderLines !== undefined) generateLeaderLines = options.leaderLines;
     }
 
-    // 0 components guard: return clean empty structure without division by zero
-    if (!this.components || this.components.length === 0) {
-      const empty = [] as unknown as ExplodedViewResult;
-      empty.leaderLines = [];
-      empty.distance = baseDist;
-      empty.components = empty;
-      return empty;
+    const atRest = (comp: AssemblyComponent): ExplodedComponent => ({
+      id: comp.id,
+      name: comp.name,
+      position: comp.position.clone(),
+      originalPosition: comp.position.clone(),
+      explosionAxis: new THREE.Vector3(),
+      distance: 0,
+    });
+
+    // 0 or 1 components: nothing to explode relative to
+    if (this.components.length < 2) {
+      return { components: this.components.map(atRest), leaderLines: [], distance: this.components.length ? 0 : baseDist };
     }
 
-    // 1 component guard: single body cannot explode relative to anything
-    if (this.components.length === 1) {
-      const singleComp = this.components[0];
-      const results = [{
-        id: singleComp.id,
-        name: singleComp.name,
-        position: singleComp.position.clone(),
-        originalPosition: singleComp.position.clone(),
-        explosionAxis: new THREE.Vector3(0, 0, 0),
-        distance: 0,
-      }] as ExplodedViewResult;
-      results.leaderLines = [];
-      results.distance = 0;
-      results.components = results;
-      return results;
-    }
-
-    // Compute assembly center for >= 2 components
-    const assemblyCenter = new THREE.Vector3();
-    let fixedCentroid = null;
-    for (const comp of this.components) {
-      assemblyCenter.add(comp.position);
-      if (comp.isFixed && !fixedCentroid) {
-        fixedCentroid = comp.position.clone();
-      }
-    }
-    assemblyCenter.multiplyScalar(1 / this.components.length);
-    const refCenter = fixedCentroid || assemblyCenter;
+    // Reference centre: the first fixed component, else the centroid
+    const centroid = this.components.reduce((acc, c) => acc.add(c.position), new THREE.Vector3()).divideScalar(this.components.length);
+    const refCenter = this.components.find(c => c.isFixed)?.position.clone() ?? centroid;
+    const byId = new Map(this.components.map(c => [c.id, c]));
 
     const leaderLines: LeaderLine[] = [];
-    const results = this.components.map((comp, idx): ExplodedComponent => {
-      if (comp.isFixed) {
-        return {
-          id: comp.id,
-          name: comp.name,
-          position: comp.position.clone(),
-          originalPosition: comp.position.clone(),
-          explosionAxis: new THREE.Vector3(0, 0, 0),
-          distance: 0,
-        };
-      }
+    const components = this.components.map((comp, idx): ExplodedComponent => {
+      if (comp.isFixed) return atRest(comp);
 
-      // Determine kinematic motion axis
       const motionAxis = new THREE.Vector3(0, 1, 0);
-
       if (explicitAxis) {
         if (explicitAxis instanceof THREE.Vector3) motionAxis.copy(explicitAxis).normalize();
         else if (explicitAxis === 'x') motionAxis.set(1, 0, 0);
-        else if (explicitAxis === 'y') motionAxis.set(0, 1, 0);
         else if (explicitAxis === 'z') motionAxis.set(0, 0, 1);
       } else {
-        // Find primary mate connected to this component to extract motion axis
         const mate = this.mates.find(m => m.comp1Id === comp.id || m.comp2Id === comp.id);
-        if (mate) {
-          const isComp2 = mate.comp2Id === comp.id;
-          const ref = isComp2 ? mate.ref2 : mate.ref1;
-          const type = String(mate.type).toLowerCase();
-
-          if (type === MATE_TYPES.CONCENTRIC || type === 'concentric') {
-            const axisRef = comp.getAxisReference(ref);
-            motionAxis.copy(axisRef.axis).normalize();
+        const partner = mate ? byId.get(mate.comp1Id === comp.id ? mate.comp2Id : mate.comp1Id) : undefined;
+        if (mate && partner) {
+          const ref = mate.comp1Id === comp.id ? mate.ref1 : mate.ref2;
+          if (String(mate.type).toLowerCase() === MATE_TYPES.CONCENTRIC) {
+            // Slide along the shared axis, on the side away from the partner
+            motionAxis.copy(comp.getAxisReference(ref).axis);
+            if (comp.position.clone().sub(partner.position).dot(motionAxis) < 0) motionAxis.negate();
           } else {
-            const faceRef = comp.getFaceReference(ref);
-            motionAxis.copy(faceRef.normal).normalize();
+            // A mated face points towards the partner: move the opposite way
+            motionAxis.copy(comp.getFaceReference(ref).normal).negate();
           }
         } else {
-          // Radial vector from reference centroid
+          // Unmated: move radially away from the reference centre
           motionAxis.subVectors(comp.position, refCenter);
           if (motionAxis.lengthSq() < 1e-4) {
             const angle = (idx * Math.PI * 2) / Math.max(1, this.components.length - 1);
             motionAxis.set(Math.cos(angle), 0.5, Math.sin(angle));
           }
-          motionAxis.normalize();
         }
+        motionAxis.normalize();
       }
 
       const stepDist = baseDist * Math.max(1, idx);
       const explodedPos = comp.position.clone().add(motionAxis.clone().multiplyScalar(stepDist));
-
       if (generateLeaderLines) {
         leaderLines.push({
           componentId: comp.id,
@@ -939,7 +909,6 @@ export class AssemblyManager {
           points: [comp.position.clone(), explodedPos.clone()],
         });
       }
-
       return {
         id: comp.id,
         name: comp.name,
@@ -950,13 +919,7 @@ export class AssemblyManager {
       };
     });
 
-    // Attach leader lines & metadata for full compatibility
-    const view = results as ExplodedViewResult;
-    view.leaderLines = leaderLines;
-    view.distance = baseDist;
-    view.components = view;
-
-    return view;
+    return { components, leaderLines, distance: baseDist };
   }
 
   generateExplodedView(options: ExplodeOptions = 40): ExplodedViewResult {
