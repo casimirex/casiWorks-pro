@@ -62,3 +62,28 @@ export function getSketchPlaneMatrix(plane: string): THREE.Matrix4 {
   }
   return matrix;
 }
+
+/** Unit vector of `v`; `fallback` (cloned) when `v` is missing, non-finite or ~zero length. */
+export function safeNormalize(
+  v: { x: number; y: number; z: number } | null | undefined,
+  fallback: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
+): THREE.Vector3 {
+  if (!v || typeof v.x !== 'number') return fallback.clone();
+  const x = Number.isFinite(v.x) ? v.x : 0;
+  const y = Number.isFinite(v.y) ? v.y : 0;
+  const z = Number.isFinite(v.z) ? v.z : 0;
+  const lenSq = x * x + y * y + z * z;
+  if (!(lenSq >= 1e-14) || !Number.isFinite(lenSq)) return fallback.clone();
+  const invLen = 1 / Math.sqrt(lenSq);
+  return new THREE.Vector3(x * invLen, y * invLen, z * invLen);
+}
+
+/** Copy of `p` as a Vector3 with non-finite components replaced from `defaultVal`. */
+export function sanitizePoint(
+  p: { x?: number; y?: number; z?: number } | null | undefined,
+  defaultVal: THREE.Vector3 = new THREE.Vector3(0, 0, 0),
+): THREE.Vector3 {
+  if (!p) return defaultVal.clone();
+  const pick = (value: number | undefined, fallback: number) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+  return new THREE.Vector3(pick(p.x, defaultVal.x), pick(p.y, defaultVal.y), pick(p.z, defaultVal.z));
+}

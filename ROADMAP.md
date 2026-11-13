@@ -19,7 +19,7 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 | Area | State |
 |------|-------|
 | UI shell | Ribbon, feature tree with rollback, property panel, 3D viewport, dialogs |
-| Geometry | **Triangle-mesh kernel** (BSP CSG on polygons). Exact B-Rep classes exist in `kernel/BRep.js` but the live model does not use them |
+| Geometry | **Triangle-mesh kernel** (BSP CSG on polygons), verified by measured tests. No exact B-Rep yet (an earlier unused, incorrect B-Rep module was removed) |
 | Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); needs Phase 2 |
 | Display | Boolean cuts leave many thin triangles, so edge display shows stray fan lines around holes; resolved by the exact kernel |
 | STEP / IGES export | Faceted (triangles), not exact surfaces |
@@ -61,7 +61,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [ ] **T.4** Kernel → `.ts`
   - [x] **T.4a** Sketch engine and constraint solver
   - [x] **T.4b** Geometry engine (plus profile builder and CSG modules; geometry fixes with tests)
-  - [ ] **T.4c** B-Rep and topology
+  - [x] **T.4c** B-Rep and topology — removed instead of converted: unused by the app, a duplicate of the mesh CSG, and measured wrong (see commit)
   - [ ] **T.4d** Import / export and material library
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
 - [ ] **T.6** Viewport and UI components → `.tsx`

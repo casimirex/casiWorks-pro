@@ -1,6 +1,6 @@
 # CasiWorks Pro — Professional 3D CAD Engineering Suite
 
-**CasiWorks Pro** is a professional, web-based 3D CAD application for mechanical design. Built with precision mechanical engineering standards, modern WebGL/Three.js rendering, a full Boundary Representation (B-Rep) topological kernel, an industrial-grade Levenberg-Marquardt 2D constraint solver, multi-body kinematic assembly mates, 3D solid linear static FEA simulation, 2D engineering drawings with GD&T, and ISO standard CAD data exchange (STEP AP214/AP242, IGES 5.3, STL, DXF).
+**CasiWorks Pro** is a professional, web-based 3D CAD application for mechanical design. Built with modern WebGL/Three.js rendering, a parametric feature tree over a triangle-mesh solid kernel (BSP CSG booleans, exact mass properties), a Levenberg-Marquardt 2D constraint solver, multi-body kinematic assembly mates, 3D solid linear static FEA simulation, 2D engineering drawings with GD&T, and ISO standard CAD data exchange (STEP AP214/AP242, IGES 5.3, STL, DXF).
 
 ---
 
@@ -16,21 +16,28 @@ casiworks/
 │   ├── App.jsx                   # Central application logic & reactive model rebuild loop
 │   ├── index.css                 # Dark engineering UI styling
 │   │
-│   ├── store/
-│   │   └── cadStore.js           # Zustand + Immer reactive state management (undo/redo, tree, modes)
+│   ├── api/
+│   │   └── CasiWorksAPI.ts       # Public, typed scripting API v1
 │   │
-│   ├── kernel/                   # Core Geometry & Topology Kernel
-│   │   ├── Topology.js           # B-Rep data structure: Vertex, Edge, CoEdge, Loop, Face, Shell, SolidBody
-│   │   ├── BRep.js               # Solid modeling: Extrude, Revolve, Sweep, Loft, Fillet, Chamfer, Shell, CSG Booleans
-│   │   ├── GeometryEngine.js     # Unified geometry API & Three.js BufferGeometry conversion
-│   │   ├── SketchEngine.js       # 2D geometry creation, offsets, mirroring, graph closure detection
-│   │   ├── ConstraintSolver.js   # Levenberg-Marquardt 2D solver with QR decomposition, rank & DOF analysis
+│   ├── types/
+│   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
+│   │
+│   ├── store/
+│   │   └── cadStore.ts           # Zustand + Immer state (undo/redo, feature tree, assembly)
+│   │
+│   ├── kernel/                   # Geometry kernel (triangle meshes)
+│   │   ├── GeometryEngine.ts     # Extrude, revolve, sweep, loft, patterns, mirror, holes, booleans, mass properties
+│   │   ├── csg.ts                # BSP-tree CSG: union / subtract / intersect on closed meshes
+│   │   ├── profile.ts            # Sketch entities → closed loops → shapes with holes
+│   │   ├── SketchEngine.ts       # Sketch entity factories, snapping, profile closure check
+│   │   ├── ConstraintSolver.ts   # Levenberg-Marquardt 2D solver with QR decomposition, rank & DOF analysis
 │   │   ├── MaterialLibrary.js    # Engineering materials (Steels, Al, Ti, Plastics) with physical constants
 │   │   ├── ExportEngine.js       # STEP AP214/AP242 B-Rep, IGES 5.3 MSBO, STL (Binary/ASCII), DXF, OBJ
 │   │   └── ImportEngine.js       # STEP, IGES 5.3, Binary/ASCII STL, AutoCAD DXF, and Project JSON parser
 │   │
 │   ├── features/
-│   │   └── FeatureEngine.js      # Parametric feature tree rebuild engine (history rollback & regeneration)
+│   │   ├── FeatureEngine.js      # Parametric feature evaluation (rollback, suppression, dependencies)
+│   │   └── rebuildModel.ts       # Rebuild entry point shared by the UI and the API
 │   │
 │   ├── assembly/
 │   │   └── AssemblyManager.js    # Multi-body solver: Standard & Advanced mates (Tangent, Width, Path), Exploded Views
@@ -62,30 +69,34 @@ casiworks/
 │   │       └── NumericInput.jsx   # High-precision engineering spinner input with units
 │   │
 │   └── utils/
-│       ├── math.js               # Linear algebra, BSP CSG polygon clipping, trigonometry
-│       ├── constants.js          # Theme constants, tool IDs, material properties
-│       ├── examples.js           # 8 production-grade parametric CAD example models
-│       ├── debounce.js           # Debounce utility for responsive UI sliders
-│       ├── projectFile.js        # Shared project save / open / new (.casiproj)
-│       └── shortcuts.js          # Industry-standard keyboard shortcuts
+│       ├── math.ts               # Small vector helpers, ids, sketch-plane transforms
+│       ├── constants.ts          # Tool ids, feature/entity types, materials, settings
+│       ├── examples.ts           # 8 parametric example models
+│       ├── clone.ts              # Safe deep clone for undo snapshots
+│       ├── debounce.ts           # Debounce for responsive sliders
+│       ├── projectFile.ts        # Project save / open / new (.casiproj)
+│       └── shortcuts.ts          # Keyboard shortcuts
 └── tests/
-    └── casiworks.test.js          # Automated verification tests (node --test)
+    ├── casiworks.test.js         # Solver, features, assembly, data exchange, FEA, drawings, store
+    ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
+    ├── sketch.test.ts            # Sketch engine and constraint solver semantics
+    └── api.test.ts               # Public API (headless)
 ```
 
 ---
 
 ## 🔬 What Actually Works (Verified Production Architecture)
 
-CasiWorks Pro implements real, verified engineering algorithms rather than superficial UI mocks. The architecture is tested and verified across 8 core engineering pillars:
+CasiWorks Pro implements real, verified engineering algorithms rather than superficial UI mocks. The architecture is tested across 7 areas:
 
 ### 1. Real Feature Tree & Parametric Dependency Graph
 - **Directed Acyclic Graph (DAG)**: Features maintain explicit `parentIds` and `childIds` associations. Sketches act as foundational parents to extrusions, cuts, revolves, sweeps, lofts, fillets, and chamfers.
 - **Rollback Bar**: The feature history tree features an interactive rollback bar (`rollbackIndex`). Dragging or clicking any position rolls back evaluation to that historical state without destroying downstream feature definitions, allowing upstream parameter adjustments that recalculate downstream upon roll-forward.
 - **Cascading Suppress & Unsuppress**: Suppressing an upstream feature automatically cascades suppression through all downstream children in the dependency chain. Conversely, unsuppressing a downstream feature automatically restores any required parent features.
-- **Live Rebuild Loop**: Powered by Zustand and Immer, model mutations trigger `rebuildModel` in `FeatureEngine.js`. The engine sequentially regenerates solid bodies, computes `THREE.EdgesGeometry` for crisp feature edge contours, updates bounding boxes, and recalculates physical mass properties.
+- **Live Rebuild Loop**: Edits mark the model dirty; `rebuildModel` (`src/features/rebuildModel.ts`) re-evaluates the feature tree into solid bodies. Features that fail report a rebuild warning on that feature instead of stopping the rebuild.
 
 ### 2. Industrial-Strength 2D Constraint Solver
-- **Levenberg-Marquardt with Householder QR Decomposition**: Built in `src/kernel/ConstraintSolver.js`, the solver computes a 2nd-order central-difference numerical Jacobian $\mathbf{J}$ ($m_{\text{constraints}} \times n_{\text{vars}}$) and solves the augmented least-squares system via Householder QR decomposition with column pivoting:
+- **Levenberg-Marquardt with Householder QR Decomposition**: Built in `src/kernel/ConstraintSolver.ts`, the solver computes a 2nd-order central-difference numerical Jacobian $\mathbf{J}$ ($m_{\text{constraints}} \times n_{\text{vars}}$) and solves the augmented least-squares system via Householder QR decomposition with column pivoting:
   $$\min \left\| \begin{bmatrix} \mathbf{J} \\ \sqrt{\lambda} \mathbf{I} \\ \sqrt{\mu} \mathbf{I} \end{bmatrix} \Delta \mathbf{x} - \begin{bmatrix} -\mathbf{r} \\ \mathbf{0} \\ -\sqrt{\mu}(\mathbf{x} - \mathbf{x}_0) \end{bmatrix} \right\|_2^2$$
   where $\lambda$ is an adaptive Levenberg-Marquardt damping factor and $\mu$ is Tikhonov regularization anchoring the solution to initial geometry.
 - **Degrees of Freedom (DOF) Analysis**: Evaluates numerical rank of $\mathbf{J}$ from diagonal elements of $\mathbf{R}$ after QR column pivoting. Computes remaining degrees of freedom:
@@ -94,30 +105,25 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
 - **Over-Constrained & Conflict Diagnostics**: Distinguishes between redundant constraints (linearly dependent equations with zero residual) and inconsistent/conflicting constraints (non-zero residual, e.g. conflicting dimensions), returning diagnostic objects `{ type: 'conflict', constraintIds: [...] }`.
 - **Complete Constraint Catalog**: `COINCIDENT`, `HORIZONTAL`, `VERTICAL`, `PARALLEL`, `PERPENDICULAR`, `EQUAL`, `FIX`, `MIDPOINT`, `CONCENTRIC`, `COLINEAR`, `TANGENT`, `DIMENSION` (distance, radius, diameter), `ANGLE`, and `SYMMETRIC`.
 
-### 3. Boundary Representation (B-Rep) Topology Kernel
-- **Topological Data Structure** (`src/kernel/Topology.js`):
-  - `Vertex`: 0D topological element representing a geometric point, tracking incident edges.
-  - `Edge`: 1D topological boundary bounded by start/end vertices, binding to geometric curves (`LineCurve`, `ArcCurve`, `NurbsCurve`).
-  - `CoEdge`: Directed half-edge inside loops, tracking forward/reverse orientation, loop parent, face parent, next/prev pointers, and mate partner references.
-  - `Loop`: Closed sequence of directed coedges, classifying outer boundary wires vs inner hole wires, computing area via Stokes' theorem.
-  - `Face`: 2D bounded surface (`PlaneSurface`, `CylinderSurface`, `ConeSurface`, `TorusSurface`, `SphereSurface`), outer loop, hole loops, orientation, normal calculation, and ear-clipping triangulation with hole bridging.
-  - `Shell`: Connected collection of stitched faces, 2-manifold check (each edge shared by exactly 2 faces with opposite orientations), Euler characteristic ($\chi = V - E + F$), genus ($G = (2 - \chi) / 2$), and volume via divergence theorem.
-  - `SolidBody`: 3D topological manifold solid bounded by one outer shell and internal cavity void shells. Verifies the Euler-Poincaré formula:
-    $$V - E + F = 2(S - G)$$
-    where $S$ is the number of shells and $G$ is the total genus.
-- **Physical Mass Properties**: Computes exact volume, surface area, center of mass (centroid) via tetrahedral decomposition, and the full 3D moments of inertia tensor:
-  $$\mathbf{I} = \begin{bmatrix} I_{xx} & I_{xy} & I_{xz} \\ I_{xy} & I_{yy} & I_{yz} \\ I_{xz} & I_{yz} & I_{zz} \end{bmatrix}$$
+### 3. Geometry Kernel (triangle meshes)
+Solids are closed, outward-facing triangle meshes (`src/kernel/`). Every operation
+below is covered by measured regression tests (volumes against closed-form values,
+bounds, and a closed-mesh check) in `tests/geometry.test.ts`.
 
-### 4. Advanced 3D Solid Modeling Operations
-- **Extrude** (`extrudeSolid`): Generates clean solid bodies with top, bottom, and lateral quad faces stitched into a closed shell; supports inner hole wire loops and midplane/symmetric end conditions.
-- **Revolve** (`revolveSolid`): Full 360° rotational solids and partial revolutions with automatically capped planar start and end faces.
-- **Sweep** (`sweepSolid`): Sweeps arbitrary 2D profiles along 3D space curves using double-reflection **Rotation-Minimizing Frames (RMF)** to eliminate unwanted axial twisting.
-- **Loft** (`loftSolid`): Multi-section interpolation between distinct 2D/3D cross-sections with polyline resampling and quad facet bridging.
-- **Fillet & Chamfer** (`filletSolid`, `chamferSolid`): Procedural edge rounding and beveling with cylindrical/planar blend face insertion and topological shell re-stitching.
-- **Shell** (`shellSolid`): Creates uniform hollow interiors; generates internal cavity void shells with reversed normals for closed bodies, or rim lips for open-face container hollowing.
-- **Boolean Operations** (`booleanUnion`, `booleanSubtract`, `booleanIntersect`): Robust polygon and boundary classification using BSP CSG trees, reconstructing clean manifold solids.
+- **Profiles** (`profile.ts`): sketch entities become closed loops regardless of drawing direction; loops nest by containment (solid / hole / island); overlapping regions are unioned; construction geometry is ignored.
+- **Extrude**: blind, midplane, through (500 mm, one direction), flip; several regions per sketch.
+- **Revolve**: full or partial (capped) revolutions; either profile orientation.
+- **Loft**: closed, capped solid between two or more sections. **Sweep** along a path.
+- **Patterns and mirror**: linear and circular (full or partial angle); instances and mirror halves are unioned, so overlaps are not double-counted.
+- **Booleans** (`csg.ts`): BSP-tree union, subtract and intersect.
+- **Mass properties**: exact for the mesh — volume, area, center of mass and inertia tensor (at the center of mass and at the origin) in SI units.
 
-### 5. Multi-Body Assembly Mate Engine
+**Not available yet** (needs the exact B-Rep kernel, roadmap Phase 2): fillet, chamfer
+and shell are kept in the feature tree but report a "not applied" warning and leave
+the model unchanged; faces and edges cannot be selected individually; STEP/IGES
+export writes faceted (triangulated) geometry.
+
+### 4. Multi-Body Assembly Mate Engine
 - **Kinematic Mates** (`src/assembly/AssemblyManager.js`):
   - **Standard Mates**:
     - `Coincident`: Aligns opposing face normals ($\vec{n}_2 = -\vec{n}_1$) and eliminates contact standoff gap.
@@ -133,7 +139,7 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
 - **Multi-Body Solver**: 6-DOF satisfaction loop using quaternion rotation (`setFromUnitVectors`, `slerp`) and translation relaxation with weighted mass distribution for unpinned bodies.
 - **Exploded View Generator**: Configurable exploded distances along kinematic motion axes with 3D polyline leader lines.
 
-### 6. 3D Solid Linear Static FEA Simulation
+### 5. 3D Solid Linear Static FEA Simulation
 - **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.js`):
   - Voxelizes arbitrary CAD solids via ray-triangle parity containment testing.
   - Decomposes voxels into 6 tetrahedra using Kuhn's decomposition.
@@ -155,7 +161,7 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
   - Factor of Safety (FOS) against material yield strength ($\text{FOS} = \sigma_{\text{yield}} / \sigma_v$).
   - Displaced Three.js BufferGeometry generation with rainbow/jet colormap vertex coloring.
 
-### 7. 2D Engineering Drawings Engine
+### 6. 2D Engineering Drawings Engine
 - **Orthographic Projections** (`src/drawings/DrawingEngine.js`):
   - Generates Front, Top, Right, Left, Bottom, Back, and 30° Isometric views from 3D models.
   - Feature crease extraction based on dihedral angle thresholding.
@@ -170,7 +176,7 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
   - High-fidelity scalable vector graphics (**SVG**) export with title block, borders, and styled CSS layers.
   - AutoCAD **DXF** export structured into `VISIBLE`, `HIDDEN`, and `DIMENSION` layers.
 
-### 8. Full CAD Data Exchange (STEP, IGES, STL, DXF)
+### 7. CAD Data Exchange (STEP, IGES, STL, DXF)
 - **ISO 10303-21 STEP (AP214 / AP242)**:
   - Full B-Rep solid entities: `MANIFOLD_SOLID_BREP`, `ADVANCED_BREP_SHAPE_REPRESENTATION`, `ORIENTED_EDGE`, `EDGE_LOOP`, `ADVANCED_FACE`, `PLANE` surface definitions, and `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` with RGB styling.
   - Bidirectional parser in `ImportEngine.js` reconstructing 3D geometries.
@@ -230,7 +236,7 @@ npm test
 ### Coverage (all passing; run `npm test`)
 - **Constraint solver**: coupled systems, equal/parallel constraints, DOF analysis, conflict detection, numerical edge cases
 - **Feature engine**: midplane/through extrudes, rollback, thin features, suppressed-sketch propagation, missing-sketch errors
-- **B-Rep topology and solid ops**: Euler-Poincaré, 2-manifold checks, revolve/sweep/loft, fillet/chamfer/shell, boolean CSG
+- **Geometry kernel** (`tests/geometry.test.ts`): profiles (regions, direction, nesting, overlap, construction), extrude/flip, revolve, loft, mirror, patterns, not-applied finishing features, all examples
 - **Assembly**: coincident, distance, concentric, parallel, perpendicular, tangent, width, path mates; degenerate cases
 - **Data exchange**: STL, DXF, STEP AP214/AP242 and IGES 5.3 round-trips; IGES Global-section Hollerith validity
 - **FEA**: cantilever deflection vs. Euler-Bernoulli analytical solution, Tet4/Tet10 stiffness and stress tensor

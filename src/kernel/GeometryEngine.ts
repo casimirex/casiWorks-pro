@@ -3,8 +3,7 @@
 // patterns, mirror, CSG booleans and mass properties.
 
 import * as THREE from 'three';
-import { EPSILON } from '../utils/math.ts';
-import { safeNormalize } from './Topology.js';
+import { EPSILON, safeNormalize } from '../utils/math.ts';
 import { csgUnion, csgSubtract, csgIntersect } from './csg.ts';
 import { profileLoops, shapesFromLoops } from './profile.ts';
 import type { ProfileEntity } from './profile.ts';

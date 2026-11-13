@@ -2,12 +2,11 @@
 // Comprehensive industrial-grade test suite covering:
 // 1. 2D Constraint Solver (coupled systems, DOF analysis, conflict diagnostics)
 // 2. Parametric Feature Engine (midplane, through cut, rollback, thin features)
-// 3. Boundary Representation (B-Rep) Topology (Euler-Poincaré, 2-manifold, mass properties)
-// 4. 3D Solid Operations (extrude with holes, revolve 360/partial, sweep, loft, fillet, chamfer, shell, boolean union/subtract/intersect)
-// 5. Multi-Body Assembly Engine (coincident, distance, concentric, parallel, perpendicular, tangent, width, path, exploded view)
-// 6. CAD Data Exchange (STEP AP214/AP242 B-Rep, IGES 5.3 MSBO, binary STL, AutoCAD DXF)
-// 7. 3D Solid Finite Element Analysis (Tet4/Tet10 tetrahedral meshing, 12x12 stiffness matrix, PCG solver, Cauchy & principal stress tensor, von Mises, FOS)
-// 8. 2D Engineering Drawings (orthographic projections with HLR, dimensions, GD&T, SVG/DXF export)
+// 3. Multi-Body Assembly Engine (coincident, distance, concentric, parallel, perpendicular, tangent, width, path, exploded view)
+// 4. CAD Data Exchange (STEP AP214/AP242, IGES 5.3, binary STL, AutoCAD DXF)
+// 5. 3D Solid Finite Element Analysis (Tet4/Tet10 meshing, 12x12 stiffness matrix, PCG solver, stress tensor, von Mises, FOS)
+// 6. 2D Engineering Drawings (orthographic projections with HLR, dimensions, GD&T, SVG/DXF export)
+// Geometry kernel, sketch and API tests live in geometry.test.ts, sketch.test.ts and api.test.ts.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,20 +14,6 @@ import * as THREE from 'three';
 
 import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.ts';
 import { featureEngine } from '../src/features/FeatureEngine.js';
-import {
-  createSolidBox,
-  createSolidCylinder,
-  extrudeSolid,
-  revolveSolid,
-  sweepSolid,
-  loftSolid,
-  filletSolid,
-  chamferSolid,
-  shellSolid,
-  booleanUnion,
-  booleanSubtract,
-  booleanIntersect,
-} from '../src/kernel/BRep.js';
 import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.js';
 import { exportEngine } from '../src/kernel/ExportEngine.js';
 import { importEngine } from '../src/kernel/ImportEngine.js';
@@ -250,173 +235,6 @@ test('FeatureEngine: thin feature creates solid walls from open sketch', () => {
 
 // ============================================================================
 // 3. BOUNDARY REPRESENTATION (B-REP) TOPOLOGY VALIDATION
-// ============================================================================
-
-test('BRep Topology: Euler-Poincaré characteristic, 2-manifold verification, and mass properties', () => {
-  // 1. Box primitive
-  const boxSolid = createSolidBox(20, 30, 40);
-  const shell = boxSolid.outerShell;
-  assert.ok(shell, 'Solid must have outer shell');
-  assert.equal(shell.getVertices().length, 8, 'Box must have 8 vertices');
-  assert.equal(shell.getEdges().length, 12, 'Box must have 12 edges');
-  assert.equal(shell.faces.length, 6, 'Box must have 6 faces');
-
-  // Euler characteristic: V - E + F = 8 - 12 + 6 = 2
-  const chi = shell.getEulerCharacteristic();
-  assert.equal(chi, 2, `Box Euler characteristic must be 2, got ${chi}`);
-  assert.equal(shell.genus, 0, 'Box genus must be 0');
-
-  // 2-Manifold verification
-  assert.equal(shell.isClosed(), true, 'Box shell must be closed');
-  assert.equal(shell.isManifold(), true, 'Box shell must be 2-manifold');
-  assert.equal(boxSolid.isClosed(), true);
-  assert.equal(boxSolid.isManifold(), true);
-
-  // Volume: 20 * 30 * 40 = 24000
-  const vol = boxSolid.computeVolume();
-  assert.ok(Math.abs(vol - 24000) < 1.0, `Volume ${vol} must be 24000`);
-
-  // Surface area: 2 * (20*30 + 30*40 + 20*40) = 2 * (600 + 1200 + 800) = 5200
-  const sa = boxSolid.computeSurfaceArea();
-  assert.ok(Math.abs(sa - 5200) < 1.0, `Surface area ${sa} must be 5200`);
-
-  // Mass properties
-  const massProps = boxSolid.computeMassProperties(7900); // Steel density
-  assert.ok(massProps.mass > 0);
-  assert.ok(massProps.momentsOfInertia.Ixx > 0);
-  assert.ok(massProps.momentsOfInertia.Iyy > 0);
-  assert.ok(massProps.momentsOfInertia.Izz > 0);
-
-  // 2. Cylinder primitive
-  const cylSolid = createSolidCylinder(10, 50, 32);
-  const cylShell = cylSolid.outerShell;
-  assert.equal(cylShell.getVertices().length, 64, '32-segment cylinder must have 64 vertices');
-  assert.equal(cylShell.getEdges().length, 96, '32-segment cylinder must have 96 edges');
-  assert.equal(cylShell.faces.length, 34, '32-segment cylinder must have 34 faces (2 caps + 32 quads)');
-  assert.equal(cylShell.getEulerCharacteristic(), 2);
-  assert.equal(cylShell.isClosed(), true);
-  assert.equal(cylShell.isManifold(), true);
-});
-
-// ============================================================================
-// 4. 3D SOLID OPERATIONS (EXTRUDE, REVOLVE, SWEEP, LOFT, FILLET, CHAMFER, SHELL, BOOLEAN)
-// ============================================================================
-
-test('BRep Solid Operations: extrude with hole loops, full/partial revolve, sweep, and loft', () => {
-  // 1. Extrude with inner hole wire loop
-  const outerLoop = [
-    new THREE.Vector3(-25, -25, 0),
-    new THREE.Vector3(25, -25, 0),
-    new THREE.Vector3(25, 25, 0),
-    new THREE.Vector3(-25, 25, 0),
-  ];
-  const innerHole = [
-    new THREE.Vector3(-10, -10, 0),
-    new THREE.Vector3(10, -10, 0),
-    new THREE.Vector3(10, 10, 0),
-    new THREE.Vector3(-10, 10, 0),
-  ];
-  const extrudeSolidResult = extrudeSolid(outerLoop, 30, new THREE.Vector3(0, 0, 1), {
-    holes: [innerHole],
-    symmetric: true,
-  });
-  assert.ok(extrudeSolidResult, 'Must generate extruded solid');
-  assert.ok(extrudeSolidResult.getFaces().length >= 10, 'Outer + inner hole walls + 2 caps >= 10 faces');
-  const extBox = extrudeSolidResult.computeBoundingBox();
-  assert.ok(Math.abs(extBox.min.z - (-15)) < 1e-3);
-  assert.ok(Math.abs(extBox.max.z - 15) < 1e-3);
-
-  // 2. Revolve: 360 deg full revolution vs 180 deg partial revolution with capped faces
-  const profile = [
-    new THREE.Vector3(10, 0, -20),
-    new THREE.Vector3(20, 0, -20),
-    new THREE.Vector3(20, 0, 20),
-    new THREE.Vector3(10, 0, 20),
-  ];
-  const fullRevolve = revolveSolid(profile, new THREE.Vector3(0, 0, 1), Math.PI * 2, { segments: 16 });
-  assert.ok(fullRevolve.isClosed(), 'Full 360 revolve must be closed');
-
-  const partialRevolve = revolveSolid(profile, new THREE.Vector3(0, 0, 1), Math.PI, { segments: 8 });
-  assert.ok(partialRevolve.isClosed(), 'Partial revolve with start/end caps must be closed');
-  assert.equal(partialRevolve.outerShell.getEulerCharacteristic(), 2);
-
-  // 3. Sweep along 3D polyline curve
-  const sweepProfile = [
-    new THREE.Vector3(-5, -5, 0),
-    new THREE.Vector3(5, -5, 0),
-    new THREE.Vector3(5, 5, 0),
-    new THREE.Vector3(-5, 5, 0),
-  ];
-  const sweepPath = [
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 20, 10),
-    new THREE.Vector3(10, 40, 30),
-    new THREE.Vector3(30, 50, 50),
-  ];
-  const sweepResult = sweepSolid(sweepProfile, sweepPath);
-  assert.ok(sweepResult.outerShell.faces.length > 0, 'Sweep solid must produce faces');
-  assert.ok(sweepResult.isClosed(), 'Sweep solid must be closed');
-
-  // 4. Loft across multiple cross-sections
-  const sec1 = [
-    new THREE.Vector3(-10, -10, 0),
-    new THREE.Vector3(10, -10, 0),
-    new THREE.Vector3(10, 10, 0),
-    new THREE.Vector3(-10, 10, 0),
-  ];
-  const sec2 = [
-    new THREE.Vector3(-20, -20, 30),
-    new THREE.Vector3(20, -20, 30),
-    new THREE.Vector3(20, 20, 30),
-    new THREE.Vector3(-20, 20, 30),
-  ];
-  const loftResult = loftSolid([sec1, sec2], { samplesPerProfile: 16 });
-  assert.ok(loftResult.outerShell.faces.length > 0, 'Loft solid must produce faces');
-  assert.ok(loftResult.isClosed(), 'Loft solid must be closed');
-});
-
-test('BRep Solid Operations: fillet, chamfer, shell, and boolean CSG operations', () => {
-  const boxA = createSolidBox(40, 40, 40, new THREE.Vector3(0, 0, 0));
-  const boxB = createSolidBox(40, 40, 40, new THREE.Vector3(20, 20, 0));
-
-  // Fillet & Chamfer
-  const filleted = filletSolid(boxA, [0, 1], 3);
-  assert.ok(filleted, 'Fillet operation must succeed');
-  assert.ok(filleted.computeVolume() > 0);
-
-  const chamfered = chamferSolid(boxA, [2, 3], 3);
-  assert.ok(chamfered, 'Chamfer operation must succeed');
-
-  // Shell: Closed cavity void shell
-  const shelledCavity = shellSolid(boxA, 3, []);
-  assert.equal(shelledCavity.shells.length, 2, 'Shelled closed body must contain outer shell and void shell');
-  const cavityVol = shelledCavity.computeVolume();
-  assert.ok(cavityVol < boxA.computeVolume(), 'Shelled volume must be less than solid volume');
-
-  // Shell: Open-face container (exclude top face)
-  const topFace = boxA.outerShell.faces.find(f => f.normal.z > 0.9);
-  const openShelled = shellSolid(boxA, 3, [topFace.id]);
-  assert.ok(openShelled, 'Open face container shell must succeed');
-
-  // Booleans: Union, Subtract, Intersect
-  const unionSolid = booleanUnion(boxA, boxB);
-  assert.ok(unionSolid, 'Boolean union must return solid');
-  assert.ok(unionSolid.computeVolume() > boxA.computeVolume(), 'Union volume must exceed single box volume');
-
-  const diffSolid = booleanSubtract(boxA, boxB);
-  assert.ok(diffSolid, 'Boolean difference must return solid');
-  assert.ok(diffSolid.computeVolume() < boxA.computeVolume(), 'Difference volume must be less than original box volume');
-
-  const interSolid = booleanIntersect(boxA, boxB);
-  assert.ok(interSolid, 'Boolean intersection must return solid');
-  assert.ok(
-    interSolid.computeVolume() > 0 && interSolid.computeVolume() < boxA.computeVolume(),
-    'Intersection volume must be overlap region'
-  );
-});
-
-// ============================================================================
-// 5. MULTI-BODY ASSEMBLY MATE ENGINE VERIFICATION
 // ============================================================================
 
 test('AssemblyManager: coincident mate aligns contact surfaces', () => {

@@ -4,8 +4,7 @@
 // of convex polygons organised in a BSP tree; union / subtract / intersect clip
 // the two trees against each other. Works on closed, consistently wound meshes.
 import * as THREE from 'three';
-import { EPSILON } from '../utils/math.ts';
-import { safeNormalize, sanitizePoint } from './Topology.js';
+import { EPSILON, safeNormalize, sanitizePoint } from '../utils/math.ts';
 
 /** Classification tolerance for points against a splitting plane (mm). */
 const CSG_EPSILON = 1e-4;
