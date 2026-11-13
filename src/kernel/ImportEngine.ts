@@ -4,13 +4,23 @@ import * as THREE from 'three';
 import { generateId } from '../utils/math.ts';
 import { SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 
+/** A sketch entity read from DXF (coordinates keep their Z). */
+export type DXFImportedEntity =
+  | { id: string; type: 'line'; p1: { x: number; y: number; z: number }; p2: { x: number; y: number; z: number }; construction: boolean }
+  | { id: string; type: 'circle'; center: { x: number; y: number; z: number }; radius: number; construction: boolean }
+  | { id: string; type: 'arc'; center: { x: number; y: number; z: number }; radius: number; startAngle: number; endAngle: number; construction: boolean }
+  | { id: string; type: 'point'; x: number; y: number; z: number; construction: boolean };
+
+/** DXF import result: sketch entities, plus 3DFACE triangles as a mesh when present. */
+export type DXFImportResult = DXFImportedEntity[] & { meshGeometry?: THREE.BufferGeometry };
+
 export class ImportEngine {
   /**
    * Import STL (detects ASCII or binary, handles Uint8Array/Buffer/ArrayBuffer, aligned & unaligned)
    * @param {ArrayBuffer|ArrayBufferView|string} bufferOrString
    * @returns {THREE.BufferGeometry}
    */
-  importSTL(bufferOrString) {
+  importSTL(bufferOrString: ArrayBuffer | ArrayBufferView | string | null | undefined): THREE.BufferGeometry {
     if (!bufferOrString) throw new Error('No STL data provided');
 
     if (typeof bufferOrString === 'string') {
@@ -75,7 +85,7 @@ export class ImportEngine {
     return emptyGeom;
   }
 
-  _importBinarySTL(buffer, byteOffset = 0, byteLength = buffer.byteLength, expectedFaces) {
+  _importBinarySTL(buffer: ArrayBufferLike, byteOffset = 0, byteLength = buffer.byteLength, expectedFaces?: number): THREE.BufferGeometry {
     const reader = new DataView(buffer, byteOffset, byteLength);
     const declaredFaces = expectedFaces !== undefined ? expectedFaces : (byteLength >= 84 ? reader.getUint32(80, true) : 0);
     const maxFacesPossible = byteLength >= 84 ? Math.floor((byteLength - 84) / 50) : 0;
@@ -116,7 +126,7 @@ export class ImportEngine {
     return geometry;
   }
 
-  _importAsciiSTL(text) {
+  _importAsciiSTL(text: string): THREE.BufferGeometry {
     const lines = (text || '').split('\n');
     const vertices = [];
     const normals = [];
@@ -154,7 +164,7 @@ export class ImportEngine {
   /**
    * Import Wavefront OBJ format text into THREE.BufferGeometry
    */
-  importOBJ(text) {
+  importOBJ(text: string): THREE.BufferGeometry {
     const lines = text.split('\n');
     const v = [];
     const vn = [];
@@ -218,14 +228,14 @@ export class ImportEngine {
    * @param {string} text
    * @returns {Array} Array of sketch entities, with .meshGeometry property if 3DFACE exists
    */
-  importDXF(text) {
+  importDXF(text: string): DXFImportResult {
     if (!text || typeof text !== 'string') return [];
     const lines = text.split(/\r?\n/).map(l => l.trim());
-    const entities = [];
-    const meshPositions = [];
+    const entities: DXFImportResult = [];
+    const meshPositions: number[] = [];
 
-    const safeNum = (v, defaultVal = 0) => {
-      const val = parseFloat(v);
+    const safeNum = (v: string | undefined, defaultVal = 0) => {
+      const val = parseFloat(v ?? '');
       return isNaN(val) || !isFinite(val) ? defaultVal : val;
     };
 
@@ -301,7 +311,7 @@ export class ImportEngine {
         });
         continue;
       } else if (code === '0' && val === '3DFACE') {
-        let p1 = { x: 0, y: 0, z: 0 }, p2 = { x: 0, y: 0, z: 0 }, p3 = { x: 0, y: 0, z: 0 }, p4 = { x: 0, y: 0, z: 0 };
+        const p1 = { x: 0, y: 0, z: 0 }, p2 = { x: 0, y: 0, z: 0 }, p3 = { x: 0, y: 0, z: 0 }, p4 = { x: 0, y: 0, z: 0 };
         i += 2;
         while (i < lines.length && lines[i] !== '0') {
           const c = lines[i];
@@ -369,7 +379,7 @@ export class ImportEngine {
    * @param {string} text
    * @returns {THREE.BufferGeometry}
    */
-  importSTEP(text) {
+  importSTEP(text: string): THREE.BufferGeometry {
     if (!text || typeof text !== 'string') {
       throw new Error('Invalid STEP file content');
     }
@@ -378,8 +388,8 @@ export class ImportEngine {
     const cleanText = text.replace(/\/\*[\s\S]*?\*\//g, '');
 
     // Map entity ID -> { type, rawParams, tokens }
-    const entities = new Map();
-    const cartesianPoints = new Map();
+    const entities = new Map<number, { id: number; type: string; raw: string }>();
+    const cartesianPoints = new Map<number, [number, number, number]>();
 
     // Parse entity instances with balanced parenthesis matching
     const entityStartRegex = /#(\d+)\s*=\s*/g;
@@ -451,7 +461,7 @@ export class ImportEngine {
     for (const [id, ent] of entities.entries()) {
       if (ent.type === 'POLY_LOOP') {
         const pointRefs = [...ent.raw.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
-        const pts = pointRefs.map(pid => cartesianPoints.get(pid)).filter(Boolean);
+        const pts = pointRefs.map(pid => cartesianPoints.get(pid)).filter((p): p is [number, number, number] => !!p);
 
         // Triangulate convex polygon fan
         for (let k = 1; k < pts.length - 1; k++) {
@@ -462,7 +472,7 @@ export class ImportEngine {
 
     // 2. Check for EDGE_LOOP entities (AP214 / AP242 Advanced B-Rep)
     if (positions.length === 0) {
-      const vertexPoints = new Map();
+      const vertexPoints = new Map<number, [number, number, number]>();
       for (const [id, ent] of entities.entries()) {
         if (ent.type === 'VERTEX_POINT') {
           const ref = ent.raw.match(/#(\d+)/);
@@ -474,7 +484,7 @@ export class ImportEngine {
       }
 
       // Edge curves connect two vertex points: EDGE_CURVE('', #vp1, #vp2, #line, .T.)
-      const edgeCurves = new Map();
+      const edgeCurves = new Map<number, [number, number]>();
       for (const [id, ent] of entities.entries()) {
         if (ent.type === 'EDGE_CURVE') {
           const refs = [...ent.raw.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
@@ -485,7 +495,7 @@ export class ImportEngine {
       }
 
       // Oriented edges reference edge curves: ORIENTED_EDGE('', *, *, #ec, .T./.F.)
-      const orientedEdges = new Map();
+      const orientedEdges = new Map<number, { edgeId: number; orientation: boolean }>();
       for (const [id, ent] of entities.entries()) {
         if (ent.type === 'ORIENTED_EDGE') {
           const ref = ent.raw.match(/#(\d+)/);
@@ -546,7 +556,7 @@ export class ImportEngine {
    * @param {string} text
    * @returns {THREE.BufferGeometry}
    */
-  importIGES(text) {
+  importIGES(text: string): THREE.BufferGeometry {
     if (!text || typeof text !== 'string') {
       throw new Error('Invalid IGES file content');
     }
@@ -569,7 +579,7 @@ export class ImportEngine {
 
     // 1. Parse Directory Entry (DE) records
     // Each DE entity consists of two consecutive 80-char D lines
-    const directoryEntries = new Map();
+    const directoryEntries = new Map<number, { deIndex: number; type: number; paramStart: number; form: number }>();
     for (let i = 0; i < dLines.length; i += 2) {
       const line1 = dLines[i].padEnd(80, ' ');
       const line2 = (dLines[i + 1] || '').padEnd(80, ' ');
@@ -591,7 +601,7 @@ export class ImportEngine {
 
     // 2. Parse Parameter Data (P) lines
     // Group parameter lines by their target DE index in columns 65-72
-    const paramStringsByDE = new Map();
+    const paramStringsByDE = new Map<number, string>();
 
     for (const pLine of pLines) {
       const padded = pLine.padEnd(80, ' ');
@@ -606,7 +616,7 @@ export class ImportEngine {
     }
 
     // Tokenize parameter data into array of values
-    const entityParams = new Map();
+    const entityParams = new Map<number, string[]>();
     for (const [dePointer, rawP] of paramStringsByDE.entries()) {
       // Delimiter is comma, terminator is semicolon
       const clean = rawP.replace(/;.*$/, '');
@@ -616,7 +626,7 @@ export class ImportEngine {
 
     // 3. Resolve Vertices and B-Rep entities
     const positions = [];
-    const vertexListMap = new Map();
+    const vertexListMap = new Map<number, Array<[number, number, number]>>();
 
     // Parse Entity 502: Vertex List
     // Format: 502, N, X1, Y1, Z1, X2, Y2, Z2, ...
@@ -625,7 +635,7 @@ export class ImportEngine {
         const tokens = entityParams.get(deIndex);
         if (tokens && tokens.length > 2) {
           const count = parseInt(tokens[1], 10);
-          const verts = [];
+          const verts: Array<[number, number, number]> = [];
           for (let k = 0; k < count; k++) {
             const idx = 2 + k * 3;
             if (idx + 2 < tokens.length) {
@@ -641,7 +651,7 @@ export class ImportEngine {
     }
 
     // Parse Entity 504: Edge Entities (references vertex list DE)
-    const edgeMap = new Map();
+    const edgeMap = new Map<number, [[number, number, number], [number, number, number]]>();
     for (const [deIndex, de] of directoryEntries.entries()) {
       if (de.type === 504) {
         const tokens = entityParams.get(deIndex);
@@ -658,7 +668,7 @@ export class ImportEngine {
     }
 
     // Parse Entity 508: Loop Entities (references edges)
-    const loopMap = new Map();
+    const loopMap = new Map<number, Array<[number, number, number]>>();
     for (const [deIndex, de] of directoryEntries.entries()) {
       if (de.type === 508) {
         const tokens = entityParams.get(deIndex);
@@ -729,9 +739,9 @@ export class ImportEngine {
     return geometry;
   }
 
-  detectFormat(filename) {
+  detectFormat(filename: string | null | undefined): 'stl' | 'obj' | 'dxf' | 'step' | 'iges' | 'json' | null {
     if (!filename) return null;
-    const ext = filename.split('.').pop().toLowerCase();
+    const ext = (filename.split('.').pop() ?? '').toLowerCase();
     if (ext === 'stl') return 'stl';
     if (ext === 'obj') return 'obj';
     if (ext === 'dxf') return 'dxf';

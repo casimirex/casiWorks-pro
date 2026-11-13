@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Download, FileText } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { exportEngine } from '../../kernel/ExportEngine';
+import { exportEngine } from '../../kernel/ExportEngine.ts';
 
 export default function ExportDialog({ isOpen, onClose }) {
   const bodies = useCADStore(s => s.bodies);

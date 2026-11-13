@@ -14,6 +14,8 @@ export interface StoreHandle<S> {
   getState(): S;
 }
 
+import { downloadBlob } from './download.ts';
+
 export const PROJECT_EXTENSION = '.casiproj';
 // Older builds saved as .cadproj; keep opening them.
 const OPENABLE_EXTENSIONS = ['.casiproj', '.cadproj', '.json'] as const;
@@ -25,17 +27,9 @@ export function projectFileName(documentName: string | null | undefined): string
 
 export function downloadProject(store: StoreHandle<ProjectFileState>): void {
   const state = store.getState();
-  const blob = new Blob([state.saveProject()], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = projectFileName(state.documentName);
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoke after the download has been handed to the browser
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  state.setStatus(`Saved ${a.download}`);
+  const filename = projectFileName(state.documentName);
+  downloadBlob(state.saveProject(), filename, 'application/json');
+  state.setStatus(`Saved ${filename}`);
 }
 
 export function openProject(store: StoreHandle<ProjectFileState>): void {

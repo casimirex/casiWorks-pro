@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Check, Sliders, Info } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { materialLibrary } from '../../kernel/MaterialLibrary';
+import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 
 export default function MaterialDialog({ isOpen, onClose }) {
   const activeMaterial = useCADStore(s => s.activeMaterial);

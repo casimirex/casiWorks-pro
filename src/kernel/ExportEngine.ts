@@ -1,7 +1,36 @@
 // CasiWorks Pro - Export Engine
 // Supports STEP AP214/AP242 B-Rep Solids, IGES 5.3 MSBO, STL (Binary & ASCII), OBJ, DXF (R12/2000/2018), and JSON
-import saveAs from 'file-saver';
 import * as THREE from 'three';
+import { downloadBlob } from '../utils/download.ts';
+
+export interface DXFOptions {
+  /** 'R12' | '2000' | '2018' (or the AutoCAD codes AC1009 / AC1015 / AC1032). */
+  version?: string;
+}
+export interface STEPOptions {
+  schema?: 'AP214' | 'AP242';
+  colorR?: number;
+  colorG?: number;
+  colorB?: number;
+  maxFaces?: number;
+}
+export interface IGESOptions {
+  maxFaces?: number;
+}
+
+/** 2D sketch entity as written to DXF (accepts the point entity's flat x/y). */
+export interface DXFEntity {
+  type: string;
+  p1?: { x: number; y: number; z?: number };
+  p2?: { x: number; y: number; z?: number };
+  center?: { x: number; y: number; z?: number };
+  radius?: number;
+  startAngle?: number;
+  endAngle?: number;
+  x?: number;
+  y?: number;
+  z?: number;
+}
 
 export class ExportEngine {
   /**
@@ -10,7 +39,7 @@ export class ExportEngine {
    * @param {boolean} binary
    * @returns {Blob}
    */
-  exportSTL(geometry, binary = true) {
+  exportSTL(geometry: THREE.BufferGeometry | null | undefined, binary = true): Blob {
     if (!geometry) {
       throw new Error('No geometry provided for STL export');
     }
@@ -126,7 +155,7 @@ export class ExportEngine {
   /**
    * Export BufferGeometry to Wavefront OBJ format
    */
-  exportOBJ(geometry, objectName = 'CasiWorksModel') {
+  exportOBJ(geometry: THREE.BufferGeometry | null | undefined, objectName = 'CasiWorksModel'): Blob {
     if (!geometry) throw new Error('No geometry for OBJ export');
     let geom = geometry.clone();
     if (geom.index) geom = geom.toNonIndexed();
@@ -176,15 +205,15 @@ export class ExportEngine {
    * @param {Object} options
    * @returns {Blob}
    */
-  exportDXF(entitiesOrGeometry, options = {}) {
+  exportDXF(entitiesOrGeometry: THREE.BufferGeometry | Array<DXFEntity | null> | null | undefined, options: DXFOptions = {}): Blob {
     const version = (options.version || '2000').toUpperCase();
     let acadVer = 'AC1015'; // 2000 default
     if (version === 'R12' || version === 'AC1009') acadVer = 'AC1009';
     else if (version === '2018' || version === 'AC1032') acadVer = 'AC1032';
 
     // Defensive coordinate formatting: handles negative decimals, zero without -0, and guards against NaNs
-    const formatCoord = (val) => {
-      const num = typeof val === 'number' ? val : parseFloat(val);
+    const formatCoord = (val: number | string | undefined) => {
+      const num = typeof val === 'number' ? val : parseFloat(String(val));
       if (isNaN(num) || !isFinite(num)) return '0.0000';
       const fixed = num.toFixed(4);
       return (fixed === '-0.0000' || fixed === '-0') ? '0.0000' : fixed;
@@ -195,7 +224,9 @@ export class ExportEngine {
     dxf += `0\nSECTION\n2\nENTITIES\n`;
 
     // Handle 3D geometry export as DXF 3DFACE
-    if (entitiesOrGeometry && (entitiesOrGeometry.isBufferGeometry || entitiesOrGeometry.getAttribute)) {
+    const isGeometry = (v: unknown): v is THREE.BufferGeometry =>
+      !!v && typeof v === 'object' && (('isBufferGeometry' in v && !!v.isBufferGeometry) || 'getAttribute' in v);
+    if (isGeometry(entitiesOrGeometry)) {
       let geom = entitiesOrGeometry.clone();
       if (geom.index) geom = geom.toNonIndexed();
       const pos = geom.getAttribute('position');
@@ -266,7 +297,7 @@ export class ExportEngine {
    * @param {Object} options
    * @returns {Blob}
    */
-  exportSTEP(geometry, modelName = 'CASIWORKS_PART', options = {}) {
+  exportSTEP(geometry: THREE.BufferGeometry | null | undefined, modelName = 'CASIWORKS_PART', options: STEPOptions = {}): Blob {
     if (!geometry) throw new Error('No geometry for STEP export');
     let geom = geometry.clone();
     if (geom.index) geom = geom.toNonIndexed();
@@ -313,7 +344,7 @@ DATA;
 #16=CLOSED_SHELL('${safeModelName}_SHELL',(`;
 
     let entityId = 30;
-    const faceIds = [];
+    const faceIds: string[] = [];
 
     // Group triangles or export bounded planar faces
     const numTriangles = pos ? Math.min(Math.floor(pos.count / 3), options.maxFaces || 1200) : 0;
@@ -458,7 +489,7 @@ DATA;
    * @param {Object} options
    * @returns {Blob}
    */
-  exportIGES(geometry, modelName = 'CASIWORKS_PART', options = {}) {
+  exportIGES(geometry: THREE.BufferGeometry | null | undefined, modelName = 'CASIWORKS_PART', options: IGESOptions = {}): Blob {
     if (!geometry) throw new Error('No geometry for IGES export');
     let geom = geometry.clone();
     if (geom.index) geom = geom.toNonIndexed();
@@ -472,14 +503,14 @@ DATA;
     const numTriangles = pos ? Math.min(Math.floor(pos.count / 3), options.maxFaces || 800) : 0;
 
     // Helpers for IGES 80-column fixed card formatting (strict 80 characters per line)
-    const padRight = (str, len) => String(str ?? '').padEnd(len, ' ').substring(0, len);
-    const padLeft = (str, len) => String(str ?? '').padStart(len, ' ').substring(0, len);
-    const formatSeq = (type, seq) => type + String(seq).padStart(7, ' ').substring(0, 7);
+    const padRight = (str: unknown, len: number) => String(str ?? '').padEnd(len, ' ').substring(0, len);
+    const padLeft = (str: unknown, len: number) => String(str ?? '').padStart(len, ' ').substring(0, len);
+    const formatSeq = (type: string, seq: number) => type + String(seq).padStart(7, ' ').substring(0, 7);
 
-    let startLines = [];
-    let globalLines = [];
-    let dirCards = [];
-    let paramCards = [];
+    const startLines: string[] = [];
+    const globalLines: string[] = [];
+    const dirCards: string[] = [];
+    const paramCards: string[] = [];
 
     // --- START SECTION (S) ---
     const startText = `CasiWorks Pro IGES 5.3 Manifold Solid B-Rep Exporter (Entity 186 MSBO) - ${modelName}`;
@@ -491,14 +522,14 @@ DATA;
     const iso = new Date().toISOString();
     const timestamp = `${iso.slice(0, 10).replace(/-/g, '')}.${iso.slice(11, 19).replace(/:/g, '')}`;
     // Hollerith string: <length>H<text>. Length is derived, never hand-counted.
-    const H = (s) => `${String(s).length}H${s}`;
+    const H = (s: string) => `${String(s).length}H${s}`;
     const gParams = [
       "1H,", "1H;", H('CasiWorks Engineering'), H('CasiWorks Model'),
       H('CasiWorks Pro'), H('Version 2.0'), "32", "38", "6", "308", "15",
       "1.0", "2", "2HMM", "1", "1.0",
       H(timestamp), "0.001", "1000.0", H('Designer'), H('Company Org'), "11", "0"
     ];
-    let gStr = gParams.join(',') + ';';
+    const gStr = gParams.join(',') + ';';
     let gOffset = 0;
     let gSeq = 1;
     while (gOffset < gStr.length) {
@@ -513,7 +544,7 @@ DATA;
 
     // Helper to add an entity to D & P sections
     // Returns the 1-based index of the entity's first Directory Entry line
-    function addEntity(type, paramsArray, label = '', formNum = 0) {
+    function addEntity(type: number, paramsArray: Array<string | number>, label = '', formNum = 0): number {
       const deIndex = deSeq;
       const paramStart = paramSeq;
 
@@ -559,7 +590,7 @@ DATA;
     }
 
     // 1. Entity 502: Vertex List (coordinates of all triangle vertices)
-    const vertCoords = [];
+    const vertCoords: string[] = [];
     for (let t = 0; t < numTriangles; t++) {
       const i = t * 3;
       vertCoords.push(pos.getX(i).toFixed(4), pos.getY(i).toFixed(4), pos.getZ(i).toFixed(4));
@@ -570,7 +601,7 @@ DATA;
     const vertexEntityDE = addEntity(502, [vertexCount, ...vertCoords], 'VERTICES');
 
     // 2. Entity 504: Edge Entities & Entity 508: Loop Entities & Entity 128/108: Surfaces & Entity 510: Faces
-    const faceDEs = [];
+    const faceDEs: number[] = [];
 
     for (let t = 0; t < numTriangles; t++) {
       const vBase = t * 3 + 1; // 1-based vertex index in 502
@@ -655,9 +686,8 @@ DATA;
     return new Blob([fullIges], { type: 'application/iges' });
   }
 
-  downloadFile(blobOrString, filename, mimeType = 'text/plain') {
-    const blob = blobOrString instanceof Blob ? blobOrString : new Blob([blobOrString], { type: mimeType });
-    saveAs(blob, filename);
+  downloadFile(blobOrString: Blob | string, filename: string, mimeType = 'text/plain'): void {
+    downloadBlob(blobOrString, filename, mimeType);
   }
 }
 

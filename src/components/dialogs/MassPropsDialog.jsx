@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { X, Scale, Info } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { materialLibrary } from '../../kernel/MaterialLibrary';
+import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../../kernel/GeometryEngine.ts';
 
 const formatInertia = (v) => (Number.isFinite(v) ? v.toPrecision(6) : '—');

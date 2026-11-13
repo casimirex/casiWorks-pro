@@ -15,8 +15,8 @@ import * as THREE from 'three';
 import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.ts';
 import { featureEngine } from '../src/features/FeatureEngine.js';
 import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.js';
-import { exportEngine } from '../src/kernel/ExportEngine.js';
-import { importEngine } from '../src/kernel/ImportEngine.js';
+import { exportEngine } from '../src/kernel/ExportEngine.ts';
+import { importEngine } from '../src/kernel/ImportEngine.ts';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.js';
 import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.js';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.ts';
@@ -743,7 +743,7 @@ import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.ts';
 import { CAD_EXAMPLES } from '../src/utils/examples.ts';
 import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.ts';
 import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.ts';
-import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.js';
+import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.ts';
 
 const squareSketch = (half = 10) => [
   { id: 'q1', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: -half, y: -half }, p2: { x: half, y: -half } },
