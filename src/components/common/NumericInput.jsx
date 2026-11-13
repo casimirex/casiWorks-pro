@@ -37,20 +37,18 @@ const NumericInput = ({
   const holdTimerRef = useRef(null);
   const holdIntervalRef = useRef(null);
 
+  /** Format a numeric value for display (trailing zeros removed, up to `precision` decimals) */
+  const formatValue = useCallback((val) => {
+    if (val === null || val === undefined || isNaN(val)) return '0';
+    return parseFloat(Number(val).toFixed(precision)).toString();
+  }, [precision]);
+
   // Sync display value with prop when not actively editing
   useEffect(() => {
     if (!isEditing) {
       setEditValue(formatValue(value));
     }
-  }, [value, isEditing, precision]);
-
-  /** Format a numeric value for display */
-  function formatValue(val) {
-    if (val === null || val === undefined || isNaN(val)) return '0';
-    // Remove trailing zeros but keep up to `precision` decimals
-    const fixed = Number(val).toFixed(precision);
-    return parseFloat(fixed).toString();
-  }
+  }, [value, isEditing, formatValue]);
 
   /** Clamp a value between min and max */
   const clamp = useCallback((val) => {
@@ -70,7 +68,7 @@ const NumericInput = ({
       }
     }
     setIsEditing(false);
-  }, [editValue, value, clamp, onChange, precision]);
+  }, [editValue, value, clamp, onChange, formatValue]);
 
   /** Handle text input change */
   const handleInputChange = useCallback((e) => {
@@ -116,7 +114,7 @@ const NumericInput = ({
       setEditValue(formatValue(newVal));
       onChange?.(newVal);
     }
-  }, [commitValue, value, clamp, step, editValue, onChange, precision]);
+  }, [commitValue, value, clamp, step, editValue, onChange, formatValue]);
 
   /** Increment the value by step */
   const increment = useCallback(() => {
@@ -124,7 +122,7 @@ const NumericInput = ({
     const newVal = clamp(current + step);
     setEditValue(formatValue(newVal));
     onChange?.(newVal);
-  }, [editValue, step, clamp, onChange, precision]);
+  }, [editValue, step, clamp, onChange, formatValue]);
 
   /** Decrement the value by step */
   const decrement = useCallback(() => {
@@ -132,7 +130,7 @@ const NumericInput = ({
     const newVal = clamp(current - step);
     setEditValue(formatValue(newVal));
     onChange?.(newVal);
-  }, [editValue, step, clamp, onChange, precision]);
+  }, [editValue, step, clamp, onChange, formatValue]);
 
   /** Start holding a spin button for continuous adjustment */
   const startHold = useCallback((direction) => {

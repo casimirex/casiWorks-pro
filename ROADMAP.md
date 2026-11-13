@@ -39,7 +39,8 @@ selectable edges, true fillets, exact STEP — depends on it.
 
 Make every later step safe to take.
 
-- [ ] **0.1** Linting: ESLint (flat config) for JS/JSX + React hooks rules; fix all errors; `npm run lint`
+- [x] **0.1** Linting: ESLint (flat config) for JS/JSX + React hooks rules; fix all errors; `npm run lint`
+- [ ] **0.1b** Clear the remaining `no-unused-vars` warnings (137 at 0.1), then make warnings fail CI
 - [ ] **0.2** Error boundary: a crash in one panel shows a recoverable message instead of a blank app
 - [ ] **0.3** CI: GitHub Actions runs lint, tests and build on every push and PR
 - [ ] **0.4** Type checking: `// @ts-check` + JSDoc on the kernel and store, `tsc --noEmit` in CI (no rewrite to TS yet)

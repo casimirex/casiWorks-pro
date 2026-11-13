@@ -78,7 +78,7 @@ export default function MaterialDialog({ isOpen, onClose }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div><strong>Density:</strong> {selectedData.density} kg/m³</div>
                 <div><strong>Elastic Modulus:</strong> {(selectedData.youngsModulus / 1e9).toFixed(1)} GPa</div>
-                <div><strong>Poisson's Ratio:</strong> {selectedData.poissonsRatio}</div>
+                <div><strong>Poisson&apos;s Ratio:</strong> {selectedData.poissonsRatio}</div>
                 <div><strong>Yield Strength:</strong> {(selectedData.yieldStrength / 1e6).toFixed(1)} MPa</div>
               </div>
             </div>

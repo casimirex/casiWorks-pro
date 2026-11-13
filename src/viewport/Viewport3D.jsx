@@ -99,16 +99,17 @@ function CADBodyMesh({ body, isSelected, onSelect, shadedMode, wireframeMode, ed
   }, [body, materialKey, wireframeMode, isSelected]);
 
   // Generate edge geometry defensively
+  const bodyGeometry = body?.geometry;
   const edgesGeometry = useMemo(() => {
-    if (!body || !body.geometry) return null;
+    if (!bodyGeometry) return null;
     try {
-      const pos = body.geometry.getAttribute ? body.geometry.getAttribute('position') : body.geometry.attributes?.position;
+      const pos = bodyGeometry.getAttribute ? bodyGeometry.getAttribute('position') : bodyGeometry.attributes?.position;
       if (!pos || pos.count < 3) return null;
-      return new THREE.EdgesGeometry(body.geometry, 25);
+      return new THREE.EdgesGeometry(bodyGeometry, 25);
     } catch (e) {
       return null;
     }
-  }, [body?.geometry]);
+  }, [bodyGeometry]);
 
   // Release GPU resources owned by this component when they are replaced or unmounted
   useEffect(() => () => material?.dispose?.(), [material]);

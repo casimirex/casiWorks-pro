@@ -465,7 +465,9 @@ export class FEAEngine {
     }
 
     // Guard Poisson's ratio against singularity at ν = 0.5 (incompressible materials) and ν = -1
-    const safeNu = Math.max(-0.999, Math.min(0.4999, Number(nu) !== undefined && !Number.isNaN(nu) ? nu : 0.3));
+    // A missing / non-numeric ν falls back to 0.3 (steel); previously undefined produced NaN stiffness
+    const nuNum = typeof nu === 'number' ? nu : (typeof nu === 'string' && nu.trim() !== '' ? Number(nu) : NaN);
+    const safeNu = Math.max(-0.999, Math.min(0.4999, Number.isFinite(nuNum) ? nuNum : 0.3));
     const safeE = Math.max(1e-6, Number(E) || 200e9);
     const denom = (1 + safeNu) * (1 - 2 * safeNu);
     const C = (safeE / Math.max(1e-12, Math.abs(denom))) * Math.sign(denom || 1);

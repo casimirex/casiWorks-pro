@@ -15,19 +15,6 @@ import * as THREE from 'three';
 
 import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.js';
 import { featureEngine } from '../src/features/FeatureEngine.js';
-import { geometryEngine } from '../src/kernel/GeometryEngine.js';
-import {
-  Vertex,
-  Edge,
-  CoEdge,
-  Loop,
-  Face,
-  Shell,
-  SolidBody,
-  safeNormalize,
-  sanitizePoint,
-  removeConsecutiveDuplicates,
-} from '../src/kernel/Topology.js';
 import {
   createSolidBox,
   createSolidCylinder,
@@ -41,14 +28,12 @@ import {
   booleanUnion,
   booleanSubtract,
   booleanIntersect,
-  solidToBufferGeometry,
-  bufferGeometryToSolid,
 } from '../src/kernel/BRep.js';
-import { AssemblyManager, AssemblyComponent, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.js';
+import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.js';
 import { exportEngine } from '../src/kernel/ExportEngine.js';
 import { importEngine } from '../src/kernel/ImportEngine.js';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.js';
-import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES, GDT_SYMBOLS } from '../src/drawings/DrawingEngine.js';
+import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.js';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.js';
 
 // ============================================================================
@@ -888,7 +873,7 @@ test('AssemblyManager Audit: Null checks for deleted/missing components, faces &
   assert.ok(resMissing.converged, 'Solve must gracefully handle mate referencing non-existent component');
 
   // Add valid mate between c1 and c2
-  const validMate = mgr.addMate(MATE_TYPES.COINCIDENT, c1.id, 'top', c2.id, 'bottom', 5.0);
+  mgr.addMate(MATE_TYPES.COINCIDENT, c1.id, 'top', c2.id, 'bottom', 5.0);
   assert.equal(mgr.mates.length, 2, 'Must have 2 mates');
 
   // removeComponent should remove component and cleanup dangling mates
@@ -1048,4 +1033,16 @@ test('IGES regression: every Hollerith string in the Global section declares its
   }
   assert.ok(checked >= 8, `expected to verify the Global section strings, verified ${checked}`);
   assert.match(gSection, /CasiWorks/);
+});
+
+test('FEA regression: missing or invalid Poisson ratio falls back to 0.3 instead of producing NaN', () => {
+  const pts = [[0, 0, 0], [0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.01]];
+  const refRes = feaEngine.computeTet4Stiffness(pts, 200e9, 0.3);
+  assert.ok(refRes, 'reference tetrahedron must produce a stiffness result');
+  const ref = JSON.stringify(refRes);
+  for (const bad of [undefined, null, 'abc', NaN]) {
+    const json = JSON.stringify(feaEngine.computeTet4Stiffness(pts, 200e9, bad));
+    assert.ok(!json.includes('null'), `nu=${String(bad)} must not yield NaN entries`);
+    assert.equal(json, ref, `nu=${String(bad)} must use the 0.3 default`);
+  }
 });

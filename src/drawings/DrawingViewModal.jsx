@@ -76,7 +76,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
       document.body.removeChild(a);
 
       revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch (_) {}
+        try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
       }, 1000);
 
       setDownloadSuccess('SVG Exported');
@@ -106,7 +106,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
       document.body.removeChild(a);
 
       revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch (_) {}
+        try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
       }, 1000);
 
       setDownloadSuccess('DXF Exported');
