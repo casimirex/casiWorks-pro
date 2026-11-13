@@ -20,6 +20,8 @@ import { importEngine } from '../src/kernel/ImportEngine.ts';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.ts';
 import { drawingEngine, PROJECTION_VIEWS, SHEET_SIZES } from '../src/drawings/DrawingEngine.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES, CONSTRAINT_TYPES, MATE_TYPES } from '../src/utils/constants.ts';
+import type { SketchConstraint } from '../src/kernel/ConstraintSolver.ts';
+import type { Feature, FeatureData } from '../src/types/cad.ts';
 
 // ============================================================================
 // 1. 2D CONSTRAINT SOLVER VERIFICATION
@@ -31,7 +33,7 @@ test('ConstraintSolver: coupled geometric system (horizontal, perpendicular, coi
     { id: 'l2', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: 48, y: 10 }, p2: { x: 50, y: 45 } },
   ];
 
-  const constraints = [
+  const constraints: SketchConstraint[] = [
     { id: 'c1', type: CONSTRAINT_TYPES.FIX, entity1Id: 'l1', point1: 'p1' },
     { id: 'c2', type: CONSTRAINT_TYPES.HORIZONTAL, entity1Id: 'l1' },
     { id: 'c3', type: CONSTRAINT_TYPES.DIMENSION, entity1Id: 'l1', value: 60 },
@@ -45,8 +47,8 @@ test('ConstraintSolver: coupled geometric system (horizontal, perpendicular, coi
   assert.equal(result.converged, true, 'Solver must converge');
   assert.ok(result.error < 1e-3, `Residual ${result.error} must be < 1e-3`);
 
-  const solvedL1 = entities.find(e => e.id === 'l1');
-  const solvedL2 = entities.find(e => e.id === 'l2');
+  const solvedL1 = entities.find(e => e.id === 'l1')!;
+  const solvedL2 = entities.find(e => e.id === 'l2')!;
 
   // L1 start at (0,0) and horizontal with length 60
   assert.ok(Math.abs(solvedL1.p1.x) < 1e-3);
@@ -71,7 +73,7 @@ test('ConstraintSolver: equal length & parallel constraints', () => {
     { id: 'l2', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: 0, y: 25 }, p2: { x: 30, y: 35 } },
   ];
 
-  const constraints = [
+  const constraints: SketchConstraint[] = [
     { id: 'c1', type: CONSTRAINT_TYPES.FIX, entity1Id: 'l1' },
     { id: 'c2', type: CONSTRAINT_TYPES.PARALLEL, entity1Id: 'l1', entity2Id: 'l2' },
     { id: 'c3', type: CONSTRAINT_TYPES.EQUAL, entity1Id: 'l1', entity2Id: 'l2' },
@@ -81,7 +83,7 @@ test('ConstraintSolver: equal length & parallel constraints', () => {
   assert.equal(result.converged, true);
   assert.ok(result.error < 1e-3, `Error ${result.error} must be < 1e-3`);
 
-  const l2 = entities.find(e => e.id === 'l2');
+  const l2 = entities.find(e => e.id === 'l2')!;
   const l2dy = l2.p2.y - l2.p1.y;
   const l2dx = l2.p2.x - l2.p1.x;
   assert.ok(Math.abs(l2dy) < 1e-3, 'L2 must be parallel to horizontal L1');
@@ -94,7 +96,7 @@ test('ConstraintSolver: under-constrained degrees of freedom (DOF) count and ove
     { id: 'l1', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: 0, y: 0 }, p2: { x: 30, y: 0 } },
   ];
   // 1 fix constraint on p1 (removes 2 DOF -> 2 DOF left), 1 horizontal constraint (removes 1 DOF -> 1 DOF left)
-  const underConstraints = [
+  const underConstraints: SketchConstraint[] = [
     { id: 'c1', type: CONSTRAINT_TYPES.FIX, entity1Id: 'l1', point1: 'p1' },
     { id: 'c2', type: CONSTRAINT_TYPES.HORIZONTAL, entity1Id: 'l1' },
   ];
@@ -103,7 +105,7 @@ test('ConstraintSolver: under-constrained degrees of freedom (DOF) count and ove
   assert.equal(underRes.dof, 1, `Line with fixed point and horizontal should have 1 DOF, got ${underRes.dof}`);
 
   // Case B: Over-constrained conflicting dimensions on same entity
-  const conflictConstraints = [
+  const conflictConstraints: SketchConstraint[] = [
     { id: 'c1', type: CONSTRAINT_TYPES.FIX, entity1Id: 'l1', point1: 'p1' },
     { id: 'c2', type: CONSTRAINT_TYPES.DIMENSION, entity1Id: 'l1', value: 30 },
     { id: 'c3', type: CONSTRAINT_TYPES.DIMENSION, entity1Id: 'l1', value: 60 },
@@ -134,9 +136,10 @@ test('FeatureEngine: extrude boss midplane and through cut', () => {
     ],
   };
 
-  const features = [
+  const features: FeatureData[] = [
     {
       id: 'f_sk1',
+      name: 'Sketch1',
       type: FEATURE_TYPES.SKETCH,
       sketchId: sketchId,
       plane: 'Front',
@@ -152,6 +155,7 @@ test('FeatureEngine: extrude boss midplane and through cut', () => {
     },
     {
       id: 'f_sk2',
+      name: 'Sketch2',
       type: FEATURE_TYPES.SKETCH,
       sketchId: 'sk_hole',
       plane: 'Front',
@@ -172,7 +176,7 @@ test('FeatureEngine: extrude boss midplane and through cut', () => {
 
   const solid = result.bodies[0];
   solid.computeBoundingBox();
-  const box = solid.boundingBox;
+  const box = solid.boundingBox!;
 
   // Midplane extrude bounds: Z should span roughly -15 to +15
   assert.ok(Math.abs(box.min.z - (-15)) < 1e-2, `Box min.z is ${box.min.z}`);
@@ -194,10 +198,10 @@ test('FeatureEngine: rollback bar stops rebuild at rollbackIndex', () => {
     ],
   };
 
-  const features = [
-    { id: 'f_sk1', type: FEATURE_TYPES.SKETCH, sketchId },
-    { id: 'f_ext1', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId, depth: 10 },
-    { id: 'f_fillet', type: FEATURE_TYPES.FILLET, radius: 2 },
+  const features: FeatureData[] = [
+    { id: 'f_sk1', name: 'f_sk1', type: FEATURE_TYPES.SKETCH, sketchId, plane: 'Front' },
+    { id: 'f_ext1', name: 'f_ext1', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId, depth: 10 },
+    { id: 'f_fillet', name: 'f_fillet', type: FEATURE_TYPES.FILLET, radius: 2 },
   ];
 
   // Rollback to index 1 (skips fillet at index 2)
@@ -214,10 +218,11 @@ test('FeatureEngine: thin feature creates solid walls from open sketch', () => {
     ],
   };
 
-  const features = [
-    { id: 'f_sk1', type: FEATURE_TYPES.SKETCH, sketchId },
+  const features: FeatureData[] = [
+    { id: 'f_sk1', name: 'f_sk1', type: FEATURE_TYPES.SKETCH, sketchId, plane: 'Front' },
     {
       id: 'f_thin_ext',
+      name: 'Thin-Extrude',
       type: FEATURE_TYPES.EXTRUDE_BOSS,
       sketchId,
       depth: 20,
@@ -230,7 +235,7 @@ test('FeatureEngine: thin feature creates solid walls from open sketch', () => {
   assert.equal(result.bodies.length, 1);
   const solid = result.bodies[0];
   solid.computeBoundingBox();
-  assert.ok(Math.abs(solid.boundingBox.max.x - solid.boundingBox.min.x - 50) < 1e-2);
+  assert.ok(Math.abs(solid.boundingBox!.max.x - solid.boundingBox!.min.x - 50) < 1e-2);
 });
 
 // ============================================================================
@@ -364,8 +369,8 @@ test('ExportEngine & ImportEngine: STL binary round-trip preserves geometry boun
   const imported = importEngine.importSTL(arrayBuf);
   imported.computeBoundingBox();
 
-  const origBox = geom.boundingBox || (geom.computeBoundingBox(), geom.boundingBox);
-  const impBox = imported.boundingBox;
+  const origBox = geom.boundingBox ?? (geom.computeBoundingBox(), geom.boundingBox!);
+  const impBox = imported.boundingBox!;
 
   assert.ok(Math.abs(impBox.min.x - origBox.min.x) < 1e-2);
   assert.ok(Math.abs(impBox.max.x - origBox.max.x) < 1e-2);
@@ -410,7 +415,7 @@ test('ExportEngine & ImportEngine: STEP (faceted B-rep) and IGES 5.3 round-trip 
   const importedStep = importEngine.importSTEP(stepText);
   assert.ok(importedStep instanceof THREE.BufferGeometry, 'Imported STEP must be BufferGeometry');
   importedStep.computeBoundingBox();
-  const stepBox = importedStep.boundingBox;
+  const stepBox = importedStep.boundingBox!;
   assert.ok(Math.abs(stepBox.max.x - stepBox.min.x - 40) < 1e-1, 'STEP round-trip X dimension ~40');
   assert.ok(Math.abs(stepBox.max.y - stepBox.min.y - 25) < 1e-1, 'STEP round-trip Y dimension ~25');
   assert.ok(Math.abs(stepBox.max.z - stepBox.min.z - 15) < 1e-1, 'STEP round-trip Z dimension ~15');
@@ -427,7 +432,7 @@ test('ExportEngine & ImportEngine: STEP (faceted B-rep) and IGES 5.3 round-trip 
   const importedIges = importEngine.importIGES(igesText);
   assert.ok(importedIges instanceof THREE.BufferGeometry, 'Imported IGES must be BufferGeometry');
   importedIges.computeBoundingBox();
-  const igesBox = importedIges.boundingBox;
+  const igesBox = importedIges.boundingBox!;
   assert.ok(Math.abs(igesBox.max.x - igesBox.min.x - 40) < 1e-1, 'IGES round-trip X dimension ~40');
   assert.ok(Math.abs(igesBox.max.y - igesBox.min.y - 25) < 1e-1, 'IGES round-trip Y dimension ~25');
   assert.ok(Math.abs(igesBox.max.z - igesBox.min.z - 15) < 1e-1, 'IGES round-trip Z dimension ~15');
@@ -451,6 +456,7 @@ test('FEAEngine: cantilever beam deflection matches Euler-Bernoulli analytical f
 test('FEAEngine: 3D solid tetrahedral meshing, 12x12 stiffness matrix, and Cauchy stress tensor', () => {
   const geom = new THREE.BoxGeometry(20, 30, 100);
   const solidMesh = feaEngine.tetrahedralize(geom, { divisions: [2, 2, 4], elementType: ELEMENT_TYPES.TET4 });
+  assert.ok(solidMesh, 'mesh generated');
 
   assert.ok(solidMesh.numElements > 0, 'Solid mesh must have tetrahedral elements');
   assert.ok(solidMesh.numNodes > 0, 'Solid mesh must have nodes');
@@ -481,6 +487,7 @@ test('FEAEngine: 3D solid tetrahedral meshing, 12x12 stiffness matrix, and Cauch
     youngsModulus: 200e9,
     poissonRatio: 0.3,
   });
+  assert.ok(res3D, 'solved');
 
   assert.ok(res3D.maxDisplacementMM > 0, '3D solid deflection must be positive');
   assert.ok(res3D.maxStressMPa > 0, '3D solid von Mises stress must be positive');
@@ -529,7 +536,7 @@ test('DrawingEngine: standard sheet generation with dimensions, GD&T, and SVG/DX
   assert.equal(sheetData.views.length, 4, 'Must generate 4 orthographic views (Top, Front, Right, Iso)');
   assert.ok(sheetData.dimensions.length > 0, 'Must generate automatic linear dimensions');
   assert.ok(sheetData.gdtFrames.length > 0, 'Must generate GD&T feature control frames');
-  assert.ok(sheetData.titleBlock.title === 'BRACKET HOUSING', 'Title block must contain part title');
+  assert.ok(sheetData.titleBlock?.title === 'BRACKET HOUSING', 'Title block must contain part title');
 
   // Verify SVG vector export
   const svg = drawingEngine.exportSVG(sheetData);
@@ -591,7 +598,7 @@ test('ConstraintSolver Audit: Degenerate geometries (zero-length lines, coincide
     { id: 'dl1', p1: { x: 5, y: 5 }, p2: { x: 5, y: 5 } }, // zero length!
     { id: 'dl2', p1: { x: 10, y: 0 }, p2: { x: 20, y: 0 } },
   ];
-  const parallelConstraints = [
+  const parallelConstraints: SketchConstraint[] = [
     { id: 'dc1', type: CONSTRAINT_TYPES.PARALLEL, entity1Id: 'dl1', entity2Id: 'dl2' },
   ];
   const parRes = solver.solve(degenEntities, parallelConstraints);
@@ -600,7 +607,7 @@ test('ConstraintSolver Audit: Degenerate geometries (zero-length lines, coincide
   assert.ok(parRes.error < 1e-3, 'Residual must be near 0');
 
   // 2. Zero-length line in angle constraint (dx=0, dy=0)
-  const angleConstraints = [
+  const angleConstraints: SketchConstraint[] = [
     { id: 'dc2', type: CONSTRAINT_TYPES.ANGLE, entity1Id: 'dl1', entity2Id: 'dl2', angle: 45 },
   ];
   const angRes = solver.solve(degenEntities, angleConstraints);
@@ -612,7 +619,7 @@ test('ConstraintSolver Audit: Degenerate geometries (zero-length lines, coincide
     { id: 'el1', p1: { x: 0, y: 0 }, p2: { x: 0, y: 0 } }, // collapsed point
     { id: 'el2', p1: { x: 0, y: 0 }, p2: { x: 20, y: 0 } },
   ];
-  const expandConstraints = [
+  const expandConstraints: SketchConstraint[] = [
     { id: 'ec1', type: CONSTRAINT_TYPES.FIX, entity1Id: 'el1', point1: 'p1', x: 0, y: 0 },
     { id: 'ec2', type: CONSTRAINT_TYPES.DIMENSION, entity1Id: 'el1', value: 15 },
     { id: 'ec3', type: CONSTRAINT_TYPES.HORIZONTAL, entity1Id: 'el1' },
@@ -621,7 +628,7 @@ test('ConstraintSolver Audit: Degenerate geometries (zero-length lines, coincide
   const expandRes = solver.solve(expandingEntities, expandConstraints);
   assert.equal(expandRes.converged, true, 'Solver must expand collapsed line segment and converge');
   assert.ok(expandRes.error < 1e-3, `Error ${expandRes.error} must be < 1e-3`);
-  const solvedL1 = expandingEntities.find(e => e.id === 'el1');
+  const solvedL1 = expandingEntities.find(e => e.id === 'el1')!;
   assert.ok(Math.abs(solvedL1.p2.x - 15) < 1e-3, 'Collapsed line must expand to length 15');
 });
 
@@ -761,11 +768,12 @@ test('Store regression: addFeature works on features lacking dependency arrays (
   store.setState(s => {
     s.sketchEntities.sk0 = squareSketch();
     s.features.push(
-      { id: 'fs', name: 'Sketch1', type: FEATURE_TYPES.SKETCH, sketchId: 'sk0', suppressed: false },
-      { id: 'fe', name: 'Boss', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'sk0', depth: 5, suppressed: false },
+      // Deliberately without parentIds / childIds (as the starter part and examples once were)
+      { id: 'fs', name: 'Sketch1', type: FEATURE_TYPES.SKETCH, sketchId: 'sk0', plane: 'Front', suppressed: false } as Feature,
+      { id: 'fe', name: 'Boss', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'sk0', depth: 5, suppressed: false } as Feature,
     );
   });
-  assert.doesNotThrow(() => store.getState().addFeature({ name: 'Cut', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: 'sk0' }));
+  assert.doesNotThrow(() => store.getState().addFeature({ id: 'cut', name: 'Cut', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: 'sk0', depth: 5 }));
   const feats = store.getState().features;
   assert.equal(feats.length, 3);
   const cut = feats[2];
@@ -782,8 +790,10 @@ test('Store regression: every built-in example supports add, remove and suppress
     const store = useCADStore;
     store.getState().loadExampleModel(ex.create());
     const sketch = store.getState().features.find(f => f.type === FEATURE_TYPES.SKETCH);
-    assert.doesNotThrow(() => store.getState().addFeature({ name: 'X', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: sketch.sketchId }), ex.id);
+    assert.ok(sketch?.type === FEATURE_TYPES.SKETCH, ex.id);
+    assert.doesNotThrow(() => store.getState().addFeature({ id: `x_${ex.id}`, name: 'X', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: sketch.sketchId, depth: 5 }), ex.id);
     const last = store.getState().features.at(-1);
+    assert.ok(last, ex.id);
     assert.doesNotThrow(() => store.getState().toggleFeatureSuppressed(last.id), ex.id);
     assert.doesNotThrow(() => store.getState().removeFeature(last.id), ex.id);
   }
@@ -841,8 +851,8 @@ test('Store regression: project save/load round-trip preserves feature graph', (
 test('FeatureEngine regression: suppressed sketch disables consumers; missing sketch is an error, not a substitute', () => {
   const sketchEntities = { a: squareSketch(10), b: squareSketch(30) };
   const suppressed = featureEngine.rebuild([
-    { id: 's', type: FEATURE_TYPES.SKETCH, sketchId: 'a', suppressed: true },
-    { id: 'e', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'a', depth: 5 },
+    { id: 's', name: 'S', type: FEATURE_TYPES.SKETCH, sketchId: 'a', plane: 'Front', suppressed: true },
+    { id: 'e', name: 'E', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'a', depth: 5 },
   ], sketchEntities);
   assert.equal(suppressed.bodies.length, 0);
 
@@ -856,9 +866,9 @@ test('FeatureEngine regression: suppressed sketch disables consumers; missing sk
 
 test('ensureFeatureGraph: derives parents and rebuilds child links', () => {
   const f = ensureFeatureGraph([
-    { id: 's', type: FEATURE_TYPES.SKETCH, sketchId: 'k' },
-    { id: 'e1', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'k' },
-    { id: 'e2', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: 'k', childIds: ['stale'] },
+    { id: 's', name: 'S', type: FEATURE_TYPES.SKETCH, sketchId: 'k', plane: 'Front' },
+    { id: 'e1', name: 'E1', type: FEATURE_TYPES.EXTRUDE_BOSS, sketchId: 'k', depth: 5 },
+    { id: 'e2', name: 'E2', type: FEATURE_TYPES.EXTRUDE_CUT, sketchId: 'k', depth: 5, childIds: ['stale'] },
   ]);
   assert.deepEqual(f[0].childIds, ['e1', 'e2']);
   assert.deepEqual(f[2].parentIds, ['s']);
@@ -900,10 +910,11 @@ test('FEA regression: missing or invalid Poisson ratio falls back to 0.3 instead
 
 test('Mass properties regression: SI units, exact inertia, winding-independent center of mass', () => {
   const m = 10 * 20 * 30 * 1e-9 * 7900; // 0.0474 kg
-  const close = (a, b, msg) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b)), `${msg}: ${a} vs ${b}`);
+  const close = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b)), `${msg}: ${a} vs ${b}`);
 
   const box = new THREE.BoxGeometry(10, 20, 30);
   let r = geometryEngineMP.computeMassProperties(box, { density: 7900 });
+  assert.ok(r);
   close(r.volume, 6000, 'volume mm³');
   close(r.mass, m, 'mass kg (mm³ × 1e-9 × kg/m³)');
   close(r.momentOfInertia.Ixx, m * (20 ** 2 + 30 ** 2) / 12, 'Ixx');
@@ -915,14 +926,16 @@ test('Mass properties regression: SI units, exact inertia, winding-independent c
   const moved = new THREE.BoxGeometry(10, 20, 30);
   moved.translate(5, 0, 0);
   r = geometryEngineMP.computeMassProperties(moved, { density: 7900 });
+  assert.ok(r);
   close(r.centerOfMass.x, 5, 'COM x');
   close(r.momentOfInertiaAtOrigin.Iyy, m * (10 ** 2 + 30 ** 2) / 12 + m * 25, 'Iyy at origin');
   close(r.momentOfInertia.Iyy, m * (10 ** 2 + 30 ** 2) / 12, 'Iyy at COM');
 
   // Inverted winding must not mirror the center of mass
-  const idx = moved.index.array;
+  const idx = moved.index!.array;
   for (let i = 0; i < idx.length; i += 3) [idx[i], idx[i + 1]] = [idx[i + 1], idx[i]];
   r = geometryEngineMP.computeMassProperties(moved, { density: 7900 });
+  assert.ok(r);
   close(r.centerOfMass.x, 5, 'COM x with inverted winding');
   close(r.mass, m, 'mass with inverted winding');
 });
@@ -932,7 +945,7 @@ test('Sketch points: UI-created points use the canonical format and survive DXF 
   assert.equal(pt.type, 'point');
   assert.equal(pt.x, 12.5);
   assert.equal(pt.y, -4);
-  assert.equal(pt.p1, undefined);
+  assert.equal((pt as { p1?: unknown }).p1, undefined);
 
   const dxf = await exportEngine.exportDXF([pt]).text();
   assert.match(dxf, /POINT/, 'point must be written to DXF');
@@ -945,6 +958,6 @@ test('Sketch points: UI-created points use the canonical format and survive DXF 
     features: [],
     sketchEntities: { s1: [{ id: 'old', type: 'point', p1: { x: 3, y: 7 } }] },
   });
-  const loaded = store.getState().sketchEntities.s1[0];
+  const loaded = store.getState().sketchEntities.s1[0] as unknown as Record<string, unknown>;
   assert.deepEqual([loaded.x, loaded.y, loaded.p1], [3, 7, undefined]);
 });

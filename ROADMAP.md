@@ -47,7 +47,7 @@ Make every later step safe to take.
 - [ ] **0.5** Split the single test file into per-module test files
 - [ ] **0.6** Autosave the current document to IndexedDB; restore on reload
 
-## Track T — Full TypeScript migration
+## Track T — Full TypeScript migration (complete)
 
 Goal: every `.js` → `.ts` and every `.jsx` → `.tsx` (tests included), strict
 mode everywhere, no `any`. Converted bottom-up so each step leaves the app
@@ -72,7 +72,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.6b** Common components and dialogs (plus spin-button hold, material dialog sync, DXF exports the model, IGES in the export dialog)
   - [x] **T.6c** Feature tree, property panel, command manager (plus sketches on any plane, per-type feature parameters, hole/pattern/mirror inputs, tree filter fix)
   - [x] **T.6d** Drawing modal, results viewer, App, entry point (plus Poisson's ratio passed to FEA, whole drawing sheet visible, stress tensor at the peak element)
-- [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
+- [x] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 
 ## Phase 1 — Command layer and public API v1
 

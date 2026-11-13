@@ -17,26 +17,9 @@ export default tseslint.config(
   { ignores: ['dist/', 'node_modules/'] },
   js.configs.recommended,
 
-  // JavaScript sources (shrinking as files are converted to TypeScript)
-  {
-    files: ['src/**/*.{js,jsx}'],
-    languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      globals: { ...globals.browser },
-      parserOptions: { ecmaFeatures: { jsx: true } },
-    },
-    settings: { react: { version: 'detect' } },
-    plugins: { react, 'react-hooks': reactHooks },
-    rules: {
-      ...reactRules,
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
-    },
-  },
-
   // TypeScript sources
   {
-    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', '*.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 'latest',
@@ -56,7 +39,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['tests/**/*.{js,ts}', '*.config.js'],
+    files: ['tests/**/*.ts', '*.config.{js,ts}'],
     languageOptions: { globals: { ...globals.node } },
   },
 );

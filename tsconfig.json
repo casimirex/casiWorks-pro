@@ -1,6 +1,5 @@
 {
-  // Migration mode: .ts/.tsx files are checked strictly; remaining .js/.jsx files
-  // are allowed (not checked) until they are converted. See ROADMAP.md, track T.
+  // The whole app and its tests are TypeScript, checked strictly.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -22,11 +21,9 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
 
-    "allowJs": true,
-    "checkJs": false,
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "tests", "vite.config.js", "eslint.config.js"]
+  "include": ["src", "tests", "vite.config.ts"]
 }

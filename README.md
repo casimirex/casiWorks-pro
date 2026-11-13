@@ -10,7 +10,7 @@
 casiworks/
 ├── index.html                    # Application entry HTML with branded splash screen
 ├── package.json                  # Dependencies & scripts
-├── vite.config.js                # Vite build configuration
+├── vite.config.ts                # Vite build configuration
 ├── src/
 │   ├── main.tsx                  # React 18 bootstrap
 │   ├── App.tsx                   # Central application logic & reactive model rebuild loop
@@ -77,7 +77,7 @@ casiworks/
 │       ├── projectFile.ts        # Project save / open / new (.casiproj)
 │       └── shortcuts.ts          # Keyboard shortcuts
 └── tests/
-    ├── casiworks.test.js         # Solver, features, assembly, data exchange, FEA, drawings, store
+    ├── casiworks.test.ts         # Solver, features, assembly, data exchange, FEA, drawings, store
     ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
     └── api.test.ts               # Public API (headless)
@@ -232,7 +232,7 @@ runtime for plain JavaScript callers.
 
 ## 🧪 Verification & Test Suite
 
-CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.js`) executed with Node.js test runner:
+CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.ts` and the other `tests/*.test.ts` files) executed with Node.js test runner:
 
 ```bash
 npm test
