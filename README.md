@@ -85,7 +85,8 @@ casiworks/
     ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
     ├── api.test.ts               # Public API (headless)
-    └── commands.test.ts          # Command registry, keymap, built-in commands
+    ├── commands.test.ts          # Command registry, keymap, built-in commands
+    └── events.test.ts            # API events
 ```
 
 ---
@@ -212,7 +213,7 @@ viewport, and can be undone like any other edit.
 **In the running app** it is `window.casiworks` — try it in the browser console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.1.0'
+const api = window.casiworks;          // api.version === '1.2.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -250,6 +251,19 @@ api.commands.execute('assembly.mate', { type: 'concentric' });
 
 Commands that open dialogs or files (`file.open`, `model.material`, `drawing.open`…)
 need the running app; headless they fail with `OPERATION_FAILED`.
+
+**Events** (since 1.2): react to changes made anywhere — UI, keyboard or script:
+
+```js
+const stop = api.on('featureAdded', (e) => console.log('added', e.feature.name, e.feature.parameters));
+api.on('rebuild', (e) => console.log(e.ok ? `${e.bodyCount} body` : e.errors));
+api.on('selectionChanged', (e) => console.log(e.ids));
+stop(); // or api.off('featureAdded', handler)
+```
+
+Events: `rebuild`, `featureAdded`, `featureChanged`, `featureRemoved`,
+`selectionChanged`, `documentChanged` (new / open / example — sent instead of
+per-feature events), `commandExecuted`. Payloads are plain data.
 
 Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
 Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`

@@ -12,7 +12,7 @@
 //    always current, with or without the UI running.
 //  - Units: millimetres, degrees, kilograms, kg/m³.
 
-import type { CommandInfo } from '../commands/CommandRegistry.ts';
+import type { CommandExecution, CommandInfo } from '../commands/CommandRegistry.ts';
 import type { BufferGeometry } from 'three';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
@@ -33,7 +33,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.1.0';
+export const API_VERSION = '1.2.0';
 
 // =====================================================================
 // Public types
@@ -219,7 +219,26 @@ export interface ApiCommandRegistry {
   list(): CommandInfo[];
   has(id: string): boolean;
   execute(id: string, args?: unknown): unknown;
+  onExecute?(listener: (execution: CommandExecution) => void): () => void;
 }
+
+/** Events and their payloads (all plain data). Since 1.2. */
+export interface CasiWorksEventMap {
+  /** A rebuild finished (after every model change). */
+  rebuild: { ok: boolean; bodyCount: number; errors: RebuildError[] };
+  featureAdded: { feature: FeatureInfo };
+  featureRemoved: { id: string; name: string };
+  /** Parameters, name, suppression or dependency links changed. */
+  featureChanged: { feature: FeatureInfo };
+  selectionChanged: { ids: string[] };
+  /** The whole document was replaced (new, open, example); no feature events are sent for it. */
+  documentChanged: { name: string; featureCount: number };
+  /** A command ran (ribbon, keyboard, script). */
+  commandExecuted: CommandExecution;
+}
+export type CasiWorksEventName = keyof CasiWorksEventMap;
+export type CasiWorksEventHandler<K extends CasiWorksEventName> = (event: CasiWorksEventMap[K]) => void;
+export type { CommandExecution };
 
 export interface CasiWorksAPIOptions {
   /** Registry behind `api.commands` (without one, the namespace is empty). */
@@ -238,6 +257,12 @@ export interface CasiWorksAPI {
   readonly history: HistoryAPI;
   /** Since 1.1. */
   readonly commands: CommandsAPI;
+  /**
+   * Listen for an event; returns a function that stops listening. Since 1.2.
+   *   const stop = api.on('featureAdded', (e) => console.log(e.feature.name));
+   */
+  on<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): () => void;
+  off<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): void;
 }
 
 /** Error thrown by every API call that rejects its input or cannot complete. */
@@ -266,6 +291,9 @@ type NewFeature = FeatureData;
 type FeatureSpec = DistributiveOmit<FeatureData, 'id'>;
 
 export interface ApiStoreState extends RebuildState {
+  rebuildCount: number;
+  documentRevision: number;
+  selectedEntities: Array<{ id: string }>;
   bodies: Array<{ geometry: BufferGeometry | null; visible?: boolean }>;
   needsRebuild: boolean;
   rebuildErrors: RebuildError[];
@@ -292,6 +320,7 @@ export interface ApiStoreState extends RebuildState {
 
 export interface ApiStore {
   getState(): ApiStoreState;
+  subscribe(listener: (state: ApiStoreState, previous: ApiStoreState) => void): () => void;
 }
 
 // =====================================================================
@@ -659,7 +688,71 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   });
 
+  // ---------------------------------------------------------------- events
+  const EVENT_NAMES: readonly CasiWorksEventName[] = ['rebuild', 'featureAdded', 'featureRemoved', 'featureChanged', 'selectionChanged', 'documentChanged', 'commandExecuted'];
+  const handlers = new Map<CasiWorksEventName, Set<(e: never) => void>>();
+  let stopWatching: (() => void) | null = null;
+
+  const emit = <K extends CasiWorksEventName>(event: K, payload: CasiWorksEventMap[K]) => {
+    for (const h of [...(handlers.get(event) ?? [])]) {
+      try { (h as CasiWorksEventHandler<K>)(payload); } catch (err) { console.error(`[CasiWorks] "${event}" listener failed:`, err); }
+    }
+  };
+  const listening = (event: CasiWorksEventName) => (handlers.get(event)?.size ?? 0) > 0;
+
+  const onStoreChange = (state: ApiStoreState, prev: ApiStoreState) => {
+    if (state.documentRevision !== prev.documentRevision) {
+      emit('documentChanged', { name: state.documentName, featureCount: state.features.length });
+    } else if (state.features !== prev.features) {
+      const before = new Map(prev.features.map(f => [f.id, f]));
+      const after = new Set(state.features.map(f => f.id));
+      for (const f of prev.features) if (!after.has(f.id)) emit('featureRemoved', { id: f.id, name: f.name });
+      state.features.forEach((f, i) => {
+        const old = before.get(f.id);
+        if (!old) emit('featureAdded', { feature: toFeatureInfo(f, i) });
+        // Undo restores copies: compare content when the object changed
+        else if (old !== f && listening('featureChanged') && JSON.stringify(old) !== JSON.stringify(f)) emit('featureChanged', { feature: toFeatureInfo(f, i) });
+      });
+    }
+    if (state.selectedEntities !== prev.selectedEntities) {
+      const ids = state.selectedEntities.map(e => e.id);
+      const old = prev.selectedEntities.map(e => e.id);
+      if (ids.length !== old.length || ids.some((id, i) => id !== old[i])) emit('selectionChanged', { ids });
+    }
+    if (state.rebuildCount !== prev.rebuildCount) {
+      const errors = clone(state.rebuildErrors);
+      emit('rebuild', { ok: errors.length === 0, bodyCount: state.bodies.filter(b => b.geometry).length, errors });
+    }
+  };
+
+  const updateWatching = () => {
+    const any = EVENT_NAMES.some(listening);
+    if (any && !stopWatching) {
+      const stopStore = store.subscribe(onStoreChange);
+      const stopCommands = registry?.onExecute?.(e => emit('commandExecuted', clone(e))) ?? (() => {});
+      stopWatching = () => { stopStore(); stopCommands(); };
+    } else if (!any && stopWatching) {
+      stopWatching();
+      stopWatching = null;
+    }
+  };
+
+  const off = <K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>) => {
+    handlers.get(event)?.delete(handler as (e: never) => void);
+    updateWatching();
+  };
+  const on = <K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>) => {
+    if (!EVENT_NAMES.includes(event)) fail('INVALID_ARGUMENT', `Unknown event ${JSON.stringify(event)} (events: ${EVENT_NAMES.join(', ')})`);
+    if (typeof handler !== 'function') fail('INVALID_ARGUMENT', 'handler must be a function');
+    if (!handlers.has(event)) handlers.set(event, new Set());
+    handlers.get(event)!.add(handler as (e: never) => void);
+    updateWatching();
+    return () => off(event, handler);
+  };
+
   return Object.freeze({
+    on,
+    off,
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),
     document,

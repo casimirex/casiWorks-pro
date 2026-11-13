@@ -144,6 +144,10 @@ export interface CADState {
 
   // Rebuild
   needsRebuild: boolean;
+  /** Incremented after every completed rebuild (for change listeners). */
+  rebuildCount: number;
+  /** Incremented when the whole document is replaced: new, open, example (for change listeners). */
+  documentRevision: number;
   rebuildErrors: RebuildError[];
 }
 
@@ -369,6 +373,8 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     needsRebuild: false,
+    rebuildCount: 0,
+    documentRevision: 0,
     rebuildErrors: [],
   };
 }
@@ -707,6 +713,7 @@ export const useCADStore = create<CADStore>()(
     markRebuilt: (errors = []) => set(state => {
       state.needsRebuild = false;
       state.rebuildErrors = errors;
+      state.rebuildCount += 1;
     }),
 
     rebuild: () => set(state => {
@@ -852,6 +859,7 @@ export const useCADStore = create<CADStore>()(
         state.needsRebuild = true;
         state.isModified = false;
         state.statusMessage = `Loaded: ${state.documentName}`;
+        state.documentRevision += 1;
       } catch (e) {
         state.statusMessage = 'Error loading project: ' + (e instanceof Error ? e.message : String(e));
       }
@@ -871,13 +879,18 @@ export const useCADStore = create<CADStore>()(
       state.activeSketchId = null;
       state.needsRebuild = true;
       state.statusMessage = `Loaded example: ${example.documentName}`;
+      state.documentRevision += 1;
     }),
 
     newProject: () => set(state => {
       // Reset the assembly singleton too, otherwise old components resurface on the next insert
       assemblyManager.components = [];
       assemblyManager.mates = [];
+      const { documentRevision, rebuildCount } = state;
       Object.assign(state, initialState());
+      // Counters keep counting across documents
+      state.documentRevision = documentRevision + 1;
+      state.rebuildCount = rebuildCount;
     }),
 
     setDocumentName: (name) => set(state => {
