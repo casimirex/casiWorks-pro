@@ -1,14 +1,15 @@
 // CasiWorks Pro - Main Application Root
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import MainLayout from './components/layout/MainLayout.tsx';
 import ExportDialog from './components/dialogs/ExportDialog.tsx';
 import MaterialDialog from './components/dialogs/MaterialDialog.tsx';
 import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
-import ResultsViewer from './simulation/ResultsViewer';
+import ResultsViewer from './simulation/ResultsViewer.tsx';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
 import { setupKeyboardShortcuts } from './utils/shortcuts.ts';
 import { rebuildModel } from './features/rebuildModel.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants.ts';
+import type { FeatureData } from './types/cad.ts';
 
 export default function App() {
   const needsRebuild = useCADStore(s => s.needsRebuild);
@@ -37,7 +38,7 @@ export default function App() {
           { id: 'l3', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: 30, y: 20 }, p2: { x: -30, y: 20 }, construction: false },
           { id: 'l4', type: SKETCH_ENTITY_TYPES.LINE, p1: { x: -30, y: 20 }, p2: { x: -30, y: -20 }, construction: false },
         ];
-        state.features.push({
+        const starter: FeatureData[] = [{
           id: 'feat_sketch_1',
           name: 'Sketch1',
           type: FEATURE_TYPES.SKETCH,
@@ -45,8 +46,7 @@ export default function App() {
           plane: 'Front',
           visible: true,
           suppressed: false,
-        });
-        state.features.push({
+        }, {
           id: 'feat_extrude_1',
           name: 'Boss-Extrude1',
           type: FEATURE_TYPES.EXTRUDE_BOSS,
@@ -54,8 +54,8 @@ export default function App() {
           depth: 25,
           visible: true,
           suppressed: false,
-        });
-        ensureFeatureGraph(state.features);
+        }];
+        state.features.push(...ensureFeatureGraph(starter));
         state.needsRebuild = true;
         state.isModified = false;
       });

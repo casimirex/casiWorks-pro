@@ -1,22 +1,29 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Download, Eye, Layers, Settings2, FileText, Check } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { X, Download, Eye, FileText, Check } from 'lucide-react';
 import { drawingEngine, SHEET_SIZES } from './DrawingEngine.ts';
 import { useCADStore } from '../store/cadStore.ts';
 
-export default function DrawingViewModal({ isOpen, onClose }) {
+type SheetSizeKey = keyof typeof SHEET_SIZES;
+
+interface DrawingViewModalProps {
+  isOpen: boolean;
+  onClose(): void;
+}
+
+export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalProps) {
   const bodies = useCADStore(s => s.bodies);
   const documentName = useCADStore(s => s.documentName || 'Part1');
   const activeMaterial = useCADStore(s => s.activeMaterial || 'Steel 1020');
 
   const [enableHLR, setEnableHLR] = useState(true);
-  const [sheetSizeKey, setSheetSizeKey] = useState('A4_LANDSCAPE');
+  const [sheetSizeKey, setSheetSizeKey] = useState<SheetSizeKey>('A4_LANDSCAPE');
   const [showDimensions, setShowDimensions] = useState(true);
   const [showGDT, setShowGDT] = useState(true);
-  const [downloadSuccess, setDownloadSuccess] = useState(null);
+  const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
-  const downloadTimerRef = useRef(null);
-  const revokeTimerRef = useRef(null);
+  const downloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revokeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clean up any pending timers on unmount to prevent React state leaks
   useEffect(() => {
@@ -29,7 +36,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
   // Keyboard accessibility: Escape closes modal
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose?.();
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -76,7 +83,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
       document.body.removeChild(a);
 
       revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
+        try { URL.revokeObjectURL(url); } catch { /* already revoked */ }
       }, 1000);
 
       setDownloadSuccess('SVG Exported');
@@ -106,7 +113,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
       document.body.removeChild(a);
 
       revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
+        try { URL.revokeObjectURL(url); } catch { /* already revoked */ }
       }, 1000);
 
       setDownloadSuccess('DXF Exported');
@@ -207,7 +214,7 @@ export default function DrawingViewModal({ isOpen, onClose }) {
           {/* Sheet Size Selector */}
           <select
             value={sheetSizeKey}
-            onChange={(e) => setSheetSizeKey(e.target.value)}
+            onChange={(e) => setSheetSizeKey(e.target.value as SheetSizeKey)}
             style={{
               background: '#2d2d30',
               border: '1px solid #555',

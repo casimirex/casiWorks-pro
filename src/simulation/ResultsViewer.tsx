@@ -1,22 +1,25 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
-import React, { useState } from 'react';
-import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, Layers, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useCADStore } from '../store/cadStore.ts';
 import { feaEngine, ELEMENT_TYPES } from './FEAEngine.ts';
+import type { ElementType, FEAResults } from './FEAEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
-import DrawingViewModal from '../drawings/DrawingViewModal.jsx';
+import DrawingViewModal from '../drawings/DrawingViewModal.tsx';
 
 export default function ResultsViewer() {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
 
   const [load, setLoad] = useState(5000); // 5000 N
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState<FEAResults | null>(null);
   const [minimized, setMinimized] = useState(window.innerWidth <= 768);
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
-  const [elementType, setElementType] = useState(ELEMENT_TYPES.TET10);
+  const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
   const [drawingOpen, setDrawingOpen] = useState(false);
+
+  const firstElement = results?.solidResult?.elementStresses?.[0]?.stress ? results.solidResult.elementStresses[0] : null;
 
   const handleRunFEA = () => {
     if (bodies.length === 0 || !bodies[0]?.geometry) {
@@ -25,18 +28,19 @@ export default function ResultsViewer() {
     }
 
     try {
-      const mat = materialLibrary.getMaterial(activeMaterial) || { yieldStrength: 250e6, youngsModulus: 200e9, poissonRatio: 0.3 };
+      const mat = materialLibrary.getMaterial(activeMaterial);
       feaEngine.generateMesh(bodies[0].geometry, { elementType });
       const res = feaEngine.solve(
         load,
         mat.yieldStrength || 250e6,
         mat.youngsModulus || 200e9,
-        mat.poissonRatio !== undefined ? mat.poissonRatio : 0.3
+        // The material field is poissonsRatio (this read poissonRatio, so ν was always 0.3)
+        mat.poissonsRatio ?? 0.3
       );
       setResults(res);
     } catch (err) {
       console.error('FEA solve failed:', err);
-      alert('Simulation error: ' + (err.message || 'Unable to solve FEA model.'));
+      alert('Simulation error: ' + ((err instanceof Error && err.message) || 'Unable to solve FEA model.'));
       setResults(null);
     }
   };
@@ -161,7 +165,7 @@ export default function ResultsViewer() {
             <span>Mesh Element:</span>
             <select
               value={elementType}
-              onChange={(e) => setElementType(e.target.value)}
+              onChange={(e) => setElementType(e.target.value as ElementType)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
             >
               <option value={ELEMENT_TYPES.TET10}>Tet10 (Quadratic)</option>
@@ -230,7 +234,7 @@ export default function ResultsViewer() {
                 {showTensors ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
 
-              {showTensors && results.solidResult?.elementStresses?.length > 0 && results.solidResult.elementStresses[0]?.stress && (
+              {showTensors && firstElement && (
                 <div style={{
                   background: '#18181b',
                   padding: 6,
@@ -242,15 +246,15 @@ export default function ResultsViewer() {
                   flexDirection: 'column',
                   gap: 2,
                 }}>
-                  <div>σ_xx: {((results.solidResult.elementStresses[0].stress[0] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>σ_yy: {((results.solidResult.elementStresses[0].stress[1] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>σ_zz: {((results.solidResult.elementStresses[0].stress[2] || 0) / 1e6).toFixed(2)} MPa</div>
-                  <div>τ_xy: {((results.solidResult.elementStresses[0].stress[3] || 0) / 1e6).toFixed(2)} MPa</div>
-                  {results.solidResult.elementStresses[0].principalStresses && (
+                  <div>σ_xx: {((firstElement.stress[0] || 0) / 1e6).toFixed(2)} MPa</div>
+                  <div>σ_yy: {((firstElement.stress[1] || 0) / 1e6).toFixed(2)} MPa</div>
+                  <div>σ_zz: {((firstElement.stress[2] || 0) / 1e6).toFixed(2)} MPa</div>
+                  <div>τ_xy: {((firstElement.stress[3] || 0) / 1e6).toFixed(2)} MPa</div>
+                  {firstElement.principalStresses && (
                     <div style={{ color: '#4fc3f7', marginTop: 2 }}>
-                      σ_1: {((results.solidResult.elementStresses[0].principalStresses[0] || 0) / 1e6).toFixed(2)} |
-                      σ_2: {((results.solidResult.elementStresses[0].principalStresses[1] || 0) / 1e6).toFixed(2)} |
-                      σ_3: {((results.solidResult.elementStresses[0].principalStresses[2] || 0) / 1e6).toFixed(2)}
+                      σ_1: {((firstElement.principalStresses[0] || 0) / 1e6).toFixed(2)} |
+                      σ_2: {((firstElement.principalStresses[1] || 0) / 1e6).toFixed(2)} |
+                      σ_3: {((firstElement.principalStresses[2] || 0) / 1e6).toFixed(2)}
                     </div>
                   )}
                 </div>

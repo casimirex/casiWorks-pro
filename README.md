@@ -1,6 +1,6 @@
 # CasiWorks Pro — Professional 3D CAD Engineering Suite
 
-**CasiWorks Pro** is a professional, web-based 3D CAD application for mechanical design. Built with modern WebGL/Three.js rendering, a parametric feature tree over a triangle-mesh solid kernel (BSP CSG booleans, exact mass properties), a Levenberg-Marquardt 2D constraint solver, multi-body kinematic assembly mates, 3D solid linear static FEA simulation, 2D engineering drawings with GD&T, and ISO standard CAD data exchange (STEP AP214/AP242, IGES 5.3, STL, DXF).
+**CasiWorks Pro** is a professional, web-based 3D CAD application for mechanical design. Built with modern WebGL/Three.js rendering, a parametric feature tree over a triangle-mesh solid kernel (BSP CSG booleans, exact mass properties), a Levenberg-Marquardt 2D constraint solver, multi-body kinematic assembly mates, 3D solid linear static FEA simulation, 2D engineering drawings with GD&T, and ISO standard CAD data exchange (faceted STEP AP214, IGES 5.3, STL, DXF).
 
 ---
 
@@ -12,8 +12,8 @@ casiworks/
 ├── package.json                  # Dependencies & scripts
 ├── vite.config.js                # Vite build configuration
 ├── src/
-│   ├── main.jsx                  # React 18 bootstrap
-│   ├── App.jsx                   # Central application logic & reactive model rebuild loop
+│   ├── main.tsx                  # React 18 bootstrap
+│   ├── App.tsx                   # Central application logic & reactive model rebuild loop
 │   ├── index.css                 # Dark engineering UI styling
 │   │
 │   ├── api/
@@ -31,24 +31,24 @@ casiworks/
 │   │   ├── profile.ts            # Sketch entities → closed loops → shapes with holes
 │   │   ├── SketchEngine.ts       # Sketch entity factories, snapping, profile closure check
 │   │   ├── ConstraintSolver.ts   # Levenberg-Marquardt 2D solver with QR decomposition, rank & DOF analysis
-│   │   ├── MaterialLibrary.js    # Engineering materials (Steels, Al, Ti, Plastics) with physical constants
-│   │   ├── ExportEngine.js       # STEP AP214/AP242 B-Rep, IGES 5.3 MSBO, STL (Binary/ASCII), DXF, OBJ
-│   │   └── ImportEngine.js       # STEP, IGES 5.3, Binary/ASCII STL, AutoCAD DXF, and Project JSON parser
+│   │   ├── MaterialLibrary.ts    # Engineering materials (Steels, Al, Ti, Plastics) with physical constants
+│   │   ├── ExportEngine.ts       # STEP AP214 faceted solid, IGES 5.3 MSBO, STL (Binary/ASCII), DXF, OBJ
+│   │   └── ImportEngine.ts       # STEP, IGES 5.3, Binary/ASCII STL, AutoCAD DXF, and Project JSON parser
 │   │
 │   ├── features/
-│   │   ├── FeatureEngine.js      # Parametric feature evaluation (rollback, suppression, dependencies)
+│   │   ├── FeatureEngine.ts      # Parametric feature evaluation (rollback, suppression, dependencies)
 │   │   └── rebuildModel.ts       # Rebuild entry point shared by the UI and the API
 │   │
 │   ├── assembly/
-│   │   └── AssemblyManager.js    # Multi-body solver: Standard & Advanced mates (Tangent, Width, Path), Exploded Views
+│   │   └── AssemblyManager.ts    # Multi-body solver: Standard & Advanced mates (Tangent, Width, Path), Exploded Views
 │   │
 │   ├── simulation/
-│   │   ├── FEAEngine.js          # 3D Solid FEA: Tet4/Tet10 meshing, 12x12 stiffness matrix, PCG solver, Cauchy tensor
-│   │   └── ResultsViewer.jsx     # Simulation HUD: von Mises contour colormap, Cauchy stress inspector, FOS
+│   │   ├── FEAEngine.ts          # 3D Solid FEA: Tet4/Tet10 meshing, 12x12 stiffness matrix, PCG solver, Cauchy tensor
+│   │   └── ResultsViewer.tsx     # Simulation panel: max von Mises, deflection, factor of safety, stress tensor
 │   │
 │   ├── drawings/
-│   │   ├── DrawingEngine.js      # 2D Orthographic projections, Hidden Line Removal (HLR), GD&T, SVG/DXF export
-│   │   └── DrawingViewModal.jsx  # Interactive engineering drawing sheet viewer modal
+│   │   ├── DrawingEngine.ts      # 2D Orthographic projections, Hidden Line Removal (HLR), GD&T, SVG/DXF export
+│   │   └── DrawingViewModal.tsx  # Interactive engineering drawing sheet viewer modal
 │   │
 │   ├── viewport/                 # High-Performance 3D Viewport
 │   │   ├── Viewport3D.tsx        # R3F Canvas, OrbitControls, Reference Planes, Shading, Sharp Edges
@@ -56,17 +56,17 @@ casiworks/
 │   │
 │   ├── components/
 │   │   ├── layout/
-│   │   │   ├── CommandManager.jsx # Ribbon toolbar (Features, Sketch, Surfaces, Assembly, Drawing, FEA)
-│   │   │   ├── FeatureTree.jsx    # Feature Tree (history, planes, suppression, rollback)
-│   │   │   ├── PropertyPanel.jsx  # Contextual property panel with parameter binding and debounced updates
-│   │   │   ├── StatusBar.jsx      # MMGS units, grid/snap toggles, tool status
-│   │   │   └── MainLayout.jsx     # Master flex layout
+│   │   │   ├── CommandManager.tsx # Ribbon toolbar (Features, Sketch, Surfaces, Assembly, Drawing, FEA)
+│   │   │   ├── FeatureTree.tsx    # Feature Tree (history, planes, suppression, rollback)
+│   │   │   ├── PropertyPanel.tsx  # Contextual property panel with parameter binding and debounced updates
+│   │   │   ├── StatusBar.tsx      # MMGS units, grid/snap toggles, tool status
+│   │   │   └── MainLayout.tsx     # Master flex layout
 │   │   ├── dialogs/
-│   │   │   ├── ExportDialog.jsx   # Multi-format CAD export (STEP, IGES, STL, DXF, OBJ)
-│   │   │   ├── MaterialDialog.jsx # Searchable material database with physical properties
-│   │   │   └── MassPropsDialog.jsx# Exact Volume, Mass, Center of Mass, Moments of Inertia
+│   │   │   ├── ExportDialog.tsx   # Multi-format CAD export (STEP, IGES, STL, DXF, OBJ)
+│   │   │   ├── MaterialDialog.tsx # Searchable material database with physical properties
+│   │   │   └── MassPropsDialog.tsx# Exact Volume, Mass, Center of Mass, Moments of Inertia
 │   │   └── common/
-│   │       └── NumericInput.jsx   # High-precision engineering spinner input with units
+│   │       └── NumericInput.tsx   # High-precision engineering spinner input with units
 │   │
 │   └── utils/
 │       ├── math.ts               # Small vector helpers, ids, sketch-plane transforms
@@ -124,7 +124,7 @@ the model unchanged; faces and edges cannot be selected individually; STEP/IGES
 export writes faceted (triangulated) geometry.
 
 ### 4. Multi-Body Assembly Mate Engine
-- **Kinematic Mates** (`src/assembly/AssemblyManager.js`):
+- **Kinematic Mates** (`src/assembly/AssemblyManager.ts`):
   - **Standard Mates**:
     - `Coincident`: Aligns opposing face normals ($\vec{n}_2 = -\vec{n}_1$) and eliminates contact standoff gap.
     - `Distance`: Enforces exact planar offset standoff distance along opposing face normals.
@@ -140,7 +140,7 @@ export writes faceted (triangulated) geometry.
 - **Exploded View Generator**: Configurable exploded distances along kinematic motion axes with 3D polyline leader lines.
 
 ### 5. 3D Solid Linear Static FEA Simulation
-- **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.js`):
+- **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.ts`):
   - Voxelizes arbitrary CAD solids via ray-triangle parity containment testing.
   - Decomposes voxels into 6 tetrahedra using Kuhn's decomposition.
   - Supports **Tet4** (linear 4-node) and **Tet10** (quadratic 10-node with mid-edge nodes) elements.
@@ -162,7 +162,7 @@ export writes faceted (triangulated) geometry.
   - Displaced Three.js BufferGeometry generation with rainbow/jet colormap vertex coloring.
 
 ### 6. 2D Engineering Drawings Engine
-- **Orthographic Projections** (`src/drawings/DrawingEngine.js`):
+- **Orthographic Projections** (`src/drawings/DrawingEngine.ts`):
   - Generates Front, Top, Right, Left, Bottom, Back, and 30° Isometric views from 3D models.
   - Feature crease extraction based on dihedral angle thresholding.
 - **Hidden Line Removal (HLR)**:
@@ -205,7 +205,7 @@ It drives the same store as the UI, so API edits appear in the feature tree and
 are undoable, and it also runs headless in Node (no browser needed).
 
 ```js
-import { useCADStore } from './src/store/cadStore.js';
+import { useCADStore } from './src/store/cadStore.ts';
 import { createCasiWorksAPI } from './src/api/CasiWorksAPI.ts';
 
 const api = createCasiWorksAPI(useCADStore);
@@ -247,7 +247,7 @@ npm test
 - **FEA**: cantilever deflection vs. Euler-Bernoulli analytical solution, Tet4/Tet10 stiffness and stress tensor
 - **Drawings**: orthographic projection with hidden-line removal, dimensions, GD&T, SVG/DXF export
 - **Application state**: add/remove/suppress on every built-in example, project save/load round-trip, atomic rejection of invalid files
-- **Public API** (`tests/api.test.js`): headless modeling end-to-end, undo/redo, suppression, rollback, materials, validation error codes, copy semantics
+- **Public API** (`tests/api.test.ts`): headless modeling end-to-end, undo/redo, suppression, rollback, materials, validation error codes, copy semantics
 
 The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run build` to verify the production bundle.
 
