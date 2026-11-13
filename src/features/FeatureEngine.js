@@ -1,7 +1,7 @@
 // CasiWorks Pro - Parametric Feature Rebuild Engine (Full Dependency Graph & Rollback)
 import * as THREE from 'three';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
-import { geometryEngine } from '../kernel/GeometryEngine.js';
+import { geometryEngine } from '../kernel/GeometryEngine.ts';
 
 export class FeatureEngine {
   constructor() {

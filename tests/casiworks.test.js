@@ -924,7 +924,7 @@ test('AssemblyManager Audit: Exploded view handling for 0 and 1 components witho
 import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.ts';
 import { CAD_EXAMPLES } from '../src/utils/examples.ts';
 import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.ts';
-import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.js';
+import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.ts';
 import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.js';
 
 const squareSketch = (half = 10) => [

@@ -1,452 +1,80 @@
-// CasiWorks Pro - Core Geometry Engine
-// Provides all 3D modeling operations including extrude, revolve, sweep, loft,
-// fillets, chamfers, shells, holes, patterns, mirrors, and CSG booleans.
+// CasiWorks Pro - Core Geometry Engine (triangle-mesh kernel)
+// Profile operations (extrude, revolve, sweep, loft), finishing operations,
+// patterns, mirror, CSG booleans and mass properties.
 
 import * as THREE from 'three';
-import { EPSILON, vec3, generateId } from '../utils/math.ts';
-import {
-  Vertex,
-  Edge,
-  CoEdge,
-  Loop,
-  Face,
-  Shell,
-  SolidBody,
-  Curve,
-  LineCurve,
-  ArcCurve,
-  NurbsCurve,
-  Surface,
-  PlaneSurface,
-  CylinderSurface,
-  ConeSurface,
-  TorusSurface,
-  SphereSurface,
-  CURVE_TYPES,
-  SURFACE_TYPES,
-  safeNormalize,
-  sanitizePoint,
-  removeConsecutiveDuplicates,
-} from './Topology.js';
-import {
-  createSolidBox,
-  createSolidCylinder,
-  extrudeSolid,
-  revolveSolid,
-  sweepSolid,
-  loftSolid,
-  filletSolid,
-  chamferSolid,
-  shellSolid,
-  booleanUnion as brepBooleanUnion,
-  booleanSubtract as brepBooleanSubtract,
-  booleanIntersect as brepBooleanIntersect,
-  solidToBufferGeometry,
-  bufferGeometryToSolid,
-  extractBRepEdges,
-} from './BRep.js';
-
-// ============================================================================
-// BSP-Tree CSG Implementation
-// ============================================================================
+import { EPSILON } from '../utils/math.ts';
+import { safeNormalize } from './Topology.js';
+import { csgUnion, csgSubtract, csgIntersect } from './csg.ts';
+import type { InertiaTensor, MassProperties, Point2 } from '../types/cad.ts';
 
 /**
- * CSG Vertex: position + normal
+ * Sketch entity as read by the profile builder. Besides the canonical fields it
+ * accepts legacy aliases (start/end, x1..y2, cx/cy/r, corner1/corner2, rx/ry).
  */
-class CSGVertex {
-  constructor(pos, normal) {
-    this.pos = sanitizePoint(pos);
-    this.normal = safeNormalize(normal, new THREE.Vector3(0, 0, 1));
-  }
-
-  clone() {
-    return new CSGVertex(this.pos, this.normal);
-  }
-
-  flip() {
-    this.normal.negate();
-  }
-
-  interpolate(other, t) {
-    const clampedT = isNaN(t) ? 0 : Math.max(0, Math.min(1, t));
-    const p = this.pos.clone().lerp(other.pos, clampedT);
-    const n = this.normal.clone().lerp(other.normal, clampedT);
-    return new CSGVertex(p, safeNormalize(n, this.normal));
-  }
+export interface ProfileEntity {
+  id?: string;
+  type: string;
+  construction?: boolean;
+  p1?: Point2;
+  p2?: Point2;
+  start?: Point2;
+  end?: Point2;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  center?: Point2;
+  cx?: number;
+  cy?: number;
+  radius?: number;
+  r?: number;
+  /** Radians. */
+  startAngle?: number;
+  /** Radians. */
+  endAngle?: number;
+  corner1?: Point2;
+  corner2?: Point2;
+  controlPoints?: Point2[];
+  radiusX?: number;
+  radiusY?: number;
+  rx?: number;
+  ry?: number;
 }
 
-/**
- * CSG Polygon: array of vertices + shared metadata
- */
-class CSGPolygon {
-  constructor(vertices, shared = null) {
-    const cleaned = [];
-    for (let i = 0; i < vertices.length; i++) {
-      const v = vertices[i];
-      if (!cleaned.length || v.pos.distanceTo(cleaned[cleaned.length - 1].pos) > 1e-6) {
-        cleaned.push(v);
-      }
-    }
-    if (cleaned.length > 1 && cleaned[0].pos.distanceTo(cleaned[cleaned.length - 1].pos) <= 1e-6) {
-      cleaned.pop();
-    }
-    this.vertices = cleaned.length >= 3 ? cleaned : vertices;
-    this.shared = shared;
-    this.plane = CSGPlane.fromVertices(this.vertices);
-  }
+export type PlaneName = 'Front' | 'Top' | 'Right' | 'XY' | 'XZ' | 'YZ';
 
-  computeArea() {
-    if (this.vertices.length < 3) return 0;
-    let areaVec = new THREE.Vector3(0, 0, 0);
-    for (let i = 0; i < this.vertices.length; i++) {
-      const v0 = this.vertices[i].pos;
-      const v1 = this.vertices[(i + 1) % this.vertices.length].pos;
-      areaVec.add(new THREE.Vector3().crossVectors(v0, v1));
-    }
-    const a = areaVec.dot(this.plane.normal) * 0.5;
-    return isNaN(a) ? 0 : Math.abs(a);
-  }
-
-  clone() {
-    return new CSGPolygon(
-      this.vertices.map(v => v.clone()),
-      this.shared
-    );
-  }
-
-  flip() {
-    this.vertices.reverse().forEach(v => v.flip());
-    this.plane.flip();
-  }
+export interface ExtrudeOptions {
+  symmetric?: boolean;
+  endCondition?: 'blind' | 'through' | 'upTo' | 'midplane';
+  draft?: boolean;
+  /** Degrees. */
+  draftAngle?: number;
+  steps?: number;
+  bevelEnabled?: boolean;
+  bevelThickness?: number;
+  bevelSize?: number;
+  bevelSegments?: number;
+  flip?: boolean;
+  plane?: PlaneName;
 }
 
-/**
- * CSG Plane: defined by normal and w (distance from origin)
- */
-class CSGPlane {
-  constructor(normal, w) {
-    this.normal = safeNormalize(normal, new THREE.Vector3(0, 0, 1));
-    this.w = typeof w === 'number' && !isNaN(w) && isFinite(w) ? w : 0;
-  }
+export interface RevolveOptions { segments?: number; offset?: number }
+export interface SweepOptions { steps?: number; closed?: boolean; twist?: number }
+export interface LoftOptions { steps?: number; closed?: boolean; heights?: number[] | null }
+export interface HoleOptions { cbDiameter?: number; cbDepth?: number; csAngle?: number; segments?: number }
+export interface ShapeOptions { thin?: boolean; wallThickness?: number }
+export type HoleType = 'through' | 'blind' | 'counterbore' | 'countersink' | 'simple';
 
-  static fromPoints(a, b, c) {
-    const ab = new THREE.Vector3().subVectors(b, a);
-    const ac = new THREE.Vector3().subVectors(c, a);
-    const n = new THREE.Vector3().crossVectors(ab, ac);
-    const norm = safeNormalize(n, new THREE.Vector3(0, 0, 1));
-    return new CSGPlane(norm, norm.dot(a));
-  }
-
-  static fromVertices(vertices) {
-    if (!vertices || vertices.length < 3) {
-      return new CSGPlane(new THREE.Vector3(0, 0, 1), 0);
-    }
-    const normal = new THREE.Vector3(0, 0, 0);
-    const center = new THREE.Vector3(0, 0, 0);
-    for (let i = 0; i < vertices.length; i++) {
-      const curr = vertices[i].pos;
-      const next = vertices[(i + 1) % vertices.length].pos;
-      normal.x += (curr.y - next.y) * (curr.z + next.z);
-      normal.y += (curr.z - next.z) * (curr.x + next.x);
-      normal.z += (curr.x - next.x) * (curr.y + next.y);
-      center.add(curr);
-    }
-    center.divideScalar(vertices.length);
-    const norm = safeNormalize(normal, new THREE.Vector3(0, 0, 1));
-    return new CSGPlane(norm, norm.dot(center));
-  }
-
-  clone() {
-    return new CSGPlane(this.normal.clone(), this.w);
-  }
-
-  flip() {
-    this.normal.negate();
-    this.w = -this.w;
-  }
-
-  /**
-   * Split polygon by this plane, categorizing into coplanar-front,
-   * coplanar-back, front, back, or splitting across the plane.
-   */
-  splitPolygon(polygon, coplanarFront, coplanarBack, front, back) {
-    const COPLANAR = 0;
-    const FRONT = 1;
-    const BACK = 2;
-    const SPANNING = 3;
-    const CSG_EPSILON = 1e-4;
-
-    let polygonType = 0;
-    const types = [];
-
-    for (const vertex of polygon.vertices) {
-      const t = this.normal.dot(vertex.pos) - this.w;
-      const type = (t < -CSG_EPSILON) ? BACK : (t > CSG_EPSILON) ? FRONT : COPLANAR;
-      polygonType |= type;
-      types.push(type);
-    }
-
-    switch (polygonType) {
-      case COPLANAR:
-        (this.normal.dot(polygon.plane.normal) > 0 ? coplanarFront : coplanarBack)
-          .push(polygon);
-        break;
-      case FRONT:
-        front.push(polygon);
-        break;
-      case BACK:
-        back.push(polygon);
-        break;
-      case SPANNING: {
-        const f = [];
-        const b = [];
-        for (let i = 0; i < polygon.vertices.length; i++) {
-          const j = (i + 1) % polygon.vertices.length;
-          const ti = types[i];
-          const tj = types[j];
-          const vi = polygon.vertices[i];
-          const vj = polygon.vertices[j];
-
-          if (ti !== BACK) f.push(vi);
-          if (ti !== FRONT) b.push(ti !== BACK ? vi.clone() : vi);
-
-          if ((ti | tj) === SPANNING) {
-            const denom = this.normal.dot(new THREE.Vector3().subVectors(vj.pos, vi.pos));
-            const t = Math.abs(denom) > 1e-9
-              ? (this.w - this.normal.dot(vi.pos)) / denom
-              : 0;
-            const clampedT = isNaN(t) ? 0 : Math.max(0, Math.min(1, t));
-            const v = vi.interpolate(vj, clampedT);
-            f.push(v);
-            b.push(v.clone());
-          }
-        }
-        if (f.length >= 3) {
-          const polyF = new CSGPolygon(f, polygon.shared);
-          if (polyF.computeArea() > 1e-9) front.push(polyF);
-        }
-        if (b.length >= 3) {
-          const polyB = new CSGPolygon(b, polygon.shared);
-          if (polyB.computeArea() > 1e-9) back.push(polyB);
-        }
-        break;
-      }
-    }
-  }
-}
-
-/**
- * BSP Tree Node for CSG operations
- */
-class CSGNode {
-  constructor(polygons) {
-    this.plane = null;
-    this.front = null;
-    this.back = null;
-    this.polygons = [];
-    if (polygons && polygons.length > 0) {
-      this.build(polygons);
-    }
-  }
-
-  clone() {
-    const node = new CSGNode();
-    node.plane = this.plane ? this.plane.clone() : null;
-    node.front = this.front ? this.front.clone() : null;
-    node.back = this.back ? this.back.clone() : null;
-    node.polygons = this.polygons.map(p => p.clone());
-    return node;
-  }
-
-  /**
-   * Invert all polygons and swap front/back subtrees
-   */
-  invert() {
-    for (const polygon of this.polygons) {
-      polygon.flip();
-    }
-    if (this.plane) this.plane.flip();
-    if (this.front) this.front.invert();
-    if (this.back) this.back.invert();
-    const temp = this.front;
-    this.front = this.back;
-    this.back = temp;
-  }
-
-  /**
-   * Recursively remove all polygons that are inside this BSP tree.
-   */
-  clipPolygons(polygons) {
-    if (!this.plane) return polygons.slice();
-
-    let front = [];
-    let back = [];
-
-    for (const polygon of polygons) {
-      this.plane.splitPolygon(polygon, front, back, front, back);
-    }
-
-    if (this.front) front = this.front.clipPolygons(front);
-    if (this.back) back = this.back.clipPolygons(back);
-    else back = [];
-
-    return front.concat(back);
-  }
-
-  /**
-   * Remove polygons in this tree that are inside the other BSP tree.
-   */
-  clipTo(bsp) {
-    this.polygons = bsp.clipPolygons(this.polygons);
-    if (this.front) this.front.clipTo(bsp);
-    if (this.back) this.back.clipTo(bsp);
-  }
-
-  /**
-   * Collect all polygons from this BSP tree.
-   */
-  allPolygons() {
-    let polygons = this.polygons.slice();
-    if (this.front) polygons = polygons.concat(this.front.allPolygons());
-    if (this.back) polygons = polygons.concat(this.back.allPolygons());
-    return polygons;
-  }
-
-  /**
-   * Build the BSP tree from an array of polygons.
-   */
-  build(polygons) {
-    if (polygons.length === 0) return;
-
-    if (!this.plane) {
-      this.plane = polygons[0].plane.clone();
-    }
-
-    const front = [];
-    const back = [];
-
-    for (const polygon of polygons) {
-      this.plane.splitPolygon(
-        polygon,
-        this.polygons,
-        this.polygons,
-        front,
-        back
-      );
-    }
-
-    if (front.length > 0) {
-      if (!this.front) this.front = new CSGNode();
-      this.front.build(front);
-    }
-    if (back.length > 0) {
-      if (!this.back) this.back = new CSGNode();
-      this.back.build(back);
-    }
-  }
-}
-
-// ============================================================================
-// CSG Utility Functions
-// ============================================================================
-
-/**
- * Convert a Three.js BufferGeometry to an array of CSG polygons.
- */
-function geometryToPolygons(geometry) {
-  const polygons = [];
-  const posAttr = geometry.getAttribute('position');
-  const normAttr = geometry.getAttribute('normal');
-  const indexAttr = geometry.index;
-
-  // Ensure normals exist
-  if (!normAttr) {
-    geometry.computeVertexNormals();
-  }
-  const normals = geometry.getAttribute('normal');
-
-  if (indexAttr) {
-    for (let i = 0; i < indexAttr.count; i += 3) {
-      const vertices = [];
-      for (let j = 0; j < 3; j++) {
-        const idx = indexAttr.getX(i + j);
-        const pos = new THREE.Vector3(
-          posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx)
-        );
-        const normal = new THREE.Vector3(
-          normals.getX(idx), normals.getY(idx), normals.getZ(idx)
-        );
-        vertices.push(new CSGVertex(pos, normal));
-      }
-      // Skip degenerate triangles
-      const edge1 = new THREE.Vector3().subVectors(vertices[1].pos, vertices[0].pos);
-      const edge2 = new THREE.Vector3().subVectors(vertices[2].pos, vertices[0].pos);
-      if (edge1.cross(edge2).lengthSq() > EPSILON) {
-        polygons.push(new CSGPolygon(vertices));
-      }
-    }
-  } else {
-    for (let i = 0; i < posAttr.count; i += 3) {
-      const vertices = [];
-      for (let j = 0; j < 3; j++) {
-        const idx = i + j;
-        const pos = new THREE.Vector3(
-          posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx)
-        );
-        const normal = new THREE.Vector3(
-          normals.getX(idx), normals.getY(idx), normals.getZ(idx)
-        );
-        vertices.push(new CSGVertex(pos, normal));
-      }
-      const edge1 = new THREE.Vector3().subVectors(vertices[1].pos, vertices[0].pos);
-      const edge2 = new THREE.Vector3().subVectors(vertices[2].pos, vertices[0].pos);
-      if (edge1.cross(edge2).lengthSq() > EPSILON) {
-        polygons.push(new CSGPolygon(vertices));
-      }
-    }
-  }
-
-  return polygons;
-}
-
-/**
- * Convert an array of CSG polygons back to Three.js BufferGeometry.
- */
-function polygonsToGeometry(polygons) {
-  const positions = [];
-  const normals = [];
-
-  for (const polygon of polygons) {
-    // Triangulate polygon (fan from first vertex)
-    for (let i = 2; i < polygon.vertices.length; i++) {
-      const v0 = polygon.vertices[0];
-      const v1 = polygon.vertices[i - 1];
-      const v2 = polygon.vertices[i];
-
-      positions.push(v0.pos.x, v0.pos.y, v0.pos.z);
-      positions.push(v1.pos.x, v1.pos.y, v1.pos.z);
-      positions.push(v2.pos.x, v2.pos.y, v2.pos.z);
-
-      normals.push(v0.normal.x, v0.normal.y, v0.normal.z);
-      normals.push(v1.normal.x, v1.normal.y, v1.normal.z);
-      normals.push(v2.normal.x, v2.normal.y, v2.normal.z);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  return geometry;
-}
+type Edge = [number, number];
+type Triangle = [number, number, number];
 
 // ============================================================================
 // GeometryEngine Class
 // ============================================================================
 
 class GeometryEngine {
-  constructor() {
-    this.tolerance = 1e-6;
-  }
+  tolerance = 1e-6;
 
   // ==========================================================================
   // Profile-Based Operations
@@ -460,7 +88,7 @@ class GeometryEngine {
    * @param {Object} options - { symmetric, endCondition, draft, draftAngle }
    * @returns {THREE.BufferGeometry}
    */
-  extrudeProfile(shape, depth, direction = null, options = {}) {
+  extrudeProfile(shape: THREE.Shape, depth: number, direction: PlaneName | THREE.Vector3 | null = null, options: ExtrudeOptions = {}): THREE.BufferGeometry {
     const {
       symmetric = false,
       endCondition = 'blind', // 'blind', 'through', 'upTo', 'midplane'
@@ -537,7 +165,7 @@ class GeometryEngine {
    * @param {Object} options - { segments, offset }
    * @returns {THREE.BufferGeometry}
    */
-  revolveProfile(shape, axis = null, angle = Math.PI * 2, options = {}) {
+  revolveProfile(shape: THREE.Shape, axis: THREE.Vector3 | null = null, angle = Math.PI * 2, options: RevolveOptions = {}): THREE.BufferGeometry {
     const {
       segments = 64,
       offset = 0,
@@ -576,10 +204,9 @@ class GeometryEngine {
    * @param {Object} options - { steps, closed, twist }
    * @returns {THREE.BufferGeometry}
    */
-  sweepProfile(shape, path, options = {}) {
+  sweepProfile(shape: THREE.Shape, path: THREE.Curve<THREE.Vector3>, options: SweepOptions = {}): THREE.BufferGeometry {
     const {
       steps = 100,
-      closed = false,
       twist = 0,
     } = options;
 
@@ -594,7 +221,6 @@ class GeometryEngine {
     // Apply twist if specified
     if (twist !== 0) {
       const posAttr = geometry.getAttribute('position');
-      const pathLength = path.getLength();
 
       for (let i = 0; i < posAttr.count; i++) {
         const vertex = new THREE.Vector3(
@@ -632,7 +258,7 @@ class GeometryEngine {
    * @param {Object} options - { steps, closed }
    * @returns {THREE.BufferGeometry}
    */
-  loftProfiles(shapes, options = {}) {
+  loftProfiles(shapes: THREE.Shape[], options: LoftOptions = {}): THREE.BufferGeometry {
     const {
       steps = 32,
       closed = false,
@@ -660,9 +286,8 @@ class GeometryEngine {
     );
 
     // Build geometry by interpolating between profiles
-    const positions = [];
-    const normals = [];
-    const uvs = [];
+    const positions: number[] = [];
+    const uvs: number[] = [];
     const indices = [];
 
     const numProfiles = normalizedProfiles.length;
@@ -744,7 +369,7 @@ class GeometryEngine {
    * @param {number} radius - Fillet radius
    * @returns {THREE.BufferGeometry}
    */
-  applyFillet(geometry, edgeIndices, radius) {
+  applyFillet(geometry: THREE.BufferGeometry | null, edgeIndices: number[], radius: number): THREE.BufferGeometry {
     if (!geometry) return new THREE.BufferGeometry();
     if (typeof radius !== 'number' || isNaN(radius) || radius <= 0) return geometry.clone();
 
@@ -760,7 +385,7 @@ class GeometryEngine {
 
     const filletSegments = 8;
     const indexAttr = geometry.index;
-    const triangles = [];
+    const triangles: Triangle[] = [];
     if (indexAttr) {
       for (let i = 0; i < indexAttr.count; i += 3) {
         triangles.push([indexAttr.getX(i), indexAttr.getX(i + 1), indexAttr.getX(i + 2)]);
@@ -772,15 +397,16 @@ class GeometryEngine {
     }
 
     // Build adjacency: for each edge, find the two adjacent face normals
-    const edgeMap = new Map();
+    const edgeMap = new Map<string, number[]>();
     for (let triIdx = 0; triIdx < triangles.length; triIdx++) {
       const tri = triangles[triIdx];
       for (let j = 0; j < 3; j++) {
         const a = tri[j];
         const b = tri[(j + 1) % 3];
         const key = Math.min(a, b) + '_' + Math.max(a, b);
-        if (!edgeMap.has(key)) edgeMap.set(key, []);
-        edgeMap.get(key).push(triIdx);
+        const adjacent = edgeMap.get(key);
+        if (adjacent) adjacent.push(triIdx);
+        else edgeMap.set(key, [triIdx]);
       }
     }
 
@@ -844,7 +470,7 @@ class GeometryEngine {
    * @param {number} distance - Chamfer distance
    * @returns {THREE.BufferGeometry}
    */
-  applyChamfer(geometry, edgeIndices, distance) {
+  applyChamfer(geometry: THREE.BufferGeometry | null, edgeIndices: number[], distance: number): THREE.BufferGeometry {
     if (!geometry) return new THREE.BufferGeometry();
     if (typeof distance !== 'number' || isNaN(distance) || distance <= 0) return geometry.clone();
 
@@ -858,7 +484,7 @@ class GeometryEngine {
     }
 
     const indexAttr = geometry.index;
-    const triangles = [];
+    const triangles: Triangle[] = [];
     if (indexAttr) {
       for (let i = 0; i < indexAttr.count; i += 3) {
         triangles.push([indexAttr.getX(i), indexAttr.getX(i + 1), indexAttr.getX(i + 2)]);
@@ -870,15 +496,16 @@ class GeometryEngine {
     }
 
     // Build edge adjacency
-    const edgeMap = new Map();
+    const edgeMap = new Map<string, number[]>();
     for (let triIdx = 0; triIdx < triangles.length; triIdx++) {
       const tri = triangles[triIdx];
       for (let j = 0; j < 3; j++) {
         const a = tri[j];
         const b = tri[(j + 1) % 3];
         const key = Math.min(a, b) + '_' + Math.max(a, b);
-        if (!edgeMap.has(key)) edgeMap.set(key, []);
-        edgeMap.get(key).push(triIdx);
+        const adjacent = edgeMap.get(key);
+        if (adjacent) adjacent.push(triIdx);
+        else edgeMap.set(key, [triIdx]);
       }
     }
 
@@ -928,7 +555,7 @@ class GeometryEngine {
    * @param {number[]} excludeFaces - Face indices to leave open
    * @returns {THREE.BufferGeometry}
    */
-  applyShell(geometry, thickness, excludeFaces = []) {
+  applyShell(geometry: THREE.BufferGeometry | null, thickness: number, excludeFaces: number[] = []): THREE.BufferGeometry {
     if (!geometry) return new THREE.BufferGeometry();
     if (typeof thickness !== 'number' || isNaN(thickness) || thickness <= 0) return geometry.clone();
 
@@ -1046,7 +673,7 @@ class GeometryEngine {
    * @param {Object} options - { cbDiameter, cbDepth, csAngle }
    * @returns {THREE.BufferGeometry}
    */
-  createHole(geometry, position, direction, diameter, depth, holeType = 'through', options = {}) {
+  createHole(geometry: THREE.BufferGeometry, position: THREE.Vector3, direction: THREE.Vector3, diameter: number, depth: number, holeType: HoleType = 'through', options: HoleOptions = {}): THREE.BufferGeometry | null {
     const {
       cbDiameter = diameter * 1.8,
       cbDepth = diameter * 0.5,
@@ -1125,7 +752,7 @@ class GeometryEngine {
    * @param {number} spacing - Distance between instances
    * @returns {THREE.BufferGeometry}
    */
-  linearPattern(geometry, direction, count, spacing) {
+  linearPattern(geometry: THREE.BufferGeometry, direction: THREE.Vector3, count: number, spacing: number): THREE.BufferGeometry {
     const dir = safeNormalize(direction, new THREE.Vector3(1, 0, 0));
     const geometries = [geometry];
     const clonesToDispose = [];
@@ -1153,7 +780,7 @@ class GeometryEngine {
    * @param {number} angle - Total angle in radians (default: 2π)
    * @returns {THREE.BufferGeometry}
    */
-  circularPattern(geometry, axis, count, angle = Math.PI * 2) {
+  circularPattern(geometry: THREE.BufferGeometry, axis: THREE.Vector3, count: number, angle = Math.PI * 2): THREE.BufferGeometry {
     const normalizedAxis = safeNormalize(axis, new THREE.Vector3(0, 1, 0));
     const geometries = [geometry];
     const clonesToDispose = [];
@@ -1180,7 +807,7 @@ class GeometryEngine {
    * @param {string|THREE.Plane} plane - Mirror plane ('XY', 'XZ', 'YZ' or THREE.Plane)
    * @returns {THREE.BufferGeometry}
    */
-  mirrorGeometry(geometry, plane) {
+  mirrorGeometry(geometry: THREE.BufferGeometry, plane: string | THREE.Plane): THREE.BufferGeometry {
     const mirrorMatrix = new THREE.Matrix4();
 
     if (typeof plane === 'string') {
@@ -1246,7 +873,7 @@ class GeometryEngine {
    * @param {THREE.BufferGeometry} geomB
    * @returns {THREE.BufferGeometry}
    */
-  booleanUnion(geomA, geomB) {
+  booleanUnion(geomA: THREE.BufferGeometry | null, geomB: THREE.BufferGeometry | null): THREE.BufferGeometry | null {
     if (!geomA) return geomB ? geomB.clone() : null;
     if (!geomB) return geomA ? geomA.clone() : null;
 
@@ -1256,20 +883,7 @@ class GeometryEngine {
       return this._mergeGeometries([geomA, geomB]);
     }
 
-    const a = new CSGNode(geometryToPolygons(geomA));
-    const b = new CSGNode(geometryToPolygons(geomB));
-
-    a.clipTo(b);
-    b.clipTo(a);
-    b.invert();
-    b.clipTo(a);
-    b.invert();
-
-    a.build(b.allPolygons());
-    const result = polygonsToGeometry(a.allPolygons());
-    result.computeVertexNormals();
-    result.computeBoundingBox();
-    return result;
+    return csgUnion(geomA, geomB);
   }
 
   /**
@@ -1278,7 +892,7 @@ class GeometryEngine {
    * @param {THREE.BufferGeometry} geomB
    * @returns {THREE.BufferGeometry}
    */
-  booleanSubtract(geomA, geomB) {
+  booleanSubtract(geomA: THREE.BufferGeometry | null, geomB: THREE.BufferGeometry | null): THREE.BufferGeometry | null {
     if (!geomA) return null;
     if (!geomB) return geomA.clone();
 
@@ -1288,22 +902,7 @@ class GeometryEngine {
       return geomA.clone();
     }
 
-    const a = new CSGNode(geometryToPolygons(geomA));
-    const b = new CSGNode(geometryToPolygons(geomB));
-
-    a.invert();
-    a.clipTo(b);
-    b.clipTo(a);
-    b.invert();
-    b.clipTo(a);
-    b.invert();
-    a.build(b.allPolygons());
-    a.invert();
-
-    const result = polygonsToGeometry(a.allPolygons());
-    result.computeVertexNormals();
-    result.computeBoundingBox();
-    return result;
+    return csgSubtract(geomA, geomB);
   }
 
   /**
@@ -1312,7 +911,7 @@ class GeometryEngine {
    * @param {THREE.BufferGeometry} geomB
    * @returns {THREE.BufferGeometry}
    */
-  booleanIntersect(geomA, geomB) {
+  booleanIntersect(geomA: THREE.BufferGeometry | null, geomB: THREE.BufferGeometry | null): THREE.BufferGeometry {
     if (!geomA || !geomB) return new THREE.BufferGeometry();
 
     geomA.computeBoundingBox();
@@ -1321,25 +920,7 @@ class GeometryEngine {
       return new THREE.BufferGeometry();
     }
 
-    const a = new CSGNode(geometryToPolygons(geomA));
-    const b = new CSGNode(geometryToPolygons(geomB));
-
-    const aInverted = a.clone();
-    aInverted.invert();
-
-    b.clipTo(aInverted);
-    b.invert();
-
-    a.invert();
-    a.clipTo(b);
-    b.clipTo(a);
-    a.build(b.allPolygons());
-    a.invert();
-
-    const result = polygonsToGeometry(a.allPolygons());
-    result.computeVertexNormals();
-    result.computeBoundingBox();
-    return result;
+    return csgIntersect(geomA, geomB);
   }
 
   // ==========================================================================
@@ -1369,11 +950,8 @@ class GeometryEngine {
    * }}
    * Products of inertia are reported as Ixy = ∫ x·y dm (the tensor off-diagonal is −Ixy).
    */
-  computeMassProperties(geometry, material = { density: 7900 }) {
+  computeMassProperties(geometry: THREE.BufferGeometry | null, material: { density?: number } = { density: 7900 }): MassProperties | null {
     if (!geometry) return null;
-    if (geometry instanceof SolidBody) {
-      return geometry.computeMassProperties(material?.density || 7900);
-    }
     const posAttr = geometry.getAttribute('position');
     const indexAttr = geometry.index;
     if (!posAttr) return null;
@@ -1392,7 +970,7 @@ class GeometryEngine {
     const e2 = new THREE.Vector3();
     const cross = new THREE.Vector3();
 
-    const processTriangle = (i0, i1, i2) => {
+    const processTriangle = (i0: number, i1: number, i2: number) => {
       a.fromBufferAttribute(posAttr, i0);
       b.fromBufferAttribute(posAttr, i1);
       c.fromBufferAttribute(posAttr, i2);
@@ -1433,7 +1011,7 @@ class GeometryEngine {
 
     // Inward-facing winding gives negative signed integrals; flip everything consistently
     const sign = signedVolume < 0 ? -1 : 1;
-    const finite = (v) => (Number.isFinite(v) ? v : 0);
+    const finite = (v: number) => (Number.isFinite(v) ? v : 0);
     const volume = finite(Math.abs(signedVolume));
     surfaceArea = finite(surfaceArea);
 
@@ -1445,7 +1023,7 @@ class GeometryEngine {
     const rho = density * 1e-9;                // kg/mm³
     const mass = volume * rho;                 // kg
 
-    const tensor = (xx, yy, zz, xy, xz, yz) => ({
+    const tensor = (xx: number, yy: number, zz: number, xy: number, xz: number, yz: number): InertiaTensor => ({
       Ixx: finite(rho * (yy + zz)),
       Iyy: finite(rho * (xx + zz)),
       Izz: finite(rho * (xx + yy)),
@@ -1507,14 +1085,14 @@ class GeometryEngine {
   /**
    * Expand open line segments into a closed thin-wall profile shape
    */
-  createThinProfileShape(entities, wallThickness = 2.0) {
+  createThinProfileShape(entities: ProfileEntity[], wallThickness = 2.0): THREE.Shape {
     const nonConstruction = entities.filter(e => !e.construction);
     if (nonConstruction.length === 0) return new THREE.Shape();
 
     const half = Math.max(0.1, wallThickness / 2);
     const shape = new THREE.Shape();
 
-    const pts = [];
+    const pts: Point2[] = [];
     nonConstruction.forEach(ent => {
       if (ent.p1 && ent.p2) {
         if (pts.length === 0) pts.push(ent.p1);
@@ -1558,7 +1136,7 @@ class GeometryEngine {
     return shape;
   }
 
-  shapeFromSketchEntities(entities, options = {}) {
+  shapeFromSketchEntities(entities: ProfileEntity[] | null | undefined, options: ShapeOptions = {}): THREE.Shape {
     if (!entities || entities.length === 0) return new THREE.Shape();
 
     // Check if Thin Feature is requested
@@ -1634,7 +1212,7 @@ class GeometryEngine {
   // ==========================================================================
 
   /** Find closest parameter on a path for twist calculation */
-  _findClosestParamOnPath(point, path, steps) {
+  _findClosestParamOnPath(point: THREE.Vector3, path: THREE.Curve<THREE.Vector3>, steps: number): number {
     let bestT = 0;
     let bestDist = Infinity;
     for (let i = 0; i <= steps; i++) {
@@ -1650,7 +1228,7 @@ class GeometryEngine {
   }
 
   /** Resample a set of 2D points to have exactly 'count' points */
-  _resamplePoints(points, count) {
+  _resamplePoints(points: THREE.Vector2[], count: number): THREE.Vector2[] {
     const resampled = [];
     const totalLength = this._polylineLength(points);
     if (totalLength < EPSILON) return points;
@@ -1684,7 +1262,7 @@ class GeometryEngine {
   }
 
   /** Compute total length of a polyline */
-  _polylineLength(points) {
+  _polylineLength(points: THREE.Vector2[]): number {
     let len = 0;
     for (let i = 0; i < points.length - 1; i++) {
       len += points[i].distanceTo(points[i + 1]);
@@ -1693,13 +1271,13 @@ class GeometryEngine {
   }
 
   /** Extract edges from geometry as pairs of vertex indices */
-  _extractEdges(geometry) {
-    const edges = [];
+  _extractEdges(geometry: THREE.BufferGeometry): Edge[] {
+    const edges: Edge[] = [];
     const edgeSet = new Set();
     const indexAttr = geometry.index;
     const posAttr = geometry.getAttribute('position');
 
-    const addEdge = (a, b) => {
+    const addEdge = (a: number, b: number) => {
       const key = Math.min(a, b) + '_' + Math.max(a, b);
       if (!edgeSet.has(key)) {
         edgeSet.add(key);
@@ -1728,7 +1306,7 @@ class GeometryEngine {
   }
 
   /** Compute normal of a triangle given vertex indices */
-  _computeTriangleNormal(tri, vertices) {
+  _computeTriangleNormal(tri: Triangle, vertices: THREE.Vector3[]): THREE.Vector3 {
     const a = vertices[tri[0]];
     const b = vertices[tri[1]];
     const c = vertices[tri[2]];
@@ -1738,7 +1316,7 @@ class GeometryEngine {
   }
 
   /** Compute fillet arc points between two face normals */
-  _computeFilletArc(edgeStart, edgeEnd, n1, n2, radius, segments) {
+  _computeFilletArc(edgeStart: THREE.Vector3, edgeEnd: THREE.Vector3, n1: THREE.Vector3, n2: THREE.Vector3, radius: number, segments: number): THREE.Vector3[] {
     const arcPoints = [];
     const edgeDir = safeNormalize(new THREE.Vector3().subVectors(edgeEnd, edgeStart), new THREE.Vector3(0, 0, 1));
 
@@ -1757,7 +1335,6 @@ class GeometryEngine {
     }
 
     // Center of the fillet arc (offset from edge along bisector)
-    const offsetDist = radius / sinHalf;
 
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
@@ -1775,10 +1352,9 @@ class GeometryEngine {
   }
 
   /** Build a fillet strip geometry along an edge */
-  _buildFilletStrip(edgeStart, edgeEnd, arcPoints, segments) {
+  _buildFilletStrip(edgeStart: THREE.Vector3, edgeEnd: THREE.Vector3, arcPoints: THREE.Vector3[], _segments: number): THREE.BufferGeometry | null {
     if (!arcPoints || arcPoints.length === 0) return new THREE.BufferGeometry();
     const positions = [];
-    const edgeDir = safeNormalize(new THREE.Vector3().subVectors(edgeEnd, edgeStart), new THREE.Vector3(0, 0, 1));
     const edgeLength = edgeStart.distanceTo(edgeEnd);
 
     // Sample points along the edge
@@ -1816,9 +1392,8 @@ class GeometryEngine {
   }
 
   /** Build a chamfer strip (single flat face) along an edge */
-  _buildChamferStrip(edgeStart, edgeEnd, n1, n2, distance) {
+  _buildChamferStrip(edgeStart: THREE.Vector3, edgeEnd: THREE.Vector3, n1: THREE.Vector3, n2: THREE.Vector3, distance: number): THREE.BufferGeometry | null {
     const positions = [];
-    const edgeDir = safeNormalize(new THREE.Vector3().subVectors(edgeEnd, edgeStart), new THREE.Vector3(0, 0, 1));
     const edgeLength = edgeStart.distanceTo(edgeEnd);
     const edgeSteps = Math.max(2, Math.ceil(edgeLength / 5));
 
@@ -1851,9 +1426,9 @@ class GeometryEngine {
   }
 
   /** Find boundary edges where excluded faces meet non-excluded faces */
-  _findBoundaryEdges(indexAttr, excludeSet) {
-    const edgeCount = new Map();
-    const edges = [];
+  _findBoundaryEdges(indexAttr: THREE.BufferAttribute, excludeSet: Set<number>): Edge[] {
+    const edgeCount = new Map<string, { excluded: number; included: number; edge: Edge }>();
+    const edges: Edge[] = [];
 
     for (let i = 0; i < indexAttr.count; i += 3) {
       const faceIdx = Math.floor(i / 3);
@@ -1863,16 +1438,17 @@ class GeometryEngine {
         const a = indexAttr.getX(i + j);
         const b = indexAttr.getX(i + (j + 1) % 3);
         const key = Math.min(a, b) + '_' + Math.max(a, b);
-        if (!edgeCount.has(key)) {
-          edgeCount.set(key, { excluded: 0, included: 0, edge: [a, b] });
+        let ec = edgeCount.get(key);
+        if (!ec) {
+          ec = { excluded: 0, included: 0, edge: [a, b] };
+          edgeCount.set(key, ec);
         }
-        const ec = edgeCount.get(key);
         if (isExcluded) ec.excluded++;
         else ec.included++;
       }
     }
 
-    for (const [key, info] of edgeCount) {
+    for (const info of edgeCount.values()) {
       if (info.excluded > 0 && info.included > 0) {
         edges.push(info.edge);
       }
@@ -1882,14 +1458,12 @@ class GeometryEngine {
   }
 
   /** Merge multiple geometries into one */
-  _mergeGeometries(geometries) {
+  _mergeGeometries(geometries: Array<THREE.BufferGeometry | null>): THREE.BufferGeometry {
     if (geometries.length === 0) return new THREE.BufferGeometry();
-    if (geometries.length === 1) return geometries[0].clone();
+    if (geometries.length === 1) return geometries[0]?.clone() ?? new THREE.BufferGeometry();
 
-    const positions = [];
-    const normals = [];
-    const indices = [];
-    let vertexOffset = 0;
+    const positions: number[] = [];
+    const normals: number[] = [];
 
     for (const geom of geometries) {
       if (!geom) continue;
@@ -1908,7 +1482,6 @@ class GeometryEngine {
             normals.push(normAttr.getX(i), normAttr.getY(i), normAttr.getZ(i));
           }
         }
-        vertexOffset += posAttr.count;
       }
 
       if (isIndexed && nonIndexed !== geom && typeof nonIndexed.dispose === 'function') {
@@ -1927,14 +1500,14 @@ class GeometryEngine {
   }
 
   /** Build chains of connected entities for shape creation */
-  _buildEntityChains(entities) {
+  _buildEntityChains(entities: ProfileEntity[]): ProfileEntity[][] {
     if (entities.length === 0) return [];
 
     const chains = [];
     const used = new Set();
 
     // Build adjacency from entity endpoints
-    const getEndpoints = (entity) => {
+    const getEndpoints = (entity: ProfileEntity): Point2[] => {
       switch (entity.type) {
         case 'line':
           return [
@@ -1964,7 +1537,7 @@ class GeometryEngine {
 
     // Greedily build chains
     const tolerance = 0.01;
-    const pointsMatch = (a, b) =>
+    const pointsMatch = (a: Point2, b: Point2) =>
       Math.abs(a.x - b.x) < tolerance && Math.abs(a.y - b.y) < tolerance;
 
     while (used.size < entities.length) {
@@ -1981,7 +1554,7 @@ class GeometryEngine {
       const chain = [startIdx];
       used.add(startIdx);
 
-      let endpoints = getEndpoints(entities[startIdx]);
+      const endpoints = getEndpoints(entities[startIdx]);
       if (endpoints.length < 2) continue;
 
       let currentEnd = endpoints[1];
@@ -2018,7 +1591,7 @@ class GeometryEngine {
   }
 
   /** Convert a chain of entities to a THREE.Shape */
-  _chainToShape(chain, allEntities) {
+  _chainToShape(chain: ProfileEntity[], _allEntities: ProfileEntity[]): THREE.Shape {
     const shape = new THREE.Shape();
     const points = this._extractPointsFromEntities(chain);
 
@@ -2087,7 +1660,7 @@ class GeometryEngine {
   }
 
   /** Convert a chain of entities to a THREE.Path (for holes) */
-  _chainToPath(chain, allEntities) {
+  _chainToPath(chain: ProfileEntity[], _allEntities: ProfileEntity[]): THREE.Path | null {
     const path = new THREE.Path();
     const points = this._extractPointsFromEntities(chain);
     if (points.length < 2) return null;
@@ -2101,7 +1674,7 @@ class GeometryEngine {
   }
 
   /** Extract all endpoints from a list of entities */
-  _extractPointsFromEntities(entities) {
+  _extractPointsFromEntities(entities: ProfileEntity[]): Point2[] {
     const points = [];
     const tolerance = 0.01;
 
@@ -2121,7 +1694,7 @@ class GeometryEngine {
   }
 
   /** Extract points from a single entity */
-  _extractPointsFromEntity(entity) {
+  _extractPointsFromEntity(entity: ProfileEntity): Point2[] {
     switch (entity.type) {
       case 'line':
         return [
@@ -2191,7 +1764,7 @@ class GeometryEngine {
   }
 
   /** Get endpoint of an arc */
-  _arcEndpoint(arc, which) {
+  _arcEndpoint(arc: ProfileEntity, which: 'start' | 'end'): Point2 {
     const cx = arc.center?.x ?? arc.cx ?? 0;
     const cy = arc.center?.y ?? arc.cy ?? 0;
     const r = arc.radius ?? arc.r ?? 10;
@@ -2200,155 +1773,7 @@ class GeometryEngine {
       : (arc.endAngle ?? Math.PI * 2);
     return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
   }
-
-  // ==========================================================================
-  // B-Rep Topology and Modeling Operations
-  // ==========================================================================
-
-  /**
-   * Convert a B-Rep SolidBody to Three.js BufferGeometry
-   */
-  solidToBufferGeometry(solidBody, options = {}) {
-    return solidToBufferGeometry(solidBody, options);
-  }
-
-  /**
-   * Convert a Three.js BufferGeometry to a topological B-Rep SolidBody
-   */
-  bufferGeometryToSolid(geometry, options = {}) {
-    return bufferGeometryToSolid(geometry, options);
-  }
-
-  /**
-   * Create a rectangular B-Rep SolidBody box
-   */
-  createBRepBox(dx = 20, dy = 20, dz = 20, center = new THREE.Vector3(0, 0, 0)) {
-    return createSolidBox(dx, dy, dz, center);
-  }
-
-  /**
-   * Create a cylindrical B-Rep SolidBody
-   */
-  createBRepCylinder(radius = 10, height = 30, segments = 32, center = new THREE.Vector3(0, 0, 0)) {
-    return createSolidCylinder(radius, height, segments, center);
-  }
-
-  /**
-   * Extrude a 2D profile / shape into a closed topological B-Rep SolidBody
-   */
-  extrudeBRep(pointsOrShape, depth = 20, direction = new THREE.Vector3(0, 0, 1), options = {}) {
-    return extrudeSolid(pointsOrShape, depth, direction, options);
-  }
-
-  /**
-   * Revolve a 2D profile / shape into a B-Rep SolidBody (full 360 or partial)
-   */
-  revolveBRep(pointsOrShape, axis = new THREE.Vector3(0, 1, 0), angle = Math.PI * 2, options = {}) {
-    return revolveSolid(pointsOrShape, axis, angle, options);
-  }
-
-  /**
-   * Sweep a 2D profile along a 3D path into a B-Rep SolidBody
-   */
-  sweepBRep(profileOrShape, pathOrPoints, options = {}) {
-    return sweepSolid(profileOrShape, pathOrPoints, options);
-  }
-
-  /**
-   * Loft multiple 2D/3D profile cross-sections into a B-Rep SolidBody
-   */
-  loftBRep(profilesOrShapes, options = {}) {
-    return loftSolid(profilesOrShapes, options);
-  }
-
-  /**
-   * Fillet B-Rep solid edges
-   */
-  filletBRep(solidBody, targetEdgeIndices = [], radius = 2, options = {}) {
-    return filletSolid(solidBody, targetEdgeIndices, radius, options);
-  }
-
-  /**
-   * Chamfer B-Rep solid edges
-   */
-  chamferBRep(solidBody, targetEdgeIndices = [], distance = 2, options = {}) {
-    return chamferSolid(solidBody, targetEdgeIndices, distance, options);
-  }
-
-  /**
-   * Shell B-Rep solid with uniform wall thickness
-   */
-  shellBRep(solidBody, thickness = 2, excludeFaceIds = [], options = {}) {
-    return shellSolid(solidBody, thickness, excludeFaceIds, options);
-  }
-
-  /**
-   * B-Rep Boolean Union
-   */
-  booleanUnionBRep(solidA, solidB) {
-    return brepBooleanUnion(solidA, solidB);
-  }
-
-  /**
-   * B-Rep Boolean Difference
-   */
-  booleanSubtractBRep(solidA, solidB) {
-    return brepBooleanSubtract(solidA, solidB);
-  }
-
-  /**
-   * B-Rep Boolean Intersection
-   */
-  booleanIntersectBRep(solidA, solidB) {
-    return brepBooleanIntersect(solidA, solidB);
-  }
-
-  /**
-   * Extract B-Rep feature edges
-   */
-  extractBRepEdges(solidOrGeom, featureAngleDeg = 25) {
-    const solid = solidOrGeom instanceof SolidBody ? solidOrGeom : bufferGeometryToSolid(solidOrGeom);
-    return extractBRepEdges(solid, featureAngleDeg);
-  }
 }
-
-// Re-export Topology and B-Rep classes and functions
-export {
-  Vertex,
-  Edge,
-  CoEdge,
-  Loop,
-  Face,
-  Shell,
-  SolidBody,
-  Curve,
-  LineCurve,
-  ArcCurve,
-  NurbsCurve,
-  Surface,
-  PlaneSurface,
-  CylinderSurface,
-  ConeSurface,
-  TorusSurface,
-  SphereSurface,
-  CURVE_TYPES,
-  SURFACE_TYPES,
-} from './Topology.js';
-
-export {
-  createSolidBox,
-  createSolidCylinder,
-  extrudeSolid,
-  revolveSolid,
-  sweepSolid,
-  loftSolid,
-  filletSolid,
-  chamferSolid,
-  shellSolid,
-  solidToBufferGeometry,
-  bufferGeometryToSolid,
-  extractBRepEdges,
-} from './BRep.js';
 
 // Export singleton instance
 export const geometryEngine = new GeometryEngine();

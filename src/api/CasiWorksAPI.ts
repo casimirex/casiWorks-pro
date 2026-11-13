@@ -17,7 +17,7 @@ import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
 import { generateId } from '../utils/math.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.js';
-import { geometryEngine } from '../kernel/GeometryEngine.js';
+import { geometryEngine } from '../kernel/GeometryEngine.ts';
 import { rebuildModel } from '../features/rebuildModel.ts';
 import type { RebuildResult, RebuildState } from '../features/rebuildModel.ts';
 import type {
