@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import './index.css';
 
 // Remove loading splash screen once mounted
@@ -17,6 +18,8 @@ window.addEventListener('load', () => {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary name="CasiWorks Pro" fullScreen>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

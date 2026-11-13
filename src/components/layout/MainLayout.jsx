@@ -5,6 +5,7 @@ import FeatureTree from './FeatureTree';
 import PropertyPanel from './PropertyPanel';
 import StatusBar from './StatusBar';
 import Viewport3D from '../../viewport/Viewport3D';
+import ErrorBoundary from '../common/ErrorBoundary';
 import { useCADStore } from '../../store/cadStore';
 
 export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }) {
@@ -32,19 +33,25 @@ export default function MainLayout({ onExportClick, onMaterialClick, onMassProps
         )}
 
         {/* Feature Tree Drawer */}
-        <FeatureTree
-          onMaterialClick={onMaterialClick}
-          isOpen={mobileTreeOpen}
-          onClose={() => setMobileTreeOpen(false)}
-        />
+        <ErrorBoundary name="Feature tree" panel>
+          <FeatureTree
+            onMaterialClick={onMaterialClick}
+            isOpen={mobileTreeOpen}
+            onClose={() => setMobileTreeOpen(false)}
+          />
+        </ErrorBoundary>
 
         {/* 3D Viewport Area */}
         <div className="viewport-wrapper" style={{ flex: 1, position: 'relative', height: '100%', overflow: 'hidden' }}>
-          <Viewport3D />
+          <ErrorBoundary name="3D viewport">
+            <Viewport3D />
+          </ErrorBoundary>
         </div>
 
         {/* Properties Side / Bottom Sheet */}
-        <PropertyPanel />
+        <ErrorBoundary name="Property panel" panel onReset={closePropertyPanel}>
+          <PropertyPanel />
+        </ErrorBoundary>
       </div>
 
       <StatusBar />
