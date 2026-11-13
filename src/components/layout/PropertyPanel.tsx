@@ -1,18 +1,37 @@
 // CasiWorks Pro - Properties Side Panel (Elevated Modern Design)
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-  Check, X, Layers, ArrowUpDown, Shield, Sliders, ChevronRight,
-  Maximize2, Play, CircleDot, Crosshair, ArrowRight, CornerDownRight,
-  Sparkles, Cpu, Move, Grid
-} from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Check, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { FEATURE_TYPES, TOOLS, MATE_TYPES, MATERIALS } from '../../utils/constants.ts';
+import { FEATURE_TYPES, MATERIALS } from '../../utils/constants.ts';
+import type { MateType } from '../../utils/constants.ts';
+import type { ExtrudeEndCondition, FeatureData } from '../../types/cad.ts';
 import NumericInput from '../common/NumericInput.tsx';
 import { debounce } from '../../utils/debounce.ts';
 
+/** Fields the panel reads from what it was opened with (a feature being edited, or a tool's defaults). */
+interface PanelContentFields {
+  type: string;
+  id?: string;
+  name?: string;
+  isEditing?: boolean;
+  depth?: number;
+  angle?: number;
+  radius?: number;
+  thickness?: number;
+  diameter?: number;
+  sketchId?: string;
+  direction?: ExtrudeEndCondition;
+  flip?: boolean;
+  thin?: boolean;
+  wallThickness?: number;
+  viewType?: string;
+  dimType?: string;
+  gdtType?: string;
+}
+
 export default function PropertyPanel() {
   const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);
-  const propertyPanelContent = useCADStore(s => s.propertyPanelContent);
+  const propertyPanelContent = useCADStore(s => s.propertyPanelContent) as PanelContentFields | null;
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
   const addFeature = useCADStore(s => s.addFeature);
   const updateFeature = useCADStore(s => s.updateFeature);
@@ -29,14 +48,14 @@ export default function PropertyPanel() {
   const [radius, setRadius] = useState(5);
   const [thickness, setThickness] = useState(2);
   const [diameter, setDiameter] = useState(10);
-  const [direction, setDirection] = useState('blind');
+  const [direction, setDirection] = useState<ExtrudeEndCondition>('blind');
   const [flipDir, setFlipDir] = useState(false);
   const [thin, setThin] = useState(false);
   const [wallThickness, setWallThickness] = useState(2);
   const [selectedSketchId, setSelectedSketchId] = useState('');
 
   // Assembly Mate State
-  const [mateType, setMateType] = useState('coincident');
+  const [mateType, setMateType] = useState<MateType>('coincident');
   const [comp1Id, setComp1Id] = useState('');
   const [comp2Id, setComp2Id] = useState('');
   const [ref1, setRef1] = useState('top');
@@ -78,12 +97,12 @@ export default function PropertyPanel() {
 
   // Debounced slider handler to keep UI fluid
   const debouncedSetExplodeDist = useMemo(
-    () => debounce((val) => setExplodeDist(val), 60),
+    () => debounce((val: number) => setExplodeDist(val), 60),
     []
   );
 
   const debouncedSetMeshSize = useMemo(
-    () => debounce((val) => setFeaMeshSize(val), 60),
+    () => debounce((val: number) => setFeaMeshSize(val), 60),
     []
   );
 
@@ -158,7 +177,8 @@ export default function PropertyPanel() {
       if (isEdit && featId) {
         updateFeature(featId, featData);
       } else {
-        addFeature(featData);
+        // Every panel field goes to every feature type (each type reads its own)
+        addFeature(featData as unknown as FeatureData);
       }
     }
 
@@ -199,7 +219,7 @@ export default function PropertyPanel() {
             <div className="property-card-header">Assembly Mate Configuration</div>
             <div className="property-card-body">
               <label className="property-label">Mate Type</label>
-              <select className="property-select" value={mateType} onChange={(e) => setMateType(e.target.value)}>
+              <select className="property-select" value={mateType} onChange={(e) => setMateType(e.target.value as MateType)}>
                 <option value="coincident">Coincident (Contact Align)</option>
                 <option value="distance">Distance Offset</option>
                 <option value="concentric">Concentric (Axis Align)</option>

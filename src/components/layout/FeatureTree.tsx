@@ -1,15 +1,24 @@
 // CasiWorks Pro - Feature Tree (Rollback & Dependency Graph)
 import React, { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Folder, Box, PenTool, Eye, EyeOff, Trash2,
-  ChevronRight, ChevronDown, Check, Sliders, Globe,
-  Shield, Layers, CircleDot, X, Search, Sparkles,
+  ChevronRight, ChevronDown, Sliders, Globe,
+  Shield, Layers, CircleDot, X, Search,
   Ban, AlertTriangle, ArrowDownToLine, RotateCcw, ChevronUp
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { FEATURE_TYPES } from '../../utils/constants.ts';
+import type { Feature } from '../../types/cad.ts';
 
-export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {
+interface FeatureTreeProps {
+  onMaterialClick(): void;
+  /** Drawer state on small screens. */
+  isOpen: boolean;
+  onClose?: () => void;
+}
+
+export default function FeatureTree({ onMaterialClick, isOpen, onClose }: FeatureTreeProps) {
   const documentName = useCADStore(s => s.documentName);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const features = useCADStore(s => s.features);
@@ -27,7 +36,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {
   const [originExpanded, setOriginExpanded] = useState(true);
   const [filterText, setFilterText] = useState('');
 
-  const getFeatureBadge = (type) => {
+  const getFeatureBadge = (type: Feature['type']): { label: string; color: string; icon: ReactNode } => {
     switch (type) {
       case FEATURE_TYPES.SKETCH:
         return { label: 'SK', color: '#ffb74d', icon: <PenTool size={13} color="#ffb74d" /> };
@@ -48,7 +57,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {
     }
   };
 
-  const handleDoubleClick = (feat, index) => {
+  const handleDoubleClick = (feat: Feature, index: number) => {
     // Edit-in-context: ensure rollback bar allows editing this feature without desync
     if (rollbackIndex >= 0 && index > rollbackIndex) {
       setRollbackIndex(index);
@@ -61,17 +70,17 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {
     }
   };
 
-  const getDependencyInfo = (feat) => {
+  const getDependencyInfo = (feat: Feature) => {
     const parents = (feat.parentIds || [])
       .map(pid => features.find(f => f.id === pid)?.name)
-      .filter(Boolean);
+      .filter((n): n is string => Boolean(n));
     const children = (feat.childIds || [])
       .map(cid => features.find(f => f.id === cid)?.name)
-      .filter(Boolean);
+      .filter((n): n is string => Boolean(n));
     return { parents, children };
   };
 
-  const isRolledBack = (index) => {
+  const isRolledBack = (index: number) => {
     return rollbackIndex >= 0 && index > rollbackIndex;
   };
 

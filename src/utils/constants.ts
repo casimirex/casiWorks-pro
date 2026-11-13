@@ -28,6 +28,7 @@ export const TOOLS = {
   SKETCH_CONSTRUCTION: 'sketch_construction',
   // Feature tools
   EXTRUDE: 'extrude',
+  EXTRUDE_CUT: 'extrude_cut',
   REVOLVE: 'revolve',
   SWEEP: 'sweep',
   LOFT: 'loft',

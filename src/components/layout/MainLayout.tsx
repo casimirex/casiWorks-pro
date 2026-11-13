@@ -1,8 +1,8 @@
 // CasiWorks Pro - Main Application Layout (Responsive Desktop & Mobile)
 import { useState } from 'react';
-import CommandManager from './CommandManager';
-import FeatureTree from './FeatureTree';
-import PropertyPanel from './PropertyPanel';
+import CommandManager from './CommandManager.tsx';
+import FeatureTree from './FeatureTree.tsx';
+import PropertyPanel from './PropertyPanel.tsx';
 import StatusBar from './StatusBar.tsx';
 import Viewport3D from '../../viewport/Viewport3D.tsx';
 import ErrorBoundary from '../common/ErrorBoundary.tsx';

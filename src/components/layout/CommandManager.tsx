@@ -1,12 +1,12 @@
 // CasiWorks Pro - CommandManager Ribbon Toolbar (Professional Engineering UI)
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   FilePlus, FolderOpen, Save, Undo2, Redo2, RefreshCw,
   Box, Maximize2, RotateCw, Spline, Shield, CircleDot,
-  Layers, Copy, Scissors, Compass, Sliders, Play, CheckCircle2,
-  XCircle, Square, Circle, PenTool, Hash, Info, FileSpreadsheet,
+  Layers, Copy, Scissors, Sliders, Play, CheckCircle2,
+  XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
-  Sparkles, Layers3, Cpu, FileText, Check, ArrowRight,
+  Sparkles, Layers3, Cpu, FileText, ArrowRight,
   ArrowDownToLine, Move, Crosshair
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
@@ -14,7 +14,15 @@ import { TOOLS, FEATURE_TYPES } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { downloadProject, openProject, newProject as newProjectFile } from '../../utils/projectFile.ts';
 
-export default function CommandManager({ onExportClick, onMaterialClick, onMassPropsClick, onToggleTree }) {
+interface CommandManagerProps {
+  onExportClick(): void;
+  onMaterialClick(): void;
+  onMassPropsClick(): void;
+  /** Opens or closes the feature tree drawer (small screens). */
+  onToggleTree?: () => void;
+}
+
+export default function CommandManager({ onExportClick, onMaterialClick, onMassPropsClick, onToggleTree }: CommandManagerProps) {
   const activeTab = useCADStore(s => s.activeCommandTab);
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
@@ -222,9 +230,9 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
                     <span>Extrude</span>
                   </button>
                   <button
-                    className={`ribbon-btn ${activeTool === 'extrude_cut' ? 'active' : ''}`}
+                    className={`ribbon-btn ${activeTool === TOOLS.EXTRUDE_CUT ? 'active' : ''}`}
                     onClick={() => {
-                      setActiveTool('extrude_cut');
+                      setActiveTool(TOOLS.EXTRUDE_CUT);
                       openPropertyPanel({ type: FEATURE_TYPES.EXTRUDE_CUT });
                     }}
                     title="Extruded Cut"
