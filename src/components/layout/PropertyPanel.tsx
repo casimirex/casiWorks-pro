@@ -4,7 +4,32 @@ import { Check, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { FEATURE_TYPES, MATERIALS } from '../../utils/constants.ts';
 import type { MateType } from '../../utils/constants.ts';
-import type { ExtrudeEndCondition, FeatureData } from '../../types/cad.ts';
+import type { ExtrudeEndCondition, FeatureData, HoleFeature, Point3, SketchPlane } from '../../types/cad.ts';
+
+/** Axis directions offered for holes and patterns. */
+const AXES = {
+  '+X': [1, 0, 0], '-X': [-1, 0, 0],
+  '+Y': [0, 1, 0], '-Y': [0, -1, 0],
+  '+Z': [0, 0, 1], '-Z': [0, 0, -1],
+} as const;
+type AxisName = keyof typeof AXES;
+const AXIS_NAMES = Object.keys(AXES) as AxisName[];
+
+/** The listed axis closest to a stored vector (features may hold any vector). */
+function nearestAxis(v: { x?: number; y?: number; z?: number }, fallback: AxisName): AxisName {
+  const [x, y, z] = [v.x ?? 0, v.y ?? 0, v.z ?? 0];
+  if (x === 0 && y === 0 && z === 0) return fallback;
+  return AXIS_NAMES.reduce((best, name) => {
+    const dot = (n: AxisName) => AXES[n][0] * x + AXES[n][1] * y + AXES[n][2] * z;
+    return dot(name) > dot(best) ? name : best;
+  }, fallback);
+}
+
+const HOLE_TYPES: Array<{ value: NonNullable<HoleFeature['holeType']>; label: string }> = [
+  { value: 'simple', label: 'Simple (drilled)' },
+  { value: 'counterbore', label: 'Counterbore' },
+  { value: 'countersink', label: 'Countersink' },
+];
 import NumericInput from '../common/NumericInput.tsx';
 import { debounce } from '../../utils/debounce.ts';
 
@@ -27,6 +52,19 @@ interface PanelContentFields {
   viewType?: string;
   dimType?: string;
   gdtType?: string;
+  distance?: number;
+  holeType?: HoleFeature['holeType'];
+  position?: Point3;
+  axis?: Point3;
+  count?: number;
+  spacing?: number;
+  directionX?: number;
+  directionY?: number;
+  directionZ?: number;
+  axisX?: number;
+  axisY?: number;
+  axisZ?: number;
+  plane?: SketchPlane;
 }
 
 export default function PropertyPanel() {
@@ -53,6 +91,14 @@ export default function PropertyPanel() {
   const [thin, setThin] = useState(false);
   const [wallThickness, setWallThickness] = useState(2);
   const [selectedSketchId, setSelectedSketchId] = useState('');
+  const [holeType, setHoleType] = useState<NonNullable<HoleFeature['holeType']>>('simple');
+  const [holePosition, setHolePosition] = useState<Point3>({ x: 0, y: 0, z: 0 });
+  const [holeAxis, setHoleAxis] = useState<AxisName>('+Z');
+  const [count, setCount] = useState(3);
+  const [spacing, setSpacing] = useState(20);
+  const [patternDirection, setPatternDirection] = useState<AxisName>('+X');
+  const [patternAxis, setPatternAxis] = useState<AxisName>('+Y');
+  const [mirrorPlane, setMirrorPlane] = useState<SketchPlane>('Right');
 
   // Assembly Mate State
   const [mateType, setMateType] = useState<MateType>('coincident');
@@ -77,7 +123,6 @@ export default function PropertyPanel() {
   const [dimUpperTol, setDimUpperTol] = useState(0.05);
   const [dimLowerTol, setDimLowerTol] = useState(-0.05);
   const [dimPrefix, setDimPrefix] = useState('');
-  const [dimSuffix, setDimSuffix] = useState('');
 
   // GD&T State
   const [gdtSymbol, setGdtSymbol] = useState('flatness');
@@ -137,12 +182,66 @@ export default function PropertyPanel() {
       if (propertyPanelContent.viewType) setDrawingViewType(propertyPanelContent.viewType);
       if (propertyPanelContent.dimType) setDimType(propertyPanelContent.dimType);
       if (propertyPanelContent.gdtType) setGdtSymbol(propertyPanelContent.gdtType === 'datum' ? 'datum' : 'flatness');
+      const c = propertyPanelContent;
+      if (c.type === FEATURE_TYPES.CHAMFER && c.distance !== undefined) setRadius(c.distance);
+      if (c.holeType) setHoleType(c.holeType);
+      if (c.position) setHolePosition({ ...c.position });
+      if (c.axis) setHoleAxis(nearestAxis(c.axis, '+Z'));
+      if (c.count !== undefined) setCount(c.count);
+      if (c.spacing !== undefined) setSpacing(c.spacing);
+      if (c.type === FEATURE_TYPES.LINEAR_PATTERN) setPatternDirection(nearestAxis({ x: c.directionX, y: c.directionY, z: c.directionZ }, '+X'));
+      if (c.type === FEATURE_TYPES.CIRCULAR_PATTERN) setPatternAxis(nearestAxis({ x: c.axisX, y: c.axisY, z: c.axisZ }, '+Y'));
+      if (c.type === FEATURE_TYPES.MIRROR && c.plane) setMirrorPlane(c.plane);
     }
   }, [propertyPanelContent]);
 
   if (!propertyPanelOpen || !propertyPanelContent) return null;
 
   const featureType = propertyPanelContent.type;
+
+  /** The parameters of the feature type being edited (and only those). */
+  const featureParameters = (): Record<string, unknown> => {
+    const [ax, ay, az] = AXES[patternAxis];
+    const [dx, dy, dz] = AXES[patternDirection];
+    switch (featureType) {
+      case FEATURE_TYPES.EXTRUDE_BOSS:
+      case FEATURE_TYPES.EXTRUDE_CUT:
+        return { sketchId: selectedSketchId, depth, direction, flip: flipDir, thin, wallThickness };
+      case FEATURE_TYPES.REVOLVE_BOSS:
+      case FEATURE_TYPES.REVOLVE_CUT:
+        return { sketchId: selectedSketchId, angle };
+      case FEATURE_TYPES.SWEEP_BOSS:
+      case FEATURE_TYPES.SWEEP_CUT:
+        return { sketchId: selectedSketchId };
+      case FEATURE_TYPES.FILLET:
+        return { radius };
+      case FEATURE_TYPES.CHAMFER:
+        return { distance: radius };
+      case FEATURE_TYPES.SHELL:
+        return { thickness };
+      case FEATURE_TYPES.HOLE: {
+        const [x, y, z] = AXES[holeAxis];
+        return { diameter, depth, holeType, position: { ...holePosition }, axis: { x, y, z } };
+      }
+      case FEATURE_TYPES.LINEAR_PATTERN:
+        return { count, spacing, directionX: dx, directionY: dy, directionZ: dz };
+      case FEATURE_TYPES.CIRCULAR_PATTERN:
+        return { count, angle, axisX: ax, axisY: ay, axisZ: az };
+      case FEATURE_TYPES.MIRROR:
+        return { plane: mirrorPlane };
+      default:
+        return {};
+    }
+  };
+
+  const axisSelect = (value: AxisName, onChange: (a: AxisName) => void, label: string) => (
+    <div className="property-row">
+      <span className="property-label">{label}</span>
+      <select className="property-select" style={{ width: 90 }} value={value} onChange={(e) => onChange(e.target.value as AxisName)}>
+        {AXIS_NAMES.map(a => <option key={a} value={a}>{a}</option>)}
+      </select>
+    </div>
+  );
 
   const handleApply = () => {
     const isEdit = propertyPanelContent.isEditing;
@@ -162,23 +261,13 @@ export default function PropertyPanel() {
       const featData = {
         type: featureType,
         name: propertyPanelContent.name || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-        sketchId: selectedSketchId,
-        depth,
-        angle,
-        radius,
-        thickness,
-        diameter,
-        direction,
-        flip: flipDir,
-        thin,
-        wallThickness,
+        ...featureParameters(),
       };
 
       if (isEdit && featId) {
         updateFeature(featId, featData);
       } else {
-        // Every panel field goes to every feature type (each type reads its own)
-        addFeature(featData as unknown as FeatureData);
+        addFeature(featData as FeatureData);
       }
     }
 
@@ -515,7 +604,10 @@ export default function PropertyPanel() {
         {/* Sketch reference picker */}
         {(featureType === FEATURE_TYPES.EXTRUDE_BOSS ||
           featureType === FEATURE_TYPES.EXTRUDE_CUT ||
-          featureType === FEATURE_TYPES.REVOLVE_BOSS) && (
+          featureType === FEATURE_TYPES.REVOLVE_BOSS ||
+          featureType === FEATURE_TYPES.REVOLVE_CUT ||
+          featureType === FEATURE_TYPES.SWEEP_BOSS ||
+          featureType === FEATURE_TYPES.SWEEP_CUT) && (
           <div className="property-card">
             <div className="property-card-header">Profile & Sketch</div>
             <div className="property-card-body">
@@ -668,6 +760,77 @@ export default function PropertyPanel() {
               <div className="property-row">
                 <span className="property-label">Hole Depth:</span>
                 <NumericInput value={depth} onChange={setDepth} min={1} max={500} step={5} unit="mm" />
+              </div>
+              <div className="property-row">
+                <span className="property-label">Hole Type:</span>
+                <select className="property-select" style={{ width: 130 }} value={holeType} onChange={(e) => setHoleType(e.target.value as typeof holeType)}>
+                  {HOLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.HOLE && (
+          <div className="property-card">
+            <div className="property-card-header">Hole Position</div>
+            <div className="property-card-body">
+              {(['x', 'y', 'z'] as const).map(k => (
+                <div className="property-row" key={k}>
+                  <span className="property-label">Entry {k.toUpperCase()}:</span>
+                  <NumericInput value={holePosition[k]} onChange={(v) => setHolePosition(p => ({ ...p, [k]: v }))} step={1} unit="mm" />
+                </div>
+              ))}
+              {axisSelect(holeAxis, setHoleAxis, 'Drill Direction:')}
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.LINEAR_PATTERN && (
+          <div className="property-card">
+            <div className="property-card-header">Linear Pattern</div>
+            <div className="property-card-body">
+              {axisSelect(patternDirection, setPatternDirection, 'Direction:')}
+              <div className="property-row">
+                <span className="property-label">Instances:</span>
+                <NumericInput value={count} onChange={setCount} min={2} max={100} step={1} precision={0} />
+              </div>
+              <div className="property-row">
+                <span className="property-label">Spacing:</span>
+                <NumericInput value={spacing} onChange={setSpacing} min={0.1} max={5000} step={5} unit="mm" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.CIRCULAR_PATTERN && (
+          <div className="property-card">
+            <div className="property-card-header">Circular Pattern</div>
+            <div className="property-card-body">
+              {axisSelect(patternAxis, setPatternAxis, 'Axis:')}
+              <div className="property-row">
+                <span className="property-label">Instances:</span>
+                <NumericInput value={count} onChange={setCount} min={2} max={360} step={1} precision={0} />
+              </div>
+              <div className="property-row">
+                <span className="property-label">Total Angle:</span>
+                <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.MIRROR && (
+          <div className="property-card">
+            <div className="property-card-header">Mirror</div>
+            <div className="property-card-body">
+              <div className="property-row">
+                <span className="property-label">Mirror Plane:</span>
+                <select className="property-select" style={{ width: 110 }} value={mirrorPlane} onChange={(e) => setMirrorPlane(e.target.value as SketchPlane)}>
+                  <option value="Front">Front (XY)</option>
+                  <option value="Top">Top (XZ)</option>
+                  <option value="Right">Right (YZ)</option>
+                </select>
               </div>
             </div>
           </div>

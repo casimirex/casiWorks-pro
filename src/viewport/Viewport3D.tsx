@@ -456,6 +456,7 @@ export default function Viewport3D() {
   const wireframeMode = useCADStore(s => s.wireframeMode);
   const perspectiveView = useCADStore(s => s.perspectiveView);
   const viewOrientation = useCADStore(s => s.viewOrientation);
+  const viewRequest = useCADStore(s => s.viewRequest);
   const setViewOrientation = useCADStore(s => s.setViewOrientation);
 
   const isSketchActive = useCADStore(s => s.isSketchActive);
@@ -470,7 +471,7 @@ export default function Viewport3D() {
 
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
 
-  // Switch camera when viewOrientation changes
+  // Aim the camera on every view request (also when the same view is asked for again)
   useEffect(() => {
     if (!controlsRef.current) return;
     const info = VIEW_ORIENTATIONS[viewOrientation] || VIEW_ORIENTATIONS.isometric;
@@ -482,7 +483,7 @@ export default function Viewport3D() {
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
     }
-  }, [viewOrientation]);
+  }, [viewOrientation, viewRequest]);
 
   // Sketch drawing logic
   const handleSketchClick = useCallback((pt: Point2) => {

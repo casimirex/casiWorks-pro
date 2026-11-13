@@ -16,7 +16,6 @@ interface MainLayoutProps {
 
 export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }: MainLayoutProps) {
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
-  const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
 
   return (

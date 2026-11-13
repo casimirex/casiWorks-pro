@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Folder, Box, PenTool, Eye, EyeOff, Trash2,
+  Folder, Box, PenTool, Trash2,
   ChevronRight, ChevronDown, Sliders, Globe,
   Shield, Layers, CircleDot, X, Search,
   Ban, AlertTriangle, ArrowDownToLine, RotateCcw, ChevronUp
@@ -27,10 +27,11 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   const rebuildErrors = useCADStore(s => s.rebuildErrors);
   const setActiveFeature = useCADStore(s => s.setActiveFeature);
   const setRollbackIndex = useCADStore(s => s.setRollbackIndex);
-  const toggleFeatureVisibility = useCADStore(s => s.toggleFeatureVisibility);
   const toggleFeatureSuppressed = useCADStore(s => s.toggleFeatureSuppressed);
   const removeFeature = useCADStore(s => s.removeFeature);
   const editSketch = useCADStore(s => s.editSketch);
+  const startSketch = useCADStore(s => s.startSketch);
+  const isSketchActive = useCADStore(s => s.isSketchActive);
   const openPropertyPanel = useCADStore(s => s.openPropertyPanel);
 
   const [originExpanded, setOriginExpanded] = useState(true);
@@ -103,8 +104,22 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
     }
   };
 
-  const filteredFeatures = features.filter(f =>
-    !filterText || (f.name || f.type).toLowerCase().includes(filterText.toLowerCase())
+  // Keep each feature's position in the full tree: selection, editing and
+  // rollback work on that index, not on the position in the filtered list
+  const filteredFeatures = features
+    .map((feat, index) => ({ feat, index }))
+    .filter(({ feat }) => !filterText || (feat.name || feat.type).toLowerCase().includes(filterText.toLowerCase()));
+
+  const planeNode = (plane: 'Front' | 'Top' | 'Right', label: string, color: string) => (
+    <div
+      className="tree-node-item plane-node"
+      onDoubleClick={() => { if (!isSketchActive) startSketch(plane); }}
+      title={`Double-click to sketch on the ${plane} plane`}
+      style={{ cursor: 'pointer' }}
+    >
+      <Globe size={12} color={color} />
+      <span className="tree-node-label">{label}</span>
+    </div>
   );
 
   return (
@@ -163,18 +178,9 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
 
         {originExpanded && (
           <div className="tree-nested-group">
-            <div className="tree-node-item plane-node">
-              <Globe size={12} color="#38bdf8" />
-              <span className="tree-node-label">Front Plane (XY)</span>
-            </div>
-            <div className="tree-node-item plane-node">
-              <Globe size={12} color="#4ade80" />
-              <span className="tree-node-label">Top Plane (XZ)</span>
-            </div>
-            <div className="tree-node-item plane-node">
-              <Globe size={12} color="#c084fc" />
-              <span className="tree-node-label">Right Plane (YZ)</span>
-            </div>
+            {planeNode('Front', 'Front Plane (XY)', '#38bdf8')}
+            {planeNode('Top', 'Top Plane (XZ)', '#4ade80')}
+            {planeNode('Right', 'Right Plane (YZ)', '#c084fc')}
             <div className="tree-node-item origin-node">
               <CircleDot size={12} color="#f87171" />
               <span className="tree-node-label">Origin (0,0,0)</span>
@@ -185,7 +191,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
         <div className="tree-divider" />
 
         {/* Dynamic Feature List */}
-        {filteredFeatures.map((feat, index) => {
+        {filteredFeatures.map(({ feat, index }) => {
           const badge = getFeatureBadge(feat.type);
           const isSelected = activeFeatureIndex === index;
           const rolledBack = isRolledBack(index);
@@ -259,18 +265,6 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                     title={feat.suppressed ? 'Unsuppress Feature' : 'Suppress Feature'}
                   >
                     <Ban size={12} color={feat.suppressed ? '#4ade80' : '#f87171'} />
-                  </button>
-
-                  {/* Visibility */}
-                  <button
-                    className="icon-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFeatureVisibility(feat.id);
-                    }}
-                    title={feat.visible ? 'Hide Feature' : 'Show Feature'}
-                  >
-                    {feat.visible ? <Eye size={12} color="#94a3b8" /> : <EyeOff size={12} color="#64748b" />}
                   </button>
 
                   {/* Delete */}

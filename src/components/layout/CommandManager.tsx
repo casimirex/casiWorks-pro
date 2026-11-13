@@ -14,6 +14,9 @@ import { TOOLS, FEATURE_TYPES } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { downloadProject, openProject, newProject as newProjectFile } from '../../utils/projectFile.ts';
 
+/** Same colours as the reference planes in the viewport and tree. */
+const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
+
 interface CommandManagerProps {
   onExportClick(): void;
   onMaterialClick(): void;
@@ -374,14 +377,17 @@ export default function CommandManager({ onExportClick, onMaterialClick, onMassP
               <div className="tool-group">
                 <div className="tool-group-buttons">
                   {!isSketchActive ? (
-                    <button
-                      className="ribbon-btn primary-action-btn"
-                      onClick={() => startSketch('Front')}
-                      title="Create 2D Sketch"
-                    >
-                      <PenTool size={19} color="#38bdf8" />
-                      <span>New Sketch</span>
-                    </button>
+                    (['Front', 'Top', 'Right'] as const).map(plane => (
+                      <button
+                        key={plane}
+                        className="ribbon-btn primary-action-btn"
+                        onClick={() => startSketch(plane)}
+                        title={`Sketch on the ${plane} plane`}
+                      >
+                        <PenTool size={19} color={PLANE_COLORS[plane]} />
+                        <span>{plane}</span>
+                      </button>
+                    ))
                   ) : (
                     <>
                       <button className="ribbon-btn active exit-sketch-btn" onClick={() => endSketch(true)} title="Confirm & Exit Sketch">

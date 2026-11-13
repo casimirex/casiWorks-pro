@@ -116,6 +116,8 @@ export interface CADState {
 
   // View
   viewOrientation: ViewOrientation;
+  /** Bumped on every view request, so asking for the current view again re-aims the camera. */
+  viewRequest: number;
   showOrigin: boolean;
   showPlanes: boolean;
   showGrid: boolean;
@@ -348,6 +350,7 @@ function initialState(): CADState {
     bodies: [],
     activeMaterial: 'Steel_1020',
     viewOrientation: 'isometric',
+    viewRequest: 0,
     showOrigin: true,
     showPlanes: true,
     showGrid: true,
@@ -536,6 +539,9 @@ export const useCADStore = create<CADStore>()(
       state.sketchDimensions[sketchId] = [];
       state.activeTool = TOOLS.SKETCH_LINE;
       state.activeCommandTab = 'Sketch';
+      // Look straight at the sketch plane, as CAD systems do
+      state.viewOrientation = plane === 'Top' ? 'top' : plane === 'Right' ? 'right' : 'front';
+      state.viewRequest += 1;
       state.statusMessage = `Sketching on ${plane} plane (Select tools or draw)`;
     }),
 
@@ -650,6 +656,7 @@ export const useCADStore = create<CADStore>()(
 
     setViewOrientation: (orientation) => set(state => {
       state.viewOrientation = orientation;
+      state.viewRequest += 1;
     }),
 
     toggleGrid: () => set(state => { state.showGrid = !state.showGrid; }),

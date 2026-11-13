@@ -66,7 +66,8 @@ const NumericInput = ({
 
   /** Commit the current edit value */
   const commitValue = useCallback(() => {
-    const parsed = parseFloat(editValue);
+    // Read the latest text: a blur can arrive before React re-renders after the last keystroke
+    const parsed = parseFloat(editValueRef.current);
     if (isNaN(parsed)) {
       setEditValue(formatValue(value));
     } else {
@@ -77,10 +78,11 @@ const NumericInput = ({
       }
     }
     setIsEditing(false);
-  }, [editValue, value, clamp, onChange, formatValue]);
+  }, [value, clamp, onChange, formatValue]);
 
   /** Handle text input change */
   const handleInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    editValueRef.current = e.target.value;
     setEditValue(e.target.value);
   }, []);
 
@@ -114,16 +116,16 @@ const NumericInput = ({
       inputRef.current?.blur();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      const newVal = clamp((parseFloat(editValue) || 0) + step);
+      const newVal = clamp((parseFloat(editValueRef.current) || 0) + step);
       setEditValue(formatValue(newVal));
       onChange?.(newVal);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      const newVal = clamp((parseFloat(editValue) || 0) - step);
+      const newVal = clamp((parseFloat(editValueRef.current) || 0) - step);
       setEditValue(formatValue(newVal));
       onChange?.(newVal);
     }
-  }, [commitValue, value, clamp, step, editValue, onChange, formatValue]);
+  }, [commitValue, value, clamp, step, onChange, formatValue]);
 
   /** Step the value up (+1) or down (−1) from the latest edit value */
   const stepBy = useCallback((sign: 1 | -1) => {
