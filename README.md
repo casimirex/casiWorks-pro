@@ -17,7 +17,8 @@ casiworks/
 │   ├── index.css                 # Dark engineering UI styling
 │   │
 │   ├── api/
-│   │   └── CasiWorksAPI.ts       # Public, typed scripting API v1
+│   │   ├── CasiWorksAPI.ts       # Public, typed scripting API v1
+│   │   └── index.ts              # API entry: window.casiworks, casiworks-pro/api module
 │   │
 │   ├── types/
 │   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
@@ -200,15 +201,14 @@ then round-trips all examples with exact volume.
 
 ## 🧩 Scripting API (v1)
 
-CasiWorks Pro exposes a public, versioned, fully typed API (`src/api/CasiWorksAPI.ts`).
+CasiWorks Pro exposes a public, versioned, fully typed API (`src/api/`).
 It drives the same store as the UI, so API edits appear in the feature tree and
-are undoable, and it also runs headless in Node (no browser needed).
+viewport, and can be undone like any other edit.
+
+**In the running app** it is `window.casiworks` — try it in the browser console:
 
 ```js
-import { useCADStore } from './src/store/cadStore.ts';
-import { createCasiWorksAPI } from './src/api/CasiWorksAPI.ts';
-
-const api = createCasiWorksAPI(useCADStore);
+const api = window.casiworks;          // api.version === '1.0.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -217,6 +217,22 @@ const boss = api.features.extrude({ sketchId, depth: 25 });
 api.features.update(boss, { depth: 40 });
 api.model.massProperties(); // { volume: 96000 (mm³), mass: 0.7584 (kg), ... }
 ```
+
+Scripts that load before the app (extensions, an embedding page) can wait for it:
+
+```js
+window.addEventListener('casiworks:ready', (e) => console.log('CasiWorks', e.detail.version));
+```
+
+**Headless, as an ES module** (Node 22.18+ runs the TypeScript sources directly):
+
+```js
+import { createHeadlessAPI } from 'casiworks-pro/api';
+const api = createHeadlessAPI();   // same API, no browser or React
+```
+
+`api.version` follows semantic versioning: minor versions only add, major
+versions may break.
 
 Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
 Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`
@@ -300,7 +316,7 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
    - Exploded view generation with 3D leader lines.
 
 8. **Export & Import**:
-   - Export: **STEP AP214 (faceted)**, **STL (binary & ASCII)**, **OBJ** and **DXF R12** from the Export dialog; **IGES 5.3** via the API/engine; native project files.
+   - Export: **STEP AP214 (faceted)**, **STL (binary & ASCII)**, **OBJ** and **DXF R12** and **IGES 5.3** from the Export dialog; native project files.
    - Import: **STEP**, **IGES 5.3**, **STL**, **DXF**, **OBJ**, and Project JSON.
 
 9. **Keyboard Shortcuts**:

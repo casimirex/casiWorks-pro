@@ -3,6 +3,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import ErrorBoundary from './components/common/ErrorBoundary.tsx';
+import { exposeGlobalAPI } from './api/index.ts';
+import { useCADStore } from './store/cadStore.ts';
 import './index.css';
 
 // Remove loading splash screen once mounted
@@ -15,6 +17,9 @@ window.addEventListener('load', () => {
     }
   }, 600);
 });
+
+// Public API for scripts, the console and embedding pages: window.casiworks
+exposeGlobalAPI(useCADStore, window);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

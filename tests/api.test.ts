@@ -177,3 +177,31 @@ test('API: arc + lines profile and revolve produce a body', () => {
   assert.equal(api.model.errors().length, 0, JSON.stringify(api.model.errors()));
   assert.equal(api.model.hasBody(), true);
 });
+
+test('API: exposeGlobalAPI installs a read-only casiworks and announces it', async () => {
+  const { exposeGlobalAPI, READY_EVENT } = await import('../src/api/index.ts');
+  const target = new EventTarget() as EventTarget & { casiworks?: CasiWorksAPI };
+  const seen: { detail?: { api: CasiWorksAPI; version: string } } = {};
+  target.addEventListener(READY_EVENT, (e) => { seen.detail = (e as CustomEvent).detail; });
+
+  const installed = exposeGlobalAPI(useCADStore, target);
+  assert.equal(target.casiworks, installed);
+  assert.equal(target.casiworks!.version, API_VERSION);
+  assert.ok(seen.detail, 'ready event dispatched');
+  assert.equal(seen.detail.api, installed);
+  assert.equal(seen.detail.version, API_VERSION);
+  assert.throws(() => { (target as { casiworks?: unknown }).casiworks = 1; }, TypeError, 'read-only');
+
+  // Installing again (hot reload) replaces it
+  assert.notEqual(exposeGlobalAPI(useCADStore, target), installed);
+});
+
+test('API: importable as the casiworks-pro/api module and usable headlessly', async () => {
+  const mod = await import('casiworks-pro/api');
+  const headless = mod.createHeadlessAPI();
+  assert.equal(headless.version, mod.API_VERSION);
+  headless.document.new();
+  const s = headless.sketches.create({ entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: 10 }] });
+  headless.features.extrude({ sketchId: s.sketchId, depth: 5 });
+  assert.ok(Math.abs(headless.model.massProperties()!.volume - Math.PI * 100 * 5) < 0.01 * Math.PI * 100 * 5);
+});
