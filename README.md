@@ -189,13 +189,13 @@ CasiWorks Pro implements real, verified engineering algorithms rather than super
 
 ## 🧩 Scripting API (v1)
 
-CasiWorks Pro exposes a public, versioned JavaScript API (`src/api/CasiWorksAPI.js`).
+CasiWorks Pro exposes a public, versioned, fully typed API (`src/api/CasiWorksAPI.ts`).
 It drives the same store as the UI, so API edits appear in the feature tree and
 are undoable, and it also runs headless in Node (no browser needed).
 
 ```js
 import { useCADStore } from './src/store/cadStore.js';
-import { createCasiWorksAPI } from './src/api/CasiWorksAPI.js';
+import { createCasiWorksAPI } from './src/api/CasiWorksAPI.ts';
 
 const api = createCasiWorksAPI(useCADStore);
 const { sketchId } = api.sketches.create({
@@ -211,6 +211,11 @@ Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
 Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`
 with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, `INVALID_DOCUMENT`).
 All return values are plain JSON data.
+
+Every input and result is typed (`CasiWorksAPI`, `SketchSpec`, `ExtrudeSpec`,
+`FeatureInfo`, `MassProperties`, …), so TypeScript editors autocomplete the API
+and reject invalid calls at compile time; the same rules are enforced at
+runtime for plain JavaScript callers.
 
 ---
 

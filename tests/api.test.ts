@@ -3,19 +3,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { useCADStore } from '../src/store/cadStore.js';
-import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/CasiWorksAPI.js';
+import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/CasiWorksAPI.ts';
+import type { CasiWorksAPI, CasiWorksAPIErrorCode, SketchRef } from '../src/api/CasiWorksAPI.ts';
 
-const api = createCasiWorksAPI(useCADStore);
+const api: CasiWorksAPI = createCasiWorksAPI(useCADStore);
 const STEEL = 7900e-9; // kg/mm³
 
-const near = (actual, expected, relTol, msg) =>
+const near = (actual: number, expected: number, relTol: number, msg: string) =>
   assert.ok(Math.abs(actual - expected) <= relTol * Math.abs(expected), `${msg}: got ${actual}, expected ${expected} ±${relTol * 100}%`);
 
-const throwsCode = (fn, code) =>
-  assert.throws(fn, (err) => err instanceof CasiWorksAPIError && err.code === code, `expected CasiWorksAPIError ${code}`);
+const throwsCode = (fn: () => unknown, code: CasiWorksAPIErrorCode) =>
+  assert.throws(fn, (err: unknown) => err instanceof CasiWorksAPIError && err.code === code, `expected CasiWorksAPIError ${code}`);
 
 /** New part with a 60 × 40 rectangle extruded 25 mm. */
-function makeBlock() {
+function makeBlock(): { sketch: SketchRef; boss: string } {
   api.document.new();
   const sketch = api.sketches.create({
     plane: 'Front',
@@ -40,10 +41,10 @@ test('API: sketch + extrude builds the expected solid headlessly', () => {
   assert.deepEqual(list[1].parentIds, [sketch.featureId], 'extrude depends on its sketch');
   assert.equal(list[1].parameters.depth, 25);
 
-  const box = api.model.boundingBox();
+  const box = api.model.boundingBox()!;
   assert.deepEqual([box.size.x, box.size.y, box.size.z].map(v => Math.round(v * 1e6) / 1e6), [60, 40, 25]);
 
-  const mp = api.model.massProperties();
+  const mp = api.model.massProperties()!;
   near(mp.volume, 60 * 40 * 25, 1e-9, 'volume mm³');
   near(mp.mass, 60 * 40 * 25 * STEEL, 1e-9, 'mass kg');
   assert.equal(api.model.errors().length, 0);
@@ -53,7 +54,7 @@ test('API: through-all cut removes a cylinder', () => {
   makeBlock();
   const hole = api.sketches.create({ entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: 10 }] });
   api.features.extrude({ sketchId: hole.sketchId, depth: 100, endCondition: 'throughall', cut: true });
-  const vol = api.model.massProperties().volume;
+  const vol = api.model.massProperties()!.volume;
   // Polygonal circle: allow 1% for tessellation of the hole
   near(vol, 60 * 40 * 25 - Math.PI * 10 * 10 * 25, 0.01, 'volume after cut');
 });
@@ -62,12 +63,12 @@ test('API: update, undo and redo', () => {
   const { boss } = makeBlock();
   api.features.update(boss, { depth: 40 });
   assert.equal(api.features.get(boss).parameters.depth, 40);
-  near(api.model.boundingBox().size.z, 40, 1e-9, 'depth after update');
+  near(api.model.boundingBox()!.size.z, 40, 1e-9, 'depth after update');
 
   assert.equal(api.history.undo(), true);
-  near(api.model.boundingBox().size.z, 25, 1e-9, 'depth after undo');
+  near(api.model.boundingBox()!.size.z, 25, 1e-9, 'depth after undo');
   assert.equal(api.history.redo(), true);
-  near(api.model.boundingBox().size.z, 40, 1e-9, 'depth after redo');
+  near(api.model.boundingBox()!.size.z, 40, 1e-9, 'depth after redo');
 
   api.document.new();
   assert.equal(api.history.undo(), false, 'nothing to undo in a new document');
@@ -103,7 +104,7 @@ test('API: materials change mass; unknown material is rejected', () => {
   assert.ok(alu, 'an aluminium material must exist');
   api.materials.setActive(alu.key);
   assert.equal(api.materials.getActive(), alu.key);
-  near(api.model.massProperties().mass, 60 * 40 * 25 * alu.density * 1e-9, 1e-9, 'aluminium mass');
+  near(api.model.massProperties()!.mass, 60 * 40 * 25 * alu.density * 1e-9, 1e-9, 'aluminium mass');
   throwsCode(() => api.materials.setActive('Unobtainium'), 'NOT_FOUND');
 });
 
@@ -118,7 +119,7 @@ test('API: document save/load round-trip; invalid input leaves the document unto
   api.document.load(json);
   assert.equal(api.document.getName(), 'Bracket');
   assert.deepEqual(api.features.list(), before);
-  near(api.model.massProperties().volume, 60000, 1e-9, 'volume after load');
+  near(api.model.massProperties()!.volume, 60000, 1e-9, 'volume after load');
 
   throwsCode(() => api.document.load('{not json'), 'INVALID_DOCUMENT');
   throwsCode(() => api.document.load({ features: 'nope' }), 'INVALID_DOCUMENT');
@@ -127,19 +128,23 @@ test('API: document save/load round-trip; invalid input leaves the document unto
 
 test('API: input validation uses stable error codes', () => {
   const { sketch, boss } = makeBlock();
+  // @ts-expect-error the types reject this; the runtime must too
   throwsCode(() => api.sketches.create({ plane: 'Diagonal', entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: 1 }] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.sketches.create({ entities: [] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.sketches.create({ entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: -1 }] }), 'INVALID_ARGUMENT');
+  // @ts-expect-error the types reject this; the runtime must too
   throwsCode(() => api.sketches.create({ entities: [{ type: 'spline' }] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: 0, y: 0 }, corner2: { x: 0, y: 5 } }] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.extrude({ sketchId: sketch.sketchId, depth: 0 }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.extrude({ sketchId: sketch.sketchId, depth: NaN }), 'INVALID_ARGUMENT');
+  // @ts-expect-error the types reject this; the runtime must too
   throwsCode(() => api.features.extrude({ sketchId: sketch.sketchId, depth: 5, endCondition: 'upto' }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.extrude({ sketchId: 'missing', depth: 5 }), 'NOT_FOUND');
   throwsCode(() => api.features.revolve({ sketchId: sketch.sketchId, angle: 400 }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.update(boss, { type: 'fillet' }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.update(boss, { depth: -3 }), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.update('nope', { depth: 3 }), 'NOT_FOUND');
+  // @ts-expect-error the types reject this; the runtime must too
   throwsCode(() => api.features.setSuppressed(boss, 'yes'), 'INVALID_ARGUMENT');
   throwsCode(() => api.features.rollbackTo(99), 'INVALID_ARGUMENT');
   // Nothing above may have changed the model
