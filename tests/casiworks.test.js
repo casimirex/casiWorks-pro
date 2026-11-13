@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.js';
+import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.ts';
 import { featureEngine } from '../src/features/FeatureEngine.js';
 import {
   createSolidBox,
@@ -923,7 +923,7 @@ test('AssemblyManager Audit: Exploded view handling for 0 and 1 components witho
 // ==================== AUDIT REGRESSIONS (store, rebuild, IGES) ====================
 import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.ts';
 import { CAD_EXAMPLES } from '../src/utils/examples.ts';
-import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.js';
+import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.ts';
 import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.js';
 import { exportEngine as _exportEngineForIges } from '../src/kernel/ExportEngine.js';
 

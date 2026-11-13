@@ -57,7 +57,11 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [x] **T.1** Domain types (`types/`: Feature, SketchEntity, MassProperties, …) and `utils/` → `.ts`
 - [x] **T.2** Public API → `.ts` (typed API for script and add-in authors)
 - [x] **T.3** Store and rebuild → `.ts`
-- [ ] **T.4** Kernel → `.ts` (several steps: math/sketch, geometry, B-Rep/topology, import/export)
+- [ ] **T.4** Kernel → `.ts`
+  - [x] **T.4a** Sketch engine and constraint solver
+  - [ ] **T.4b** Geometry engine
+  - [ ] **T.4c** B-Rep and topology
+  - [ ] **T.4d** Import / export and material library
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
 - [ ] **T.6** Viewport and UI components → `.tsx`
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
@@ -92,10 +96,10 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 
 ## Phase 3 — Part modeling parity
 
-- [ ] **3.1** Sketch on any planar face, not only the three default planes
+- [ ] **3.1** Sketch on any planar face, not only the three default planes (also: clicks in sketch mode currently select the body as well)
 - [ ] **3.2** Constraint UI: add/show/delete geometric relations; fully-defined coloring
 - [ ] **3.3** Driving dimensions editable in the viewport
-- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset (the viewport currently draws only lines and circles; points and arcs are stored but not displayed)
+- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (factories exist in SketchEngine; the old mirror/offset helpers were removed as incorrect) (the viewport currently draws only lines and circles; points and arcs are stored but not displayed)
 - [ ] **3.5** Reference geometry: planes, axes, points, coordinate systems
 - [ ] **3.6** Hole wizard (counterbore, countersink, tapped) with standards tables
 - [ ] **3.7** Global variables and equations

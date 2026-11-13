@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import { viewportPicker } from './ViewportPicker';
-import { sketchEngine } from '../kernel/SketchEngine';
+import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary';
 
 /**
