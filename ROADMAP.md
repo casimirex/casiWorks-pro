@@ -22,7 +22,7 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 | Geometry | **Triangle-mesh kernel** (BSP CSG on polygons), verified by measured tests. No exact B-Rep yet (an earlier unused, incorrect B-Rep module was removed) |
 | Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); needs Phase 2 |
 | Display | Boolean cuts leave many thin triangles, so edge display shows stray fan lines around holes; resolved by the exact kernel |
-| STEP / IGES export | Faceted (triangles), not exact surfaces |
+| STEP / IGES export | Standards-compliant faceted solids (every face, shared vertices); not exact surfaces — needs Phase 2 |
 | Sketcher | Lines, rectangles, circles, points; constraint solver exists but has little UI |
 | Assemblies | Primitive shapes only (box, cylinder…), not real part documents |
 | Drawings / FEA | Work on the mesh; run on the UI thread |
@@ -62,7 +62,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.4a** Sketch engine and constraint solver
   - [x] **T.4b** Geometry engine (plus profile builder and CSG modules; geometry fixes with tests)
   - [x] **T.4c** B-Rep and topology — removed instead of converted: unused by the app, a duplicate of the mesh CSG, and measured wrong (see commit)
-  - [ ] **T.4d** Import / export and material library
+  - [x] **T.4d** Import / export and material library (plus standards-compliant faceted STEP and IGES 5.3)
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
 - [ ] **T.6** Viewport and UI components → `.tsx`
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block

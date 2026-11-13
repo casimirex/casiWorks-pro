@@ -395,16 +395,16 @@ test('ExportEngine & ImportEngine: DXF sketch round-trip preserves entity data',
   assert.ok(circle && Math.abs(circle.center.x - 25) < 1e-3 && Math.abs(circle.radius - 15) < 1e-3);
 });
 
-test('ExportEngine & ImportEngine: STEP AP214/AP242 and IGES 5.3 round-trip data exchange', async () => {
+test('ExportEngine & ImportEngine: STEP (faceted B-rep) and IGES 5.3 round-trip data exchange', async () => {
   const geom = new THREE.BoxGeometry(40, 25, 15);
 
-  // 1. STEP AP214/AP242 B-Rep export & import
+  // 1. STEP AP214 faceted B-rep export & import (detailed structure checks: exchange.test.ts)
   const stepBlob = exportEngine.exportSTEP(geom, 'TEST_BRACKET', { schema: 'AP214' });
   const stepText = await stepBlob.text();
   assert.ok(stepText.includes('ISO-10303-21;'), 'STEP must contain ISO-10303-21 header');
-  assert.ok(stepText.includes('MANIFOLD_SOLID_BREP'), 'STEP must define MANIFOLD_SOLID_BREP');
-  assert.ok(stepText.includes('ADVANCED_BREP_SHAPE_REPRESENTATION'), 'STEP must define ADVANCED_BREP');
-  assert.ok(stepText.includes('EDGE_LOOP'), 'STEP must define EDGE_LOOP entities');
+  assert.ok(stepText.includes('FACETED_BREP('), 'STEP must define a FACETED_BREP solid');
+  assert.ok(stepText.includes('FACETED_BREP_SHAPE_REPRESENTATION'), 'STEP must define the faceted shape representation');
+  assert.ok(stepText.includes('POLY_LOOP'), 'STEP faces must be POLY_LOOPs');
   assert.ok(stepText.includes('MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION'), 'STEP must include styling');
 
   const importedStep = importEngine.importSTEP(stepText);

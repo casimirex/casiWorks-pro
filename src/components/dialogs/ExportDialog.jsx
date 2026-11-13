@@ -73,7 +73,7 @@ export default function ExportDialog({ isOpen, onClose }) {
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="radio" name="format" checked={format === 'step'} onChange={() => setFormat('step')} />
-              <span><strong>STEP AP203/AP214</strong> — Standard ISO 10303 Solid Exchange (.stp)</span>
+              <span><strong>STEP AP214</strong> — ISO 10303 faceted solid, opens in all major CAD tools (.stp)</span>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="radio" name="format" checked={format === 'obj'} onChange={() => setFormat('obj')} />
@@ -81,7 +81,7 @@ export default function ExportDialog({ isOpen, onClose }) {
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="radio" name="format" checked={format === 'dxf'} onChange={() => setFormat('dxf')} />
-              <span><strong>DXF (AutoCAD)</strong> — 2D Drawing Exchange for Laser cutting & Sketch (.dxf)</span>
+              <span><strong>DXF (AutoCAD R12)</strong> — Triangulated 3D faces (3DFACE) of the model (.dxf)</span>
             </label>
           </div>
         </div>

@@ -8,15 +8,14 @@ export interface DXFOptions {
   version?: string;
 }
 export interface STEPOptions {
+  /** Default AP214 (automotive_design). */
   schema?: 'AP214' | 'AP242';
+  /** Display colour, 0..1 per channel. */
   colorR?: number;
   colorG?: number;
   colorB?: number;
-  maxFaces?: number;
 }
-export interface IGESOptions {
-  maxFaces?: number;
-}
+export type IGESOptions = Record<string, never>;
 
 /** 2D sketch entity as written to DXF (accepts the point entity's flat x/y). */
 export interface DXFEntity {
@@ -32,6 +31,57 @@ export interface DXFEntity {
   z?: number;
 }
 
+type Vec3 = [number, number, number];
+
+/** Weld coincident vertices (1e-6 mm) and drop degenerate triangles. */
+export function weldMesh(geometry: THREE.BufferGeometry): { points: Vec3[]; triangles: Vec3[] } {
+  const pos = geometry.getAttribute('position');
+  const index = geometry.index;
+  const points: Vec3[] = [];
+  const lookup = new Map<string, number>();
+  const q = (v: number) => (Math.round(v * 1e6) / 1e6 + 0);
+  const vertexId = (i: number): number => {
+    const p: Vec3 = [q(pos.getX(i)), q(pos.getY(i)), q(pos.getZ(i))];
+    const key = p.join(',');
+    let id = lookup.get(key);
+    if (id === undefined) {
+      id = points.length;
+      points.push(p);
+      lookup.set(key, id);
+    }
+    return id;
+  };
+  const triangles: Vec3[] = [];
+  const count = pos ? (index ? index.count : pos.count) : 0;
+  for (let t = 0; t + 2 < count; t += 3) {
+    const tri: Vec3 = [0, 1, 2].map(k => vertexId(index ? index.getX(t + k) : t + k)) as Vec3;
+    if (tri[0] !== tri[1] && tri[1] !== tri[2] && tri[0] !== tri[2]) triangles.push(tri);
+  }
+  return { points, triangles };
+}
+
+function triangleNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const n: Vec3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const len = Math.hypot(n[0], n[1], n[2]) || 1;
+  return [n[0] / len, n[1] / len, n[2] / len];
+}
+
+/** STEP REAL: always contains a decimal point; no exponent-less precision loss. */
+function stepReal(v: number): string {
+  if (!Number.isFinite(v)) return '0.';
+  const s = (Math.round(v * 1e6) / 1e6 + 0).toString();
+  return s.includes('.') || s.includes('e') ? s.replace('e', 'E') : s + '.';
+}
+
+/** IGES real: decimal point always present. */
+function igesReal(v: number): string {
+  if (!Number.isFinite(v)) return '0.0';
+  const s = (Math.round(v * 1e6) / 1e6 + 0).toString();
+  return s.includes('.') || s.includes('e') ? s.replace('e', 'D') : s + '.0';
+}
+
 export class ExportEngine {
   /**
    * Export Three.js BufferGeometry to STL format (Binary or ASCII) with exact normal preservation
@@ -40,116 +90,58 @@ export class ExportEngine {
    * @returns {Blob}
    */
   exportSTL(geometry: THREE.BufferGeometry | null | undefined, binary = true): Blob {
-    if (!geometry) {
-      throw new Error('No geometry provided for STL export');
-    }
+    if (!geometry) throw new Error('No geometry provided for STL export');
+    const geom = geometry.index ? geometry.toNonIndexed() : geometry;
+    const pos = geom.getAttribute('position');
+    const numTriangles = pos ? Math.floor(pos.count / 3) : 0;
 
-    let geom = geometry.clone();
-    if (geom.index) {
-      geom = geom.toNonIndexed();
-    }
-
-    if (!geom.getAttribute('normal')) {
-      geom.computeVertexNormals();
-    }
-
-    const posAttr = geom.getAttribute('position');
-    const normalAttr = geom.getAttribute('normal');
-    const numTriangles = posAttr ? Math.floor(posAttr.count / 3) : 0;
+    // Facet normals are always computed from the triangle (stored vertex normals
+    // may be smoothed across curved walls, which is wrong for STL facets)
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const facet = (t: number) => {
+      a.fromBufferAttribute(pos, t * 3);
+      b.fromBufferAttribute(pos, t * 3 + 1);
+      c.fromBufferAttribute(pos, t * 3 + 2);
+      const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+      const len = n.length();
+      return { n: len > 0 ? n.divideScalar(len) : n.set(0, 0, 1), verts: [a, b, c] };
+    };
+    const finite = (v: number) => (Number.isFinite(v) ? v : 0);
 
     if (binary) {
-      const bufferLength = 84 + numTriangles * 50;
-      const buffer = new ArrayBuffer(bufferLength);
+      const buffer = new ArrayBuffer(84 + numTriangles * 50);
       const writer = new DataView(buffer);
-
-      // 80-byte header
-      const headerStr = 'CasiWorks Pro 3D STL Binary Export - Exact Mesh B-Rep';
-      for (let i = 0; i < 80; i++) {
-        writer.setUint8(i, i < headerStr.length ? headerStr.charCodeAt(i) : 0x20);
-      }
-
+      // 80-byte header; must not start with "solid" (readers would treat the file as ASCII)
+      const header = 'CasiWorks Pro binary STL (millimetres)';
+      for (let i = 0; i < 80; i++) writer.setUint8(i, i < header.length ? header.charCodeAt(i) : 0x20);
       writer.setUint32(80, numTriangles, true);
-
       let offset = 84;
-      if (posAttr && posAttr.count >= 3) {
-        for (let i = 0; i < posAttr.count; i += 3) {
-          // Compute or retrieve facet normal
-          let nx = normalAttr ? normalAttr.getX(i) : 0;
-          let ny = normalAttr ? normalAttr.getY(i) : 0;
-          let nz = normalAttr ? normalAttr.getZ(i) : 1;
-
-          if (isNaN(nx) || !isFinite(nx)) nx = 0;
-          if (isNaN(ny) || !isFinite(ny)) ny = 0;
-          if (isNaN(nz) || !isFinite(nz)) nz = 1;
-
-          // If normal is zero or degenerate, calculate face normal from 3 vertices
-          if (Math.abs(nx) < 1e-7 && Math.abs(ny) < 1e-7 && Math.abs(nz) < 1e-7) {
-            const v0 = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-            const v1 = new THREE.Vector3(posAttr.getX(i + 1), posAttr.getY(i + 1), posAttr.getZ(i + 1));
-            const v2 = new THREE.Vector3(posAttr.getX(i + 2), posAttr.getY(i + 2), posAttr.getZ(i + 2));
-            const fn = new THREE.Vector3().subVectors(v1, v0).cross(new THREE.Vector3().subVectors(v2, v0)).normalize();
-            nx = isNaN(fn.x) ? 0 : fn.x;
-            ny = isNaN(fn.y) ? 0 : fn.y;
-            nz = isNaN(fn.z) ? 1 : fn.z;
-          }
-
-          writer.setFloat32(offset, nx, true); offset += 4;
-          writer.setFloat32(offset, ny, true); offset += 4;
-          writer.setFloat32(offset, nz, true); offset += 4;
-
-          // 3 Vertices
-          for (let v = 0; v < 3; v++) {
-            const vx = posAttr.getX(i + v);
-            const vy = posAttr.getY(i + v);
-            const vz = posAttr.getZ(i + v);
-            writer.setFloat32(offset, isNaN(vx) ? 0 : vx, true); offset += 4;
-            writer.setFloat32(offset, isNaN(vy) ? 0 : vy, true); offset += 4;
-            writer.setFloat32(offset, isNaN(vz) ? 0 : vz, true); offset += 4;
-          }
-
-          // Attribute byte count (0)
-          writer.setUint16(offset, 0, true); offset += 2;
+      for (let t = 0; t < numTriangles; t++) {
+        const { n, verts } = facet(t);
+        for (const v of [n, ...verts]) {
+          writer.setFloat32(offset, finite(v.x), true);
+          writer.setFloat32(offset + 4, finite(v.y), true);
+          writer.setFloat32(offset + 8, finite(v.z), true);
+          offset += 12;
         }
+        writer.setUint16(offset, 0, true); // attribute byte count
+        offset += 2;
       }
-
       return new Blob([buffer], { type: 'application/sla' });
-    } else {
-      let stl = 'solid CasiWorksModel\n';
-      if (posAttr && posAttr.count >= 3) {
-        for (let i = 0; i < posAttr.count; i += 3) {
-          let nx = normalAttr ? normalAttr.getX(i) : 0;
-          let ny = normalAttr ? normalAttr.getY(i) : 0;
-          let nz = normalAttr ? normalAttr.getZ(i) : 1;
-
-          if (isNaN(nx) || !isFinite(nx)) nx = 0;
-          if (isNaN(ny) || !isFinite(ny)) ny = 0;
-          if (isNaN(nz) || !isFinite(nz)) nz = 1;
-
-          if (Math.abs(nx) < 1e-7 && Math.abs(ny) < 1e-7 && Math.abs(nz) < 1e-7) {
-            const v0 = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-            const v1 = new THREE.Vector3(posAttr.getX(i + 1), posAttr.getY(i + 1), posAttr.getZ(i + 1));
-            const v2 = new THREE.Vector3(posAttr.getX(i + 2), posAttr.getY(i + 2), posAttr.getZ(i + 2));
-            const fn = new THREE.Vector3().subVectors(v1, v0).cross(new THREE.Vector3().subVectors(v2, v0)).normalize();
-            nx = isNaN(fn.x) ? 0 : fn.x;
-            ny = isNaN(fn.y) ? 0 : fn.y;
-            nz = isNaN(fn.z) ? 1 : fn.z;
-          }
-
-          stl += `  facet normal ${nx.toFixed(6)} ${ny.toFixed(6)} ${nz.toFixed(6)}\n`;
-          stl += '    outer loop\n';
-          for (let v = 0; v < 3; v++) {
-            const x = (isNaN(posAttr.getX(i + v)) ? 0 : posAttr.getX(i + v)).toFixed(6);
-            const y = (isNaN(posAttr.getY(i + v)) ? 0 : posAttr.getY(i + v)).toFixed(6);
-            const z = (isNaN(posAttr.getZ(i + v)) ? 0 : posAttr.getZ(i + v)).toFixed(6);
-            stl += `      vertex ${x} ${y} ${z}\n`;
-          }
-          stl += '    endloop\n';
-          stl += '  endfacet\n';
-        }
-      }
-      stl += 'endsolid CasiWorksModel\n';
-      return new Blob([stl], { type: 'text/plain' });
     }
+
+    const out: string[] = ['solid CasiWorksModel'];
+    const f6 = (v: number) => finite(v).toFixed(6);
+    for (let t = 0; t < numTriangles; t++) {
+      const { n, verts } = facet(t);
+      out.push(`  facet normal ${f6(n.x)} ${f6(n.y)} ${f6(n.z)}`, '    outer loop');
+      for (const v of verts) out.push(`      vertex ${f6(v.x)} ${f6(v.y)} ${f6(v.z)}`);
+      out.push('    endloop', '  endfacet');
+    }
+    out.push('endsolid CasiWorksModel', '');
+    return new Blob([out.join('\n')], { type: 'text/plain' });
   }
 
   /**
@@ -206,9 +198,11 @@ export class ExportEngine {
    * @returns {Blob}
    */
   exportDXF(entitiesOrGeometry: THREE.BufferGeometry | Array<DXFEntity | null> | null | undefined, options: DXFOptions = {}): Blob {
-    const version = (options.version || '2000').toUpperCase();
-    let acadVer = 'AC1015'; // 2000 default
-    if (version === 'R12' || version === 'AC1009') acadVer = 'AC1009';
+    // R12 by default: this writer emits the R12 structure (no handles, classes or
+    // object tables), which newer AutoCAD versions reject when labelled 2000+.
+    const version = (options.version || 'R12').toUpperCase();
+    let acadVer = 'AC1009';
+    if (version === '2000' || version === 'AC1015') acadVer = 'AC1015';
     else if (version === '2018' || version === 'AC1032') acadVer = 'AC1032';
 
     // Defensive coordinate formatting: handles negative decimals, zero without -0, and guards against NaNs
@@ -289,401 +283,207 @@ export class ExportEngine {
   }
 
   /**
-   * Export model to ISO 10303-21 STEP (AP214 / AP242 with Advanced B-Rep Solid Entities & Color Styling)
-   * Supports MANIFOLD_SOLID_BREP, ADVANCED_BREP_SHAPE_REPRESENTATION, ORIENTED_EDGE, EDGE_LOOP, ADVANCED_FACE,
-   * geometric surfaces, and color styling.
-   * @param {THREE.BufferGeometry} geometry
-   * @param {string} modelName
-   * @param {Object} options
-   * @returns {Blob}
+   * ISO 10303-21 STEP file with the solid as a faceted B-rep (FACETED_BREP of
+   * triangular POLY_LOOP faces over shared points). This is the standard STEP
+   * representation for a triangulated solid; it is exact for the mesh but not
+   * for the original curved surfaces (those need the exact kernel, Phase 2).
+   * Every triangle is written — there is no face limit.
    */
   exportSTEP(geometry: THREE.BufferGeometry | null | undefined, modelName = 'CASIWORKS_PART', options: STEPOptions = {}): Blob {
     if (!geometry) throw new Error('No geometry for STEP export');
-    let geom = geometry.clone();
-    if (geom.index) geom = geom.toNonIndexed();
-
-    if (!geom.getAttribute('normal')) {
-      geom.computeVertexNormals();
-    }
-
-    const pos = geom.getAttribute('position');
-    const normal = geom.getAttribute('normal');
-    // Standard ISO 8601 timestamp in STEP Part 21 (YYYY-MM-DDTHH:MM:SS)
+    const { points, triangles } = weldMesh(geometry);
+    const name = String(modelName || 'CASIWORKS_PART').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ap242 = options.schema === 'AP242';
+    const schema = ap242
+      ? "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }"
+      : 'AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }';
+    const apName = ap242 ? 'ap242_managed_model_based_3d_engineering' : 'automotive_design';
     const timestamp = new Date().toISOString().slice(0, 19);
-    const schema = options.schema === 'AP214' ? 'AUTOMOTIVE_DESIGN' : 'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF';
-    const safeModelName = String(modelName || 'CASIWORKS_PART').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const color = [options.colorR ?? 0.22, options.colorG ?? 0.74, options.colorB ?? 0.97].map(c => stepReal(Math.min(1, Math.max(0, c))));
 
-    // Color: Steel / Teal accent by default, or customizable
-    const colorR = options.colorR !== undefined ? options.colorR : 0.22;
-    const colorG = options.colorG !== undefined ? options.colorG : 0.74;
-    const colorB = options.colorB !== undefined ? options.colorB : 0.97;
+    const out: string[] = [];
+    out.push('ISO-10303-21;', 'HEADER;',
+      `FILE_DESCRIPTION(('CasiWorks Pro faceted solid (triangulated mesh, ${triangles.length} faces)'),'2;1');`,
+      `FILE_NAME('${name}.stp','${timestamp}',(''),(''),'CasiWorks Pro','CasiWorks Pro STEP writer','');`,
+      `FILE_SCHEMA(('${schema}'));`, 'ENDSEC;', 'DATA;',
+      "#1=APPLICATION_CONTEXT('mechanical design');",
+      `#2=APPLICATION_PROTOCOL_DEFINITION('international standard','${apName}',${ap242 ? 2014 : 2000},#1);`,
+      "#3=PRODUCT_CONTEXT('',#1,'mechanical');",
+      `#4=PRODUCT('${name}','${name}','',(#3));`,
+      "#5=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));",
+      "#6=PRODUCT_DEFINITION_FORMATION('','',#4);",
+      "#7=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');",
+      "#8=PRODUCT_DEFINITION('design','',#6,#7);",
+      "#9=PRODUCT_DEFINITION_SHAPE('','',#8);",
+      '#10=SHAPE_DEFINITION_REPRESENTATION(#9,#11);',
+      `#11=FACETED_BREP_SHAPE_REPRESENTATION('${name}',(#12,#13),#14);`,
+      "#12=AXIS2_PLACEMENT_3D('',#15,#16,#17);",
+      `#13=FACETED_BREP('${name}',#18);`,
+      "#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#19)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20,#21,#22)) REPRESENTATION_CONTEXT('',''));",
+      "#15=CARTESIAN_POINT('',(0.,0.,0.));",
+      "#16=DIRECTION('',(0.,0.,1.));",
+      "#17=DIRECTION('',(1.,0.,0.));",
+    );
 
-    let step = `ISO-10303-21;
-HEADER;
-FILE_DESCRIPTION(('CasiWorks Pro High-Fidelity Solid B-Rep STEP Export', '3D Mechanical Solid Model', 'CAX-IF Rec.Pracs. Solid B-Rep'), '2;1');
-FILE_NAME('${safeModelName}.stp', '${timestamp}', ('Mechanical Engineer'), ('CasiWorks Pro Engineering'), 'CasiWorks Pro Kernel 2.0', 'CasiWorks Pro AP214/AP242 Exporter', '');
-FILE_SCHEMA(('${schema}'));
-ENDSEC;
-
-DATA;
-#1=APPLICATION_CONTEXT('core data for automotive and aerospace mechanical design processes');
-#2=APPLICATION_PROTOCOL_DEFINITION('international standard','${schema.toLowerCase()}',2020,#1);
-#3=PRODUCT_CONTEXT('part definition context',#1,'mechanical');
-#4=PRODUCT('${safeModelName}','${safeModelName}','Solid B-Rep Part',(#3));
-#5=PRODUCT_DEFINITION_FORMATION('1.0','Initial Release',#4);
-#6=PRODUCT_DEFINITION('design','Mechanical CAD Solid Model',#5,#3);
-#7=PRODUCT_DEFINITION_SHAPE('${safeModelName}_SHAPE','Part 3D Shape Description',#6);
-#8=SHAPE_DEFINITION_REPRESENTATION(#7,#9);
-#9=ADVANCED_BREP_SHAPE_REPRESENTATION('${safeModelName}_BREP_REP',(#10,#11),#12);
-#10=AXIS2_PLACEMENT_3D('Origin Placement',#13,#14,#15);
-#11=MANIFOLD_SOLID_BREP('${safeModelName}_SOLID',#16);
-#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#17)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#18,#19,#20)) REPRESENTATION_CONTEXT('3D Context','Mechanical'));
-#13=CARTESIAN_POINT('Origin Coordinates',(0.,0.,0.));
-#14=DIRECTION('Z Vector Axis',(0.,0.,1.));
-#15=DIRECTION('X Vector Axis',(1.,0.,0.));
-#16=CLOSED_SHELL('${safeModelName}_SHELL',(`;
-
-    let entityId = 30;
-    const faceIds: string[] = [];
-
-    // Group triangles or export bounded planar faces
-    const numTriangles = pos ? Math.min(Math.floor(pos.count / 3), options.maxFaces || 1200) : 0;
-
-    let entitiesBuffer = '';
-
-    for (let t = 0; t < numTriangles; t++) {
-      const i = t * 3;
-
-      // 3 Cartesian Points
-      const cp1 = entityId++;
-      const cp2 = entityId++;
-      const cp3 = entityId++;
-      const x1 = (isNaN(pos.getX(i)) ? 0 : pos.getX(i)).toFixed(4);
-      const y1 = (isNaN(pos.getY(i)) ? 0 : pos.getY(i)).toFixed(4);
-      const z1 = (isNaN(pos.getZ(i)) ? 0 : pos.getZ(i)).toFixed(4);
-      const x2 = (isNaN(pos.getX(i + 1)) ? 0 : pos.getX(i + 1)).toFixed(4);
-      const y2 = (isNaN(pos.getY(i + 1)) ? 0 : pos.getY(i + 1)).toFixed(4);
-      const z2 = (isNaN(pos.getZ(i + 1)) ? 0 : pos.getZ(i + 1)).toFixed(4);
-      const x3 = (isNaN(pos.getX(i + 2)) ? 0 : pos.getX(i + 2)).toFixed(4);
-      const y3 = (isNaN(pos.getY(i + 2)) ? 0 : pos.getY(i + 2)).toFixed(4);
-      const z3 = (isNaN(pos.getZ(i + 2)) ? 0 : pos.getZ(i + 2)).toFixed(4);
-
-      entitiesBuffer += `#${cp1}=CARTESIAN_POINT('',(${x1},${y1},${z1}));\n`;
-      entitiesBuffer += `#${cp2}=CARTESIAN_POINT('',(${x2},${y2},${z2}));\n`;
-      entitiesBuffer += `#${cp3}=CARTESIAN_POINT('',(${x3},${y3},${z3}));\n`;
-
-      // 3 Vertex Points
-      const vp1 = entityId++;
-      const vp2 = entityId++;
-      const vp3 = entityId++;
-      entitiesBuffer += `#${vp1}=VERTEX_POINT('',#${cp1});\n`;
-      entitiesBuffer += `#${vp2}=VERTEX_POINT('',#${cp2});\n`;
-      entitiesBuffer += `#${vp3}=VERTEX_POINT('',#${cp3});\n`;
-
-      // Directions & Lines for edges
-      const d1 = entityId++, line1 = entityId++;
-      const d2 = entityId++, line2 = entityId++;
-      const d3 = entityId++, line3 = entityId++;
-
-      entitiesBuffer += `#${d1}=VECTOR('',#14,1.0);\n`;
-      entitiesBuffer += `#${line1}=LINE('',#${cp1},#${d1});\n`;
-      entitiesBuffer += `#${d2}=VECTOR('',#14,1.0);\n`;
-      entitiesBuffer += `#${line2}=LINE('',#${cp2},#${d2});\n`;
-      entitiesBuffer += `#${d3}=VECTOR('',#14,1.0);\n`;
-      entitiesBuffer += `#${line3}=LINE('',#${cp3},#${d3});\n`;
-
-      // 3 Edge Curves
-      const ec1 = entityId++;
-      const ec2 = entityId++;
-      const ec3 = entityId++;
-      entitiesBuffer += `#${ec1}=EDGE_CURVE('',#${vp1},#${vp2},#${line1},.T.);\n`;
-      entitiesBuffer += `#${ec2}=EDGE_CURVE('',#${vp2},#${vp3},#${line2},.T.);\n`;
-      entitiesBuffer += `#${ec3}=EDGE_CURVE('',#${vp3},#${vp1},#${line3},.T.);\n`;
-
-      // 3 Oriented Edges
-      const oe1 = entityId++;
-      const oe2 = entityId++;
-      const oe3 = entityId++;
-      entitiesBuffer += `#${oe1}=ORIENTED_EDGE('',*,*,#${ec1},.T.);\n`;
-      entitiesBuffer += `#${oe2}=ORIENTED_EDGE('',*,*,#${ec2},.T.);\n`;
-      entitiesBuffer += `#${oe3}=ORIENTED_EDGE('',*,*,#${ec3},.T.);\n`;
-
-      // Edge Loop
-      const loopId = entityId++;
-      entitiesBuffer += `#${loopId}=EDGE_LOOP('',(#${oe1},#${oe2},#${oe3}));\n`;
-
-      // Face Outer Bound
-      const boundId = entityId++;
-      entitiesBuffer += `#${boundId}=FACE_OUTER_BOUND('',#${loopId},.T.);\n`;
-
-      // Surface Normal & Axis Placement for Geometric Plane Surface
-      const nxVal = normal ? normal.getX(i) : 0;
-      const nyVal = normal ? normal.getY(i) : 0;
-      const nzVal = normal ? normal.getZ(i) : 1;
-      const nx = (isNaN(nxVal) || !isFinite(nxVal) ? 0 : nxVal).toFixed(4);
-      const ny = (isNaN(nyVal) || !isFinite(nyVal) ? 0 : nyVal).toFixed(4);
-      const nz = (isNaN(nzVal) || !isFinite(nzVal) ? 1 : nzVal).toFixed(4);
-
-      const normDir = entityId++;
-      const axisPlace = entityId++;
-      const planeSurf = entityId++;
-      entitiesBuffer += `#${normDir}=DIRECTION('FaceNormal',(${nx},${ny},${nz}));\n`;
-      // In STEP AXIS2_PLACEMENT_3D, ref direction cannot be parallel/colinear to normal axis
-      const refDirId = Math.abs(parseFloat(nx)) > 0.85 ? '#21' : '#15';
-      entitiesBuffer += `#${axisPlace}=AXIS2_PLACEMENT_3D('FacePlacement',#${cp1},#${normDir},${refDirId});\n`;
-      entitiesBuffer += `#${planeSurf}=PLANE('PlanarSurface',#${axisPlace});\n`;
-
-      // ADVANCED_FACE
-      const faceId = entityId++;
-      entitiesBuffer += `#${faceId}=ADVANCED_FACE('Face_${t+1}',(#${boundId}),#${planeSurf},.T.);\n`;
-      faceIds.push(`#${faceId}`);
+    // Shared points, then one FACE per triangle
+    let id = 30;
+    const pointIds = points.map(() => id++);
+    const body: string[] = points.map((p, i) => `#${pointIds[i]}=CARTESIAN_POINT('',(${stepReal(p[0])},${stepReal(p[1])},${stepReal(p[2])}));`);
+    const faceIds: number[] = [];
+    for (const [a, b, c] of triangles) {
+      const loop = id++;
+      const bound = id++;
+      const face = id++;
+      body.push(
+        `#${loop}=POLY_LOOP('',(#${pointIds[a]},#${pointIds[b]},#${pointIds[c]}));`,
+        `#${bound}=FACE_OUTER_BOUND('',#${loop},.T.);`,
+        `#${face}=FACE('',(#${bound}));`,
+      );
+      faceIds.push(face);
     }
 
-    step += (faceIds.length > 0 ? faceIds.join(',') : '') + '));\n';
-    step += `#17=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#18,'distance_accuracy_value','Solid Tolerance');\n`;
-    step += `#18=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n`;
-    step += `#19=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n`;
-    step += `#20=(NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT());\n`;
-    step += `#21=DIRECTION('Y Vector Axis',(0.,1.,0.));\n`;
+    out.push(`#18=CLOSED_SHELL('',(${faceIds.map(f => '#' + f).join(',')}));`,
+      "#19=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-06),#20,'distance_accuracy_value','');",
+      '#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));',
+      '#21=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));',
+      '#22=(NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT());',
+      ...body);
 
-    // Append B-Rep entities
-    step += entitiesBuffer;
-
-    // Color Styling Entities (AP214 / AP242 Presentation Model)
-    const colorId = entityId++;
-    const fillColourId = entityId++;
-    const fillStyleId = entityId++;
-    const surfaceStyleAreaId = entityId++;
-    const sideStyleId = entityId++;
-    const surfaceUsageId = entityId++;
-    const presStyleAssignId = entityId++;
-    const styledItemId = entityId++;
-    const mechPresRepId = entityId++;
-
-    step += `#${colorId}=COLOUR_RGB('SolidColor',${colorR.toFixed(3)},${colorG.toFixed(3)},${colorB.toFixed(3)});\n`;
-    step += `#${fillColourId}=FILL_AREA_STYLE_COLOUR('FillColour',#${colorId});\n`;
-    step += `#${fillStyleId}=FILL_AREA_STYLE('FillStyle',(#${fillColourId}));\n`;
-    step += `#${surfaceStyleAreaId}=SURFACE_STYLE_FILL_AREA(#${fillStyleId});\n`;
-    step += `#${sideStyleId}=SURFACE_SIDE_STYLE('SideStyle',(#${surfaceStyleAreaId}));\n`;
-    step += `#${surfaceUsageId}=SURFACE_STYLE_USAGE(.BOTH.,#${sideStyleId});\n`;
-    step += `#${presStyleAssignId}=PRESENTATION_STYLE_ASSIGNMENT((#${surfaceUsageId}));\n`;
-    step += `#${styledItemId}=STYLED_ITEM('StyledSolid',(#${presStyleAssignId}),#11);\n`;
-    step += `#${mechPresRepId}=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('Presentation',(#${styledItemId}),#12);\n`;
-
-    step += `ENDSEC;\nEND-ISO-10303-21;\n`;
-    return new Blob([step], { type: 'application/step' });
+    // Colour (presentation)
+    const [cRgb, cFill, cFillStyle, cArea, cSide, cUsage, cAssign, cStyled, cPres] = Array.from({ length: 9 }, () => id++);
+    out.push(
+      `#${cRgb}=COLOUR_RGB('',${color.join(',')});`,
+      `#${cFill}=FILL_AREA_STYLE_COLOUR('',#${cRgb});`,
+      `#${cFillStyle}=FILL_AREA_STYLE('',(#${cFill}));`,
+      `#${cArea}=SURFACE_STYLE_FILL_AREA(#${cFillStyle});`,
+      `#${cSide}=SURFACE_SIDE_STYLE('',(#${cArea}));`,
+      `#${cUsage}=SURFACE_STYLE_USAGE(.BOTH.,#${cSide});`,
+      `#${cAssign}=PRESENTATION_STYLE_ASSIGNMENT((#${cUsage}));`,
+      `#${cStyled}=STYLED_ITEM('',(#${cAssign}),#13);`,
+      `#${cPres}=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#${cStyled}),#14);`,
+      'ENDSEC;', 'END-ISO-10303-21;', '');
+    return new Blob([out.join('\n')], { type: 'application/step' });
   }
 
   /**
-   * Export model to IGES 5.3 format (Initial Graphics Exchange Specification)
-   * Implements complete 80-column fixed-record format with:
-   * Entity 186: Manifold Solid B-Rep Object (MSBO)
-   * Entity 514: Shell
-   * Entity 510: Face
-   * Entity 508: Loop
-   * Entity 504: Edge
-   * Entity 502: Vertex List
-   * Entity 128: Rational B-Spline Surface / 108: Plane Surface
-   * @param {THREE.BufferGeometry} geometry
-   * @param {string} modelName
-   * @param {Object} options
-   * @returns {Blob}
+   * IGES 5.3 file with the solid as a Manifold Solid B-Rep Object (entity 186):
+   * Vertex List (502/1), Edge List (504/1) with a Line (110) per edge, a Loop
+   * (508/1) on a Plane (108/0) per triangle, Faces (510/1), a closed Shell
+   * (514/1). Edges are shared between adjacent faces. Every triangle is
+   * written — there is no face limit.
    */
-  exportIGES(geometry: THREE.BufferGeometry | null | undefined, modelName = 'CASIWORKS_PART', options: IGESOptions = {}): Blob {
+  exportIGES(geometry: THREE.BufferGeometry | null | undefined, modelName = 'CASIWORKS_PART', _options: IGESOptions = {}): Blob {
     if (!geometry) throw new Error('No geometry for IGES export');
-    let geom = geometry.clone();
-    if (geom.index) geom = geom.toNonIndexed();
+    const { points, triangles } = weldMesh(geometry);
+    const name = String(modelName || 'CASIWORKS_PART').replace(/[,;]/g, '_');
 
-    if (!geom.getAttribute('normal')) {
-      geom.computeVertexNormals();
-    }
+    const pad = (v: unknown, len: number, left = true) => {
+      const str = String(v ?? '');
+      return (left ? str.padStart(len, ' ') : str.padEnd(len, ' ')).slice(0, len);
+    };
+    const seq = (section: string, n: number) => section + String(n).padStart(7, ' ');
+    const H = (text: string) => `${text.length}H${text}`;
 
-    const pos = geom.getAttribute('position');
-    const normal = geom.getAttribute('normal');
-    const numTriangles = pos ? Math.min(Math.floor(pos.count / 3), options.maxFaces || 800) : 0;
+    // Wrap parameters into records of up to `width` characters without
+    // splitting a parameter across records.
+    const wrap = (params: string[], width: number): string[] => {
+      const records: string[] = [];
+      let current = '';
+      params.forEach((p, i) => {
+        const token = p + (i === params.length - 1 ? ';' : ',');
+        if (current && current.length + token.length > width) {
+          records.push(current);
+          current = '';
+        }
+        current += token;
+      });
+      if (current) records.push(current);
+      return records;
+    };
 
-    // Helpers for IGES 80-column fixed card formatting (strict 80 characters per line)
-    const padRight = (str: unknown, len: number) => String(str ?? '').padEnd(len, ' ').substring(0, len);
-    const padLeft = (str: unknown, len: number) => String(str ?? '').padStart(len, ' ').substring(0, len);
-    const formatSeq = (type: string, seq: number) => type + String(seq).padStart(7, ' ').substring(0, 7);
-
-    const startLines: string[] = [];
-    const globalLines: string[] = [];
-    const dirCards: string[] = [];
-    const paramCards: string[] = [];
-
-    // --- START SECTION (S) ---
-    const startText = `CasiWorks Pro IGES 5.3 Manifold Solid B-Rep Exporter (Entity 186 MSBO) - ${modelName}`;
-    startLines.push(padRight(startText, 72) + formatSeq('S', 1));
-
-    // --- GLOBAL SECTION (G) ---
-    // Delimiter: comma ',', Terminator: semicolon ';'
-    // IGES date format YYYYMMDD.HHNNSS (15 chars)
+    // ---- Start and Global sections
     const iso = new Date().toISOString();
     const timestamp = `${iso.slice(0, 10).replace(/-/g, '')}.${iso.slice(11, 19).replace(/:/g, '')}`;
-    // Hollerith string: <length>H<text>. Length is derived, never hand-counted.
-    const H = (s: string) => `${String(s).length}H${s}`;
-    const gParams = [
-      "1H,", "1H;", H('CasiWorks Engineering'), H('CasiWorks Model'),
-      H('CasiWorks Pro'), H('Version 2.0'), "32", "38", "6", "308", "15",
-      "1.0", "2", "2HMM", "1", "1.0",
-      H(timestamp), "0.001", "1000.0", H('Designer'), H('Company Org'), "11", "0"
+    const maxCoord = points.reduce((m, p) => Math.max(m, Math.abs(p[0]), Math.abs(p[1]), Math.abs(p[2])), 0);
+    const startLines = [pad(`CasiWorks Pro IGES 5.3 export: ${name} (manifold solid B-rep of a triangulated mesh)`, 72, false) + seq('S', 1)];
+    const global = [
+      '1H,', '1H;', H(name), H(`${name}.igs`), H('CasiWorks Pro'), H('CasiWorks Pro IGES writer'),
+      '32', '38', '6', '308', '15', // integer bits, single/double precision magnitude & significance
+      H(name),        // 12 receiving system product id
+      '1.0',          // 13 model space scale
+      '2', H('MM'),   // 14-15 units flag and name (millimetres)
+      '1', '1.0',     // 16-17 line weight gradations and maximum width
+      H(timestamp),   // 18 file generation date
+      '0.000001',     // 19 minimum resolution
+      igesReal(Math.max(1, maxCoord)), // 20 maximum coordinate value
+      H('CasiWorks Pro'), H('CasiWorks Pro'), // 21-22 author and organisation
+      '11',           // 23 IGES version 5.3
+      '0',            // 24 drafting standard
+      H(timestamp),   // 25 model creation date
     ];
-    const gStr = gParams.join(',') + ';';
-    let gOffset = 0;
-    let gSeq = 1;
-    while (gOffset < gStr.length) {
-      const chunk = gStr.substring(gOffset, gOffset + 72);
-      globalLines.push(padRight(chunk, 72) + formatSeq('G', gSeq++));
-      gOffset += 72;
-    }
+    const globalLines = wrap(global, 72).map((r, i) => pad(r, 72, false) + seq('G', i + 1));
 
-    // --- DIRECTORY ENTRY (D) & PARAMETER DATA (P) SECTIONS ---
-    let deSeq = 1;
-    let paramSeq = 1;
+    // ---- Directory and Parameter sections
+    const dirLines: string[] = [];
+    const paramLines: string[] = [];
+    const add = (type: number, form: number, params: Array<string | number>, label: string, dependent = true): number => {
+      const de = dirLines.length + 1;
+      const firstParam = paramLines.length + 1;
+      const records = wrap([String(type), ...params.map(String)], 64);
+      for (const r of records) paramLines.push(pad(r, 64, false) + pad(de, 8) + seq('P', paramLines.length + 1));
+      const status = dependent ? '00010000' : '00000000';
+      dirLines.push(
+        pad(type, 8) + pad(firstParam, 8) + pad(0, 8) + pad(0, 8) + pad(0, 8) + pad(0, 8) + pad(0, 8) + pad(0, 8) + pad(status, 8) + seq('D', de),
+        pad(type, 8) + pad(0, 8) + pad(0, 8) + pad(records.length, 8) + pad(form, 8) + pad('', 8) + pad('', 8) + pad(label, 8, false) + pad(0, 8) + seq('D', de + 1),
+      );
+      return de;
+    };
 
-    // Helper to add an entity to D & P sections
-    // Returns the 1-based index of the entity's first Directory Entry line
-    function addEntity(type: number, paramsArray: Array<string | number>, label = '', formNum = 0): number {
-      const deIndex = deSeq;
-      const paramStart = paramSeq;
+    // Vertex list (form 1)
+    const vertexList = add(502, 1, [points.length, ...points.flatMap(p => p.map(igesReal))], 'VERTICES');
 
-      // Format parameter string: 'type, param1, param2, ...;'
-      const pStr = `${type},${paramsArray.join(',')};`;
-      let pOffset = 0;
-      let lineCount = 0;
-      while (pOffset < pStr.length) {
-        const chunk = pStr.substring(pOffset, pOffset + 64);
-        const card = padRight(chunk, 64) + padLeft(String(deIndex), 8) + formatSeq('P', paramSeq++);
-        paramCards.push(card);
-        lineCount++;
-        pOffset += 64;
+    // Undirected edges, each with a model-space line
+    const edgeIndex = new Map<string, number>(); // "min_max" -> 1-based index in the edge list
+    const edges: Array<[number, number]> = [];
+    for (const tri of triangles) {
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k];
+        const b = tri[(k + 1) % 3];
+        const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+        if (!edgeIndex.has(key)) {
+          edges.push(a < b ? [a, b] : [b, a]);
+          edgeIndex.set(key, edges.length);
+        }
       }
-
-      // 2 D-cards (each exactly 80 columns)
-      // Line 1: Type(8) Ptr(8) Struct(8) Font(8) Level(8) View(8) Trans(8) LabelDisp(8) Status(8) D#
-      const d1 = padLeft(String(type), 8) +
-                 padLeft(String(paramStart), 8) +
-                 padLeft('0', 8) +
-                 padLeft('1', 8) +
-                 padLeft('0', 8) +
-                 padLeft('0', 8) +
-                 padLeft('0', 8) +
-                 padLeft('0', 8) +
-                 padLeft('00010001', 8) +
-                 formatSeq('D', deSeq++);
-
-      // Line 2: Type(8) Weight(8) Color(8) LineCount(8) Form(8) Res(8) Res(8) Label(8) Subscript(8) D#
-      const d2 = padLeft(String(type), 8) +
-                 padLeft('1', 8) +
-                 padLeft('7', 8) + // Cyan / Blue color
-                 padLeft(String(lineCount), 8) +
-                 padLeft(String(formNum), 8) +
-                 padLeft('0', 8) +
-                 padLeft('0', 8) +
-                 padRight(label, 8) +
-                 padLeft('0', 8) +
-                 formatSeq('D', deSeq++);
-
-      dirCards.push(d1, d2);
-      return deIndex;
     }
+    const lineDEs = edges.map(([a, b]) => add(110, 0, [...points[a], ...points[b]].map(igesReal), 'EDGECRV'));
+    const edgeList = add(504, 1, [edges.length, ...edges.flatMap(([a, b], i) => [lineDEs[i], vertexList, a + 1, vertexList, b + 1])], 'EDGES');
 
-    // 1. Entity 502: Vertex List (coordinates of all triangle vertices)
-    const vertCoords: string[] = [];
-    for (let t = 0; t < numTriangles; t++) {
-      const i = t * 3;
-      vertCoords.push(pos.getX(i).toFixed(4), pos.getY(i).toFixed(4), pos.getZ(i).toFixed(4));
-      vertCoords.push(pos.getX(i+1).toFixed(4), pos.getY(i+1).toFixed(4), pos.getZ(i+1).toFixed(4));
-      vertCoords.push(pos.getX(i+2).toFixed(4), pos.getY(i+2).toFixed(4), pos.getZ(i+2).toFixed(4));
-    }
-    const vertexCount = numTriangles * 3;
-    const vertexEntityDE = addEntity(502, [vertexCount, ...vertCoords], 'VERTICES');
-
-    // 2. Entity 504: Edge Entities & Entity 508: Loop Entities & Entity 128/108: Surfaces & Entity 510: Faces
+    // One planar face per triangle
     const faceDEs: number[] = [];
-
-    for (let t = 0; t < numTriangles; t++) {
-      const vBase = t * 3 + 1; // 1-based vertex index in 502
-      const v1 = vBase;
-      const v2 = vBase + 1;
-      const v3 = vBase + 2;
-
-      // Create 3 Edges for the triangle (Entity 504)
-      // Form 1 = line segment connecting vertex list indices
-      const e1 = addEntity(504, [vertexEntityDE, v1, vertexEntityDE, v2, 0], 'EDGE', 1);
-      const e2 = addEntity(504, [vertexEntityDE, v2, vertexEntityDE, v3, 0], 'EDGE', 1);
-      const e3 = addEntity(504, [vertexEntityDE, v3, vertexEntityDE, v1, 0], 'EDGE', 1);
-
-      // Create Loop Entity 508 (references 3 edges with orientation 1 = same direction)
-      const loopDE = addEntity(508, [
-        1, // Loop type: 1 = outer loop
-        3, // Count of edges
-        e1, 1, 0,
-        e2, 1, 0,
-        e3, 1, 0
-      ], 'LOOP');
-
-      // Create Surface: Rational B-Spline Surface (Entity 128) representing planar triangle facet
-      const i = t * 3;
-      const p1x = pos.getX(i).toFixed(4), p1y = pos.getY(i).toFixed(4), p1z = pos.getZ(i).toFixed(4);
-      const p2x = pos.getX(i+1).toFixed(4), p2y = pos.getY(i+1).toFixed(4), p2z = pos.getZ(i+1).toFixed(4);
-      const p3x = pos.getX(i+2).toFixed(4), p3y = pos.getY(i+2).toFixed(4), p3z = pos.getZ(i+2).toFixed(4);
-
-      // 128 NURBS parameters: K1=1, K2=1, M1=1, M2=1, PROP1=0, PROP2=0, PROP3=1, PROP4=0, PROP5=0
-      // Knots: 0,0,1,1 and 0,0,1,1; Weights: 1,1,1,1; Control Points
-      const surfDE = addEntity(128, [
-        1, 1, 1, 1, 0, 0, 1, 0, 0,
-        0.0, 0.0, 1.0, 1.0,
-        0.0, 0.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0,
-        p1x, p1y, p1z,
-        p2x, p2y, p2z,
-        p3x, p3y, p3z,
-        p1x, p1y, p1z,
-        0.0, 1.0, 0.0, 1.0
-      ], 'SURF128');
-
-      // Create Face Entity 510 (references Surface DE, outer loop DE)
-      const faceDE = addEntity(510, [
-        surfDE,
-        1,       // Outer loop count
-        1,       // Outer loop orientation
-        loopDE
-      ], 'FACE');
-
-      faceDEs.push(faceDE);
+    for (const tri of triangles) {
+      const loopParams: Array<string | number> = [3];
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k];
+        const b = tri[(k + 1) % 3];
+        const idx = edgeIndex.get(a < b ? `${a}_${b}` : `${b}_${a}`)!;
+        // TYPE 0 = edge, edge list, index, orientation (1 agrees with the edge's direction), 0 parameter-space curves
+        loopParams.push(0, edgeList, idx, a < b ? 1 : 0, 0);
+      }
+      const loop = add(508, 1, loopParams, 'LOOP');
+      const [pa, pb, pc] = tri.map(i => points[i]);
+      const n = triangleNormal(pa, pb, pc);
+      const d = n[0] * pa[0] + n[1] * pa[1] + n[2] * pa[2];
+      const plane = add(108, 0, [...n, d].map(igesReal).concat(['0', '0.0', '0.0', '0.0', '0.0']), 'PLANE');
+      faceDEs.push(add(510, 1, [plane, 1, 1, loop], 'FACE'));
     }
 
-    // 3. Entity 514: Shell Entity
-    // Param: number of faces, then for each face: face DE pointer, orientation flag (1)
-    const shellParams = [faceDEs.length];
-    faceDEs.forEach(fde => {
-      shellParams.push(fde, 1);
-    });
-    const shellDE = addEntity(514, shellParams, 'SHELL');
+    const shell = add(514, 1, [faceDEs.length, ...faceDEs.flatMap(f => [f, 1])], 'SHELL');
+    add(186, 0, [shell, 1, 0], 'SOLID', false);
 
-    // 4. Entity 186: Manifold Solid B-Rep Object (MSBO)
-    // Param: Shell DE pointer, Orientation flag (1 = positive), Number of void shells (0)
-    addEntity(186, [shellDE, 1, 0], 'MSBO');
-
-    // --- TERMINATE SECTION (T) ---
-    const termCard = `S${padLeft(String(startLines.length), 7)}` +
-                     `G${padLeft(String(globalLines.length), 7)}` +
-                     `D${padLeft(String(dirCards.length), 7)}` +
-                     `P${padLeft(String(paramCards.length), 7)}` +
-                     padRight('', 40) +
-                     formatSeq('T', 1);
-
-    const fullIges = [
-      ...startLines,
-      ...globalLines,
-      ...dirCards,
-      ...paramCards,
-      termCard
-    ].join('\n') + '\n';
-
-    return new Blob([fullIges], { type: 'application/iges' });
+    const terminate = pad(`S${pad(startLines.length, 7)}G${pad(globalLines.length, 7)}D${pad(dirLines.length, 7)}P${pad(paramLines.length, 7)}`, 72, false) + seq('T', 1);
+    const text = [...startLines, ...globalLines, ...dirLines, ...paramLines, terminate].join('\n') + '\n';
+    return new Blob([text], { type: 'application/iges' });
   }
 
   downloadFile(blobOrString: Blob | string, filename: string, mimeType = 'text/plain'): void {

@@ -31,7 +31,11 @@ export class MaterialLibrary {
       yieldStrength: properties.yieldStrength || 250e6,
       color: properties.color || '#999999',
     };
-    this.threeMaterialCache.delete(key);
+    // Cache entries are keyed per render mode; drop both so the new colour shows
+    for (const wireframe of [false, true]) {
+      this.threeMaterialCache.get(`${key}_${wireframe}`)?.dispose();
+      this.threeMaterialCache.delete(`${key}_${wireframe}`);
+    }
   }
 
   /** Shared (cached) render material for a material key. Callers must clone before modifying. */

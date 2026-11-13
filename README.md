@@ -176,20 +176,25 @@ export writes faceted (triangulated) geometry.
   - High-fidelity scalable vector graphics (**SVG**) export with title block, borders, and styled CSS layers.
   - AutoCAD **DXF** export structured into `VISIBLE`, `HIDDEN`, and `DIMENSION` layers.
 
-### 7. CAD Data Exchange (STEP, IGES, STL, DXF)
-- **ISO 10303-21 STEP (AP214 / AP242)**:
-  - Full B-Rep solid entities: `MANIFOLD_SOLID_BREP`, `ADVANCED_BREP_SHAPE_REPRESENTATION`, `ORIENTED_EDGE`, `EDGE_LOOP`, `ADVANCED_FACE`, `PLANE` surface definitions, and `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` with RGB styling.
-  - Bidirectional parser in `ImportEngine.js` reconstructing 3D geometries.
-- **IGES 5.3 (Initial Graphics Exchange Specification)**:
-  - 80-column fixed records (Start S, Global G, Directory Entry D, Parameter Data P, Terminate T).
-  - Supports Entity 186 (Manifold Solid B-Rep Object - MSBO), 514 (Shell), 510 (Face), 508 (Loop), 504 (Edge), 502 (Vertex List), 128 (Rational B-Spline Surface).
-  - Bidirectional parser reconstructing faces and meshes.
-- **Binary & ASCII STL**:
-  - IEEE 754 32-bit floating point normal and triangle arrays with exact coordinate preservation.
-- **AutoCAD DXF**:
-  - 2D sketch entities (`LINE`, `CIRCLE`, `ARC`, `RECT`, `POINT`) and 3D wireframe mesh (`3DFACE`).
-- **Lossless Project JSON**:
-  - Full serialization and restoration of feature history, sketch entities, geometric constraints, dimensions, materials, and assembly mates.
+### 7. CAD Data Exchange (STEP, IGES, STL, OBJ, DXF)
+All solid exports are triangulated meshes (exact curved surfaces need the exact
+kernel, roadmap 2.7). Every face is written; `tests/exchange.test.ts` checks each
+file against its standard's structure with parsers independent of the importer,
+then round-trips all examples with exact volume.
+- **STEP (ISO 10303-21, AP214; AP242 optional)**: faceted B-rep — `FACETED_BREP` /
+  `FACETED_BREP_SHAPE_REPRESENTATION`, a `CLOSED_SHELL` of triangular `POLY_LOOP`
+  faces over shared points, millimetre units, colour styling.
+- **IGES 5.3**: manifold solid B-rep (entity 186) with a vertex list (502),
+  edge list (504) of lines (110) shared between faces, loops (508), planes (108),
+  faces (510) and a closed shell (514); 80-column records with parameters never
+  split across records.
+- **STL** (binary and ASCII) with facet normals computed from each triangle; **OBJ**.
+- **DXF R12**: sketch entities (`LINE`, `CIRCLE`, `ARC`, `POINT`) or the model as `3DFACE`s.
+- **Importers** read STL, OBJ, DXF, faceted/planar STEP and IGES 5.3 B-rep faces;
+  files with no readable faces are reported as errors. (The app's Open command
+  currently loads project files only.)
+- **Project files** (`.casiproj`): feature history, sketches, constraints,
+  dimensions, material and assembly.
 
 ---
 
@@ -295,7 +300,7 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
    - Exploded view generation with 3D leader lines.
 
 8. **Export & Import**:
-   - Export: **STEP AP214/AP242 B-Rep**, **IGES 5.3 MSBO**, **STL (Binary & ASCII)**, **AutoCAD DXF**, **Wavefront OBJ**, and Native Project JSON.
+   - Export: **STEP AP214 (faceted)**, **STL (binary & ASCII)**, **OBJ** and **DXF R12** from the Export dialog; **IGES 5.3** via the API/engine; native project files.
    - Import: **STEP**, **IGES 5.3**, **STL**, **DXF**, **OBJ**, and Project JSON.
 
 9. **Keyboard Shortcuts**:

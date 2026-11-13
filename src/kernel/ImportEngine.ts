@@ -188,11 +188,14 @@ export class ImportEngine {
 
         for (let i = 1; i < parts.length; i++) {
           const segs = parts[i].split('/');
-          const vIdx = parseInt(segs[0], 10) - 1;
+          const raw = parseInt(segs[0], 10);
+          // OBJ indices are 1-based; negative indices count back from the latest vertex
+          const vIdx = raw < 0 ? v.length + raw : raw - 1;
           faceVertices.push(v[vIdx]);
 
           if (segs.length >= 3 && segs[2]) {
-            const nIdx = parseInt(segs[2], 10) - 1;
+            const rawN = parseInt(segs[2], 10);
+            const nIdx = rawN < 0 ? vn.length + rawN : rawN - 1;
             faceNormals.push(vn[nIdx]);
           }
         }
@@ -458,7 +461,7 @@ export class ImportEngine {
     const positions = [];
 
     // 1. Check for POLY_LOOP entities: POLY_LOOP('', (#1, #2, #3, ...))
-    for (const [id, ent] of entities.entries()) {
+    for (const ent of entities.values()) {
       if (ent.type === 'POLY_LOOP') {
         const pointRefs = [...ent.raw.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
         const pts = pointRefs.map(pid => cartesianPoints.get(pid)).filter((p): p is [number, number, number] => !!p);
@@ -507,7 +510,7 @@ export class ImportEngine {
       }
 
       // Loops reference oriented edges
-      for (const [id, ent] of entities.entries()) {
+      for (const ent of entities.values()) {
         if (ent.type === 'EDGE_LOOP') {
           const oeRefs = [...ent.raw.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
           const pts = [];
@@ -530,12 +533,9 @@ export class ImportEngine {
       }
     }
 
-    // Fallback: if no faces could be formed, gather points into a bounding geometry
-    if (positions.length === 0 && cartesianPoints.size >= 3) {
-      const pts = Array.from(cartesianPoints.values());
-      for (let k = 1; k < pts.length - 1; k++) {
-        positions.push(...pts[0], ...pts[k], ...pts[k + 1]);
-      }
+    // Never invent geometry from loose points: report that nothing readable was found
+    if (positions.length === 0) {
+      throw new Error('No faceted (POLY_LOOP) or planar (EDGE_LOOP) faces found in STEP file');
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -620,7 +620,8 @@ export class ImportEngine {
     for (const [dePointer, rawP] of paramStringsByDE.entries()) {
       // Delimiter is comma, terminator is semicolon
       const clean = rawP.replace(/;.*$/, '');
-      const tokens = clean.split(',').map(s => s.trim());
+      // FORTRAN-style exponents (1.5D-3) are valid IGES reals
+      const tokens = clean.split(',').map(s => s.trim().replace(/^([-+]?[\d.]+)D([-+]?\d+)$/, '$1E$2'));
       entityParams.set(dePointer, tokens);
     }
 
@@ -650,56 +651,56 @@ export class ImportEngine {
       }
     }
 
-    // Parse Entity 504: Edge Entities (references vertex list DE)
-    const edgeMap = new Map<number, [[number, number, number], [number, number, number]]>();
+    // Entity 504 (form 1) Edge List: N, then N x (CURV, SVP, SV, TVP, TV)
+    type Vec = [number, number, number];
+    const edgeLists = new Map<number, Array<[Vec, Vec]>>();
     for (const [deIndex, de] of directoryEntries.entries()) {
-      if (de.type === 504) {
-        const tokens = entityParams.get(deIndex);
-        if (tokens && tokens.length >= 5) {
-          const vListDE = parseInt(tokens[1], 10);
-          const v1Idx = parseInt(tokens[2], 10) - 1; // 1-based to 0-based
-          const v2Idx = parseInt(tokens[4], 10) - 1;
-          const verts = vertexListMap.get(vListDE);
-          if (verts && verts[v1Idx] && verts[v2Idx]) {
-            edgeMap.set(deIndex, [verts[v1Idx], verts[v2Idx]]);
-          }
-        }
+      if (de.type !== 504) continue;
+      const t = entityParams.get(deIndex);
+      if (!t) continue;
+      const n = parseInt(t[1], 10);
+      const list: Array<[Vec, Vec]> = [];
+      for (let e = 0; e < n; e++) {
+        const base = 2 + e * 5;
+        const sv = vertexListMap.get(parseInt(t[base + 1], 10))?.[parseInt(t[base + 2], 10) - 1];
+        const tv = vertexListMap.get(parseInt(t[base + 3], 10))?.[parseInt(t[base + 4], 10) - 1];
+        if (sv && tv) list.push([sv, tv]);
+        else list.push([[NaN, NaN, NaN], [NaN, NaN, NaN]]);
       }
+      edgeLists.set(deIndex, list);
     }
 
-    // Parse Entity 508: Loop Entities (references edges)
-    const loopMap = new Map<number, Array<[number, number, number]>>();
+    // Entity 508 (form 1) Loop: N, then per edge TYPE, EDGE, NDX, OF, K, then K x (ISOP, CURV)
+    const loopMap = new Map<number, Vec[]>();
     for (const [deIndex, de] of directoryEntries.entries()) {
-      if (de.type === 508) {
-        const tokens = entityParams.get(deIndex);
-        if (tokens && tokens.length >= 3) {
-          const edgeCount = parseInt(tokens[2], 10);
-          const loopPoints = [];
-          for (let e = 0; e < edgeCount; e++) {
-            const ePtr = parseInt(tokens[3 + e * 3], 10);
-            const edge = edgeMap.get(ePtr);
-            if (edge) {
-              loopPoints.push(edge[0]);
-            }
-          }
-          loopMap.set(deIndex, loopPoints);
-        }
+      if (de.type !== 508) continue;
+      const t = entityParams.get(deIndex);
+      if (!t) continue;
+      const n = parseInt(t[1], 10);
+      const pts: Vec[] = [];
+      let k = 2;
+      for (let e = 0; e < n && k + 4 < t.length + 1; e++) {
+        const type = parseInt(t[k], 10);
+        const listDE = parseInt(t[k + 1], 10);
+        const idx = parseInt(t[k + 2], 10);
+        const agrees = parseInt(t[k + 3], 10) === 1;
+        const pscCount = parseInt(t[k + 4], 10) || 0;
+        k += 5 + pscCount * 2;
+        if (type !== 0) continue; // vertex-type loop members carry no edge
+        const edge = edgeLists.get(listDE)?.[idx - 1];
+        if (edge && Number.isFinite(edge[0][0])) pts.push(agrees ? edge[0] : edge[1]);
       }
+      loopMap.set(deIndex, pts);
     }
 
-    // Parse Entity 510: Face Entities
+    // Entity 510 (form 1) Face: SURF, N, OF, LOOP1..N — first loop is the outer boundary
     for (const [deIndex, de] of directoryEntries.entries()) {
-      if (de.type === 510) {
-        const tokens = entityParams.get(deIndex);
-        if (tokens && tokens.length >= 4) {
-          const loopDE = parseInt(tokens[3], 10);
-          const loopPts = loopMap.get(loopDE);
-          if (loopPts && loopPts.length >= 3) {
-            for (let k = 1; k < loopPts.length - 1; k++) {
-              positions.push(...loopPts[0], ...loopPts[k], ...loopPts[k + 1]);
-            }
-          }
-        }
+      if (de.type !== 510) continue;
+      const t = entityParams.get(deIndex);
+      if (!t || t.length < 5) continue;
+      const loopPts = loopMap.get(parseInt(t[4], 10));
+      if (loopPts && loopPts.length >= 3) {
+        for (let k = 1; k < loopPts.length - 1; k++) positions.push(...loopPts[0], ...loopPts[k], ...loopPts[k + 1]);
       }
     }
 
@@ -723,13 +724,9 @@ export class ImportEngine {
       }
     }
 
-    // Fallback if only vertices in 502 exist
-    if (positions.length === 0 && vertexListMap.size > 0) {
-      for (const verts of vertexListMap.values()) {
-        for (let k = 1; k < verts.length - 1; k++) {
-          positions.push(...verts[0], ...verts[k], ...verts[k + 1]);
-        }
-      }
+    // Never invent geometry from loose vertices
+    if (positions.length === 0) {
+      throw new Error('No faces (entity 510) or copious-data facets (entity 106) found in IGES file');
     }
 
     const geometry = new THREE.BufferGeometry();
