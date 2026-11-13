@@ -163,6 +163,128 @@ export interface Tet4Stiffness {
   delta: ArrayLike<number>;
 }
 
+// =====================================================================
+// Element formulation helpers
+// =====================================================================
+
+/**
+ * Isotropic linear-elastic matrix D for engineering strain
+ * [εxx, εyy, εzz, γxy, γyz, γzx]. ν is clamped away from 0.5 and -1; a
+ * missing or non-numeric ν falls back to 0.3.
+ */
+export function materialMatrix(E: number, nu: unknown): Float64Array[] {
+  const nuNum = typeof nu === 'number' ? nu : (typeof nu === 'string' && nu.trim() !== '' ? Number(nu) : NaN);
+  const safeNu = Math.max(-0.999, Math.min(0.4999, Number.isFinite(nuNum) ? nuNum : 0.3));
+  const safeE = Math.max(1e-6, Number(E) || 200e9);
+  const denom = (1 + safeNu) * (1 - 2 * safeNu);
+  const C = (safeE / Math.max(1e-12, Math.abs(denom))) * Math.sign(denom || 1);
+  const D = Array.from({ length: 6 }, () => new Float64Array(6));
+  D[0][0] = C * (1 - safeNu); D[0][1] = C * safeNu; D[0][2] = C * safeNu;
+  D[1][0] = C * safeNu; D[1][1] = C * (1 - safeNu); D[1][2] = C * safeNu;
+  D[2][0] = C * safeNu; D[2][1] = C * safeNu; D[2][2] = C * (1 - safeNu);
+  D[3][3] = (C * (1 - 2 * safeNu)) / 2;
+  D[4][4] = (C * (1 - 2 * safeNu)) / 2;
+  D[5][5] = (C * (1 - 2 * safeNu)) / 2;
+  return D;
+}
+
+/**
+ * Tet10 node order: corners v0..v3, then mid-edges e01, e12, e20, e03, e13, e23.
+ * Volume coordinates: L1 = 1 − ξ − η − ζ (v0), L2 = ξ (v1), L3 = η (v2), L4 = ζ (v3).
+ */
+const TET10_EDGES: Array<[number, number]> = [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]];
+
+/** Natural coordinates (ξ, η, ζ) of the 10 Tet10 nodes. */
+export const TET10_NODE_COORDS: Vec3Tuple[] = [
+  [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1],
+  [0.5, 0, 0], [0.5, 0.5, 0], [0, 0.5, 0], [0, 0, 0.5], [0.5, 0, 0.5], [0, 0.5, 0.5],
+];
+
+/** 4-point Gauss rule on the reference tetrahedron (exact for quadratics); weights sum to 1/6. */
+const GAUSS_A = 0.5854101966249685;
+const GAUSS_B = 0.1381966011250105;
+const TET_GAUSS_4: Array<{ p: Vec3Tuple; w: number }> = [
+  { p: [GAUSS_B, GAUSS_B, GAUSS_B], w: 1 / 24 },
+  { p: [GAUSS_A, GAUSS_B, GAUSS_B], w: 1 / 24 },
+  { p: [GAUSS_B, GAUSS_A, GAUSS_B], w: 1 / 24 },
+  { p: [GAUSS_B, GAUSS_B, GAUSS_A], w: 1 / 24 },
+];
+
+/**
+ * Strain-displacement matrix B (6 × 30) of a Tet10 at natural point (ξ, η, ζ),
+ * and det J. Returns null for a degenerate element.
+ */
+export function tet10B(coords: ArrayLike<number>[], [xi, eta, zeta]: Vec3Tuple): { B: Float64Array[]; detJ: number } | null {
+  const L = [1 - xi - eta - zeta, xi, eta, zeta];
+  // dN/dL for each node (4 volume coordinates)
+  const dNdL: number[][] = [];
+  for (let a = 0; a < 4; a++) {
+    const row = [0, 0, 0, 0];
+    row[a] = 4 * L[a] - 1;
+    dNdL.push(row);
+  }
+  for (const [i, j] of TET10_EDGES) {
+    const row = [0, 0, 0, 0];
+    row[i] = 4 * L[j];
+    row[j] = 4 * L[i];
+    dNdL.push(row);
+  }
+  // Chain rule: ∂/∂ξ = ∂/∂L2 − ∂/∂L1, ∂/∂η = ∂/∂L3 − ∂/∂L1, ∂/∂ζ = ∂/∂L4 − ∂/∂L1
+  const dNdXi = dNdL.map(d => [d[1] - d[0], d[2] - d[0], d[3] - d[0]]);
+
+  // Jacobian J[r][c] = Σ_a ∂N_a/∂ξ_r · x_a[c]
+  const J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let a = 0; a < 10; a++) {
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) J[r][c] += dNdXi[a][r] * coords[a][c];
+    }
+  }
+  const detJ =
+    J[0][0] * (J[1][1] * J[2][2] - J[1][2] * J[2][1]) -
+    J[0][1] * (J[1][0] * J[2][2] - J[1][2] * J[2][0]) +
+    J[0][2] * (J[1][0] * J[2][1] - J[1][1] * J[2][0]);
+  if (!Number.isFinite(detJ) || Math.abs(detJ) < 1e-30) return null;
+  const inv = [
+    [(J[1][1] * J[2][2] - J[1][2] * J[2][1]) / detJ, (J[0][2] * J[2][1] - J[0][1] * J[2][2]) / detJ, (J[0][1] * J[1][2] - J[0][2] * J[1][1]) / detJ],
+    [(J[1][2] * J[2][0] - J[1][0] * J[2][2]) / detJ, (J[0][0] * J[2][2] - J[0][2] * J[2][0]) / detJ, (J[0][2] * J[1][0] - J[0][0] * J[1][2]) / detJ],
+    [(J[1][0] * J[2][1] - J[1][1] * J[2][0]) / detJ, (J[0][1] * J[2][0] - J[0][0] * J[2][1]) / detJ, (J[0][0] * J[1][1] - J[0][1] * J[1][0]) / detJ],
+  ];
+
+  const B = Array.from({ length: 6 }, () => new Float64Array(30));
+  for (let a = 0; a < 10; a++) {
+    // Cartesian derivatives: ∂N/∂x = J⁻¹ · ∂N/∂ξ
+    const g = dNdXi[a];
+    const dx = inv[0][0] * g[0] + inv[0][1] * g[1] + inv[0][2] * g[2];
+    const dy = inv[1][0] * g[0] + inv[1][1] * g[1] + inv[1][2] * g[2];
+    const dz = inv[2][0] * g[0] + inv[2][1] * g[1] + inv[2][2] * g[2];
+    const col = a * 3;
+    B[0][col] = dx;
+    B[1][col + 1] = dy;
+    B[2][col + 2] = dz;
+    B[3][col] = dy; B[3][col + 1] = dx;
+    B[4][col + 1] = dz; B[4][col + 2] = dy;
+    B[5][col] = dz; B[5][col + 2] = dx;
+  }
+  return { B, detJ };
+}
+
+/** Stress (6) = D · B · u at one point. */
+function stressAt(B: Float64Array[], D: Float64Array[], u: ArrayLike<number>): { strain: Float64Array; stress: Float64Array } {
+  const strain = new Float64Array(6);
+  for (let r = 0; r < 6; r++) {
+    let sum = 0;
+    for (let c = 0; c < B[r].length; c++) sum += B[r][c] * u[c];
+    strain[r] = sum;
+  }
+  const stress = new Float64Array(6);
+  for (let r = 0; r < 6; r++) {
+    let sum = 0;
+    for (let c = 0; c < 6; c++) sum += D[r][c] * strain[c];
+    stress[r] = sum;
+  }
+  return { strain, stress };
+}
+
 /**
  * Sparse Matrix representation for global stiffness matrix assembly and PCG solver
  */
@@ -202,6 +324,42 @@ export class SparseMatrix {
    * @param {Map<number, number>} fixedDofs - Map of dofIndex => prescribedValue
    * @param {Float64Array} F - Force vector to adjust
    */
+  /**
+   * Compressed sparse rows (typed arrays) for fast repeated products.
+   * Entries keep the row maps' insertion order, so sums are identical to mult().
+   */
+  toCSR(): { rowPtr: Int32Array; cols: Int32Array; vals: Float64Array; mult(x: ArrayLike<number>, out: Float64Array): Float64Array } {
+    let nnz = 0;
+    for (const row of this.rows) nnz += row.size;
+    const rowPtr = new Int32Array(this.n + 1);
+    const cols = new Int32Array(nnz);
+    const vals = new Float64Array(nnz);
+    let k = 0;
+    for (let i = 0; i < this.n; i++) {
+      rowPtr[i] = k;
+      for (const [j, v] of this.rows[i]) {
+        cols[k] = j;
+        vals[k] = v;
+        k++;
+      }
+    }
+    rowPtr[this.n] = k;
+    const n = this.n;
+    return {
+      rowPtr,
+      cols,
+      vals,
+      mult(x: ArrayLike<number>, out: Float64Array): Float64Array {
+        for (let i = 0; i < n; i++) {
+          let sum = 0;
+          for (let p = rowPtr[i]; p < rowPtr[i + 1]; p++) sum += vals[p] * (x[cols[p]] || 0);
+          out[i] = Number.isFinite(sum) ? sum : 0;
+        }
+        return out;
+      },
+    };
+  }
+
   applyDirichlet(fixedDofs: Map<number, number>, F: Float64Array): void {
     for (const [k, uk] of fixedDofs) {
       for (const [j, v] of this.rows[k]) {
@@ -622,21 +780,7 @@ export class FEAEngine {
       B[5][col + 2] = beta[i];
     }
 
-    // Guard Poisson's ratio against singularity at ν = 0.5 (incompressible materials) and ν = -1
-    // A missing / non-numeric ν falls back to 0.3 (steel); previously undefined produced NaN stiffness
-    const nuNum = typeof nu === 'number' ? nu : (typeof nu === 'string' && nu.trim() !== '' ? Number(nu) : NaN);
-    const safeNu = Math.max(-0.999, Math.min(0.4999, Number.isFinite(nuNum) ? nuNum : 0.3));
-    const safeE = Math.max(1e-6, Number(E) || 200e9);
-    const denom = (1 + safeNu) * (1 - 2 * safeNu);
-    const C = (safeE / Math.max(1e-12, Math.abs(denom))) * Math.sign(denom || 1);
-
-    const D = Array.from({ length: 6 }, () => new Float64Array(6));
-    D[0][0] = C * (1 - safeNu); D[0][1] = C * safeNu;     D[0][2] = C * safeNu;
-    D[1][0] = C * safeNu;     D[1][1] = C * (1 - safeNu); D[1][2] = C * safeNu;
-    D[2][0] = C * safeNu;     D[2][1] = C * safeNu;     D[2][2] = C * (1 - safeNu);
-    D[3][3] = (C * (1 - 2 * safeNu)) / 2;
-    D[4][4] = (C * (1 - 2 * safeNu)) / 2;
-    D[5][5] = (C * (1 - 2 * safeNu)) / 2;
+    const D = materialMatrix(E, nu);
 
     const DB = Array.from({ length: 6 }, () => new Float64Array(12));
     for (let r = 0; r < 6; r++) {
@@ -661,6 +805,41 @@ export class FEAEngine {
     }
 
     return { Ke, B, D, volume, beta, gamma, delta };
+  }
+
+  /**
+   * Tet10 element stiffness (30 × 30) by 4-point Gauss integration:
+   * Ke = Σ w · |det J| · Bᵀ D B. Returns null for a degenerate element.
+   */
+  computeTet10Stiffness(nodeCoords: ArrayLike<number>[], E: number, nu: unknown): { Ke: Float64Array[]; volume: number } | null {
+    if (!nodeCoords || nodeCoords.length < 10) return null;
+    const D = materialMatrix(E, nu);
+    const Ke = Array.from({ length: 30 }, () => new Float64Array(30));
+    let volume = 0;
+    for (const { p, w } of TET_GAUSS_4) {
+      const res = tet10B(nodeCoords, p);
+      if (!res) return null;
+      const { B, detJ } = res;
+      const scale = w * Math.abs(detJ);
+      volume += scale;
+      // DB = D · B (6 × 30)
+      const DB = Array.from({ length: 6 }, () => new Float64Array(30));
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 30; c++) {
+          let sum = 0;
+          for (let k = 0; k < 6; k++) sum += D[r][k] * B[k][c];
+          DB[r][c] = sum;
+        }
+      }
+      for (let r = 0; r < 30; r++) {
+        for (let c = 0; c < 30; c++) {
+          let sum = 0;
+          for (let k = 0; k < 6; k++) sum += B[k][r] * DB[k][c];
+          Ke[r][c] += scale * sum;
+        }
+      }
+    }
+    return { Ke, volume };
   }
 
   _invert4x4(M: number[][] | null | undefined): Float64Array[] | null {
@@ -749,8 +928,9 @@ export class FEAEngine {
     for (let i = 0; i < n; i++) rzOld += r[i] * z[i];
     if (Math.abs(rzOld) < 1e-30 || !Number.isFinite(rzOld)) return U;
 
+    const csr = K.toCSR();
     for (let iter = 0; iter < safeMaxIter; iter++) {
-      K.mult(p, Kp);
+      csr.mult(p, Kp);
       let pKp = 0;
       for (let i = 0; i < n; i++) pKp += p[i] * Kp[i];
 
@@ -796,6 +976,23 @@ export class FEAEngine {
   }
 
   computeStressTensor(element: FEAElement, displacements: ArrayLike<number>, E: number, nu: unknown): StressData {
+    if (element.nodes.length >= 10) {
+      const meshNodes10 = this._requireMesh().nodes;
+      const coords = element.nodes.slice(0, 10).map(n => meshNodes10[n].posMeters);
+      const b = tet10B(coords, [0.25, 0.25, 0.25]);
+      const u = new Float64Array(30);
+      element.nodes.slice(0, 10).forEach((n, a) => {
+        u[a * 3] = displacements[n * 3] || 0;
+        u[a * 3 + 1] = displacements[n * 3 + 1] || 0;
+        u[a * 3 + 2] = displacements[n * 3 + 2] || 0;
+      });
+      if (b) {
+        const { strain, stress } = stressAt(b.B, materialMatrix(E, nu), u);
+        const [sxx, syy, szz, txy, tyz, tzx] = stress;
+        const { sigma1, sigma2, sigma3, vonMises } = this.computePrincipalAndVonMises(sxx, syy, szz, txy, tyz, tzx);
+        return { strain, stress, cauchyTensor: [[sxx, txy, tzx], [txy, syy, tyz], [tzx, tyz, szz]], principalStresses: [sigma1, sigma2, sigma3], vonMises };
+      }
+    }
     const nodes = element.nodes.slice(0, 4);
     const meshNodes = this._requireMesh().nodes;
     const nodeCoords = nodes.map(nIdx => meshNodes[nIdx].posMeters);
@@ -913,22 +1110,21 @@ export class FEAEngine {
 
     // 1. Element stiffness assembly
     for (const elem of elements) {
-      const elemNodeCoords = elem.nodes.slice(0, 4).map(nIdx => nodes[nIdx].posMeters);
-      const res = this.computeTet4Stiffness(elemNodeCoords, E, nu);
+      // Tet10 elements use the quadratic formulation over all 10 nodes; Tet4 the linear one
+      const isTet10 = elem.nodes.length >= 10;
+      const elemNodes = isTet10 ? elem.nodes.slice(0, 10) : elem.nodes.slice(0, 4);
+      const elemNodeCoords = elemNodes.map(nIdx => nodes[nIdx].posMeters);
+      const res = isTet10 ? this.computeTet10Stiffness(elemNodeCoords, E, nu) : this.computeTet4Stiffness(elemNodeCoords, E, nu);
       if (!res) continue;
 
       const { Ke } = res;
-      const dofIndices = [];
-      for (let i = 0; i < 4; i++) {
-        const nIdx = elem.nodes[i];
-        dofIndices.push(nIdx * 3, nIdx * 3 + 1, nIdx * 3 + 2);
-      }
+      const dofIndices: number[] = [];
+      for (const nIdx of elemNodes) dofIndices.push(nIdx * 3, nIdx * 3 + 1, nIdx * 3 + 2);
 
-      for (let r = 0; r < 12; r++) {
+      for (let r = 0; r < dofIndices.length; r++) {
         const globalRow = dofIndices[r];
-        for (let c = 0; c < 12; c++) {
-          const globalCol = dofIndices[c];
-          K.add(globalRow, globalCol, Ke[r][c]);
+        for (let c = 0; c < dofIndices.length; c++) {
+          K.add(globalRow, dofIndices[c], Ke[r][c]);
         }
       }
     }
@@ -1043,9 +1239,34 @@ export class FEAEngine {
     let maxStressPa = 0;
     let minStressPa = Infinity;
 
+    const hasTet10 = elements.some(e => e.nodes.length >= 10);
+    const D = materialMatrix(E, nu);
+
     for (const elem of elements) {
       const stressData = this.computeStressTensor(elem, U, E, nu);
       elemStresses.push(stressData);
+      const w = Math.abs(elem.volume);
+
+      if (elem.nodes.length >= 10) {
+        // Quadratic element: evaluate the stress at each of its 10 nodes and
+        // average the tensor components per node (von Mises is taken afterwards)
+        const coords = elem.nodes.slice(0, 10).map(n => nodes[n].posMeters);
+        const uElem = new Float64Array(30);
+        elem.nodes.slice(0, 10).forEach((n, a) => {
+          uElem[a * 3] = U[n * 3];
+          uElem[a * 3 + 1] = U[n * 3 + 1];
+          uElem[a * 3 + 2] = U[n * 3 + 2];
+        });
+        TET10_NODE_COORDS.forEach((pt, a) => {
+          const b = tet10B(coords, pt);
+          if (!b) return;
+          const { stress } = stressAt(b.B, D, uElem);
+          const nIdx = elem.nodes[a];
+          nodeWeights[nIdx] += w;
+          for (let k = 0; k < 6; k++) nodeCauchy[nIdx][k] += stress[k] * w;
+        });
+        continue;
+      }
 
       const vm = stressData.vonMises;
       if (vm > maxStressPa) maxStressPa = vm;
@@ -1053,7 +1274,6 @@ export class FEAEngine {
 
       for (let i = 0; i < 4; i++) {
         const nIdx = elem.nodes[i];
-        const w = elem.volume;
         nodeVonMises[nIdx] += vm * w;
         nodeWeights[nIdx] += w;
         for (let k = 0; k < 6; k++) {
@@ -1062,17 +1282,25 @@ export class FEAEngine {
       }
     }
 
-    if (minStressPa === Infinity) minStressPa = 0;
-
     const nodalVonMisesMPa = new Float32Array(numNodes);
     for (let i = 0; i < numNodes; i++) {
       if (nodeWeights[i] > 0) {
-        nodalVonMisesMPa[i] = (nodeVonMises[i] / nodeWeights[i]) / 1e6;
         for (let k = 0; k < 6; k++) {
           nodeCauchy[i][k] /= nodeWeights[i];
         }
+        if (hasTet10) {
+          const [sxx, syy, szz, txy, tyz, tzx] = nodeCauchy[i];
+          const vmPa = this.computePrincipalAndVonMises(sxx, syy, szz, txy, tyz, tzx).vonMises;
+          nodalVonMisesMPa[i] = vmPa / 1e6;
+          if (vmPa > maxStressPa) maxStressPa = vmPa;
+          if (vmPa < minStressPa) minStressPa = vmPa;
+        } else {
+          nodalVonMisesMPa[i] = (nodeVonMises[i] / nodeWeights[i]) / 1e6;
+        }
       }
     }
+
+    if (minStressPa === Infinity) minStressPa = 0;
 
     const maxStressMPa = maxStressPa / 1e6;
     const minStressMPa = minStressPa / 1e6;

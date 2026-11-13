@@ -65,7 +65,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.4d** Import / export and material library (plus standards-compliant faceted STEP and IGES 5.3)
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
   - [x] **T.5a** Assembly manager (plus mate fixes)
-  - [ ] **T.5b** FEA engine
+  - [x] **T.5b** FEA engine (plus a real quadratic Tet10 element)
   - [ ] **T.5c** Drawing engine
   - [ ] **T.5d** Feature engine
 - [ ] **T.6** Viewport and UI components → `.tsx`

@@ -13,7 +13,8 @@ export default function ResultsViewer() {
   const [load, setLoad] = useState(5000); // 5000 N
   const [results, setResults] = useState(null);
   const [minimized, setMinimized] = useState(window.innerWidth <= 768);
-  const [elementType, setElementType] = useState(ELEMENT_TYPES.TET4);
+  // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
+  const [elementType, setElementType] = useState(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
   const [drawingOpen, setDrawingOpen] = useState(false);
 
@@ -163,8 +164,8 @@ export default function ResultsViewer() {
               onChange={(e) => setElementType(e.target.value)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
             >
-              <option value={ELEMENT_TYPES.TET4}>Tet4 (Linear)</option>
-              <option value={ELEMENT_TYPES.TET10}>Tet10 (Quadratic)</option>
+              <option value={ELEMENT_TYPES.TET10}>Tet10 (Quadratic, accurate)</option>
+              <option value={ELEMENT_TYPES.TET4}>Tet4 (Linear, quick preview; underestimates bending)</option>
             </select>
           </div>
 
