@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, Layers, FileText } from 'lucide-react';
 import { useCADStore } from '../store/cadStore.ts';
-import { feaEngine, ELEMENT_TYPES } from './FEAEngine.js';
+import { feaEngine, ELEMENT_TYPES } from './FEAEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import DrawingViewModal from '../drawings/DrawingViewModal.jsx';
 

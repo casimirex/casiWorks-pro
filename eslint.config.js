@@ -50,6 +50,8 @@ export default tseslint.config(
       ...reactRules,
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
       '@typescript-eslint/consistent-type-imports': 'error', // required for Node type stripping
+      // `let [a, b] = …` where only some names are reassigned (e.g. swapping) is fine
+      'prefer-const': ['error', { destructuring: 'all' }],
     },
   },
 

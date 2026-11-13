@@ -9,40 +9,183 @@ export const ELEMENT_TYPES = {
   TET4: 'tet4',
   TET10: 'tet10',
   BEAM: 'beam',
-};
+} as const;
 
 export const FIXTURE_TYPES = {
   FIXED: 'fixed',
   PIN: 'pin',
   ROLLER: 'roller',
-};
+} as const;
 
 export const LOAD_TYPES = {
   FORCE: 'force',
   PRESSURE: 'pressure',
   NODAL_FORCE: 'nodal_force',
-};
+} as const;
+
+export type ElementType = (typeof ELEMENT_TYPES)[keyof typeof ELEMENT_TYPES];
+/** Bounding-box face of the meshed body. */
+export type BoxPlane = 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax';
+type Vec3Tuple = [number, number, number];
+
+export interface FEANode {
+  id: number;
+  /** mm */
+  point: THREE.Vector3;
+  /** m */
+  posMeters: Vec3Tuple;
+  gridIdx?: Vec3Tuple;
+  isBoundary: boolean;
+}
+
+export interface FEAElement {
+  id: number;
+  type: ElementType;
+  /** 4 corner nodes, followed by 6 mid-edge nodes for Tet10 (e01, e12, e20, e03, e13, e23). */
+  nodes: number[];
+  /** m³ */
+  volume: number;
+}
+
+export interface BoundaryFace {
+  nodes: Vec3Tuple;
+  normal: THREE.Vector3;
+  area: number;
+  centroid: THREE.Vector3;
+  /** Bounding-box face the triangle lies on, or 'custom'. */
+  plane: BoxPlane | 'custom';
+}
+
+export interface SolidMesh {
+  nodes: FEANode[];
+  elements: FEAElement[];
+  boundaryFaces: BoundaryFace[];
+  geometry: THREE.BufferGeometry;
+  boundingBox: THREE.Box3;
+  size: THREE.Vector3;
+  elementType: ElementType;
+  numNodes: number;
+  numElements: number;
+}
+
+export interface BeamElement { id: number; node1: number; node2: number; length: number; A: number; I: number; b: number; h: number }
+
+export interface BeamMesh {
+  nodes: Array<{ id: number; point: THREE.Vector3; isFixed: boolean }>;
+  elements: BeamElement[];
+  geometry: THREE.BufferGeometry;
+  axis: 'x' | 'y' | 'z';
+  length: number;
+  width: number;
+  height: number;
+  A: number;
+  I: number;
+}
+
+export interface MeshOptions {
+  elementType?: ElementType;
+  /** Grid divisions [nx, ny, nz], or a count along the longest side. */
+  divisions?: number | Vec3Tuple;
+  nx?: number;
+  ny?: number;
+  nz?: number;
+  numStations?: number;
+}
+
+export interface Fixture { type?: string; plane?: BoxPlane; nodeIndices?: number[]; dof?: number }
+
+export interface Load {
+  type: string;
+  plane?: BoxPlane;
+  nodeIndices?: number[];
+  node?: number;
+  force?: number[];
+  direction?: number[];
+  magnitude?: number;
+  /** Pa */
+  pressure?: number;
+}
+
+export interface SolidConfig {
+  youngsModulus?: number;
+  poissonRatio?: number | string | null;
+  yieldStrength?: number;
+  loadMagnitude?: number;
+  fixtures?: Fixture[];
+  loads?: Load[];
+}
+
+export interface StressData {
+  strain: Float64Array;
+  /** Pa: [σxx, σyy, σzz, τxy, τyz, τzx] */
+  stress: Float64Array;
+  cauchyTensor: number[][];
+  principalStresses: number[];
+  vonMises: number;
+}
+
+export interface SolidResult {
+  maxStressMPa: number;
+  minStressMPa: number;
+  maxDisplacementMM: number;
+  factorOfSafety: number;
+  displacements: Float32Array;
+  displacementVectors: THREE.Vector3[];
+  nodalVonMisesMPa: Float32Array;
+  nodeCauchyStresses: Float64Array[];
+  elementStresses: StressData[];
+  deformedGeometry: THREE.BufferGeometry;
+  is3DSolid: true;
+}
+
+export interface FEAResults {
+  maxStressMPa: number;
+  minStressMPa: number;
+  maxDisplacementMM: number;
+  theoreticalDispMM: number;
+  solidMaxDisplacementMM?: number;
+  factorOfSafety: number;
+  stresses?: Float32Array;
+  displacements?: Float32Array;
+  deformedGeometry?: THREE.BufferGeometry;
+  solidResult: SolidResult | null;
+  is3DSolid: boolean;
+  isVerifiedLinearStatic: boolean;
+}
+
+export interface Tet4Stiffness {
+  Ke: Float64Array[];
+  B: Float64Array[];
+  D: Float64Array[];
+  volume: number;
+  beta: ArrayLike<number>;
+  gamma: ArrayLike<number>;
+  delta: ArrayLike<number>;
+}
 
 /**
  * Sparse Matrix representation for global stiffness matrix assembly and PCG solver
  */
 export class SparseMatrix {
-  constructor(n) {
+  n: number;
+  rows: Array<Map<number, number>>;
+
+  constructor(n: number) {
     this.n = n;
     this.rows = Array.from({ length: n }, () => new Map());
   }
 
-  add(i, j, value) {
+  add(i: number, j: number, value: number): void {
     if (!Number.isFinite(value) || Math.abs(value) < 1e-25) return;
     const row = this.rows[i];
     row.set(j, (row.get(j) || 0) + value);
   }
 
-  get(i, j) {
+  get(i: number, j: number): number {
     return this.rows[i].get(j) || 0;
   }
 
-  mult(x, out) {
+  mult(x: ArrayLike<number>, out: Float64Array): Float64Array {
     const n = this.n;
     for (let i = 0; i < n; i++) {
       let sum = 0;
@@ -59,7 +202,7 @@ export class SparseMatrix {
    * @param {Map<number, number>} fixedDofs - Map of dofIndex => prescribedValue
    * @param {Float64Array} F - Force vector to adjust
    */
-  applyDirichlet(fixedDofs, F) {
+  applyDirichlet(fixedDofs: Map<number, number>, F: Float64Array): void {
     for (const [k, uk] of fixedDofs) {
       for (const [j, v] of this.rows[k]) {
         if (j !== k) {
@@ -78,6 +221,12 @@ export class SparseMatrix {
  * 3D Solid Linear Static FEA Engine
  */
 export class FEAEngine {
+  mesh: SolidMesh | BeamMesh | null;
+  solidMesh: SolidMesh | null;
+  beamMesh: BeamMesh | null;
+  results: FEAResults | null;
+  isBeamVerifiedMode: boolean;
+
   constructor() {
     this.mesh = null;
     this.solidMesh = null;
@@ -93,7 +242,7 @@ export class FEAEngine {
    * @param {Object} options
    * @returns {Object} solidMesh
    */
-  tetrahedralize(geometry, options = {}) {
+  tetrahedralize(geometry: THREE.BufferGeometry | null | undefined, options: MeshOptions = {}): SolidMesh | null {
     if (!geometry) return null;
 
     geometry.computeBoundingBox();
@@ -133,7 +282,7 @@ export class FEAEngine {
     const numTris = index ? index.count / 3 : (pos ? pos.count / 3 : 0);
 
     // Helper: test if point is inside geometry using ray-triangle parity
-    const isPointInside = (pt) => {
+    const isPointInside = (pt: Vec3Tuple) => {
       if (!pos || numTris === 0) return true;
       const dir = [0.267, 0.534, 0.801];
       let count = 0;
@@ -162,12 +311,13 @@ export class FEAEngine {
     };
 
     // Node dictionary & storage
-    const nodeMap = new Map();
-    const nodes = [];
+    const nodeMap = new Map<string, number>();
+    const nodes: FEANode[] = [];
 
-    const getOrCreateNode = (ix, iy, iz) => {
+    const getOrCreateNode = (ix: number, iy: number, iz: number): number => {
       const key = `${ix}_${iy}_${iz}`;
-      if (nodeMap.has(key)) return nodeMap.get(key);
+      const existing = nodeMap.get(key);
+      if (existing !== undefined) return existing;
 
       const px = min.x + ix * dx;
       const py = min.y + iy * dy;
@@ -177,8 +327,8 @@ export class FEAEngine {
       const node = {
         id,
         point: new THREE.Vector3(px, py, pz),
-        posMeters: [px * 1e-3, py * 1e-3, pz * 1e-3],
-        gridIdx: [ix, iy, iz],
+        posMeters: [px * 1e-3, py * 1e-3, pz * 1e-3] as Vec3Tuple,
+        gridIdx: [ix, iy, iz] as Vec3Tuple,
         isBoundary: false,
       };
       nodes.push(node);
@@ -187,8 +337,8 @@ export class FEAEngine {
     };
 
     // Generate tetrahedra for voxels inside CAD volume
-    const elements = [];
-    const elementType = options.elementType || ELEMENT_TYPES.TET4;
+    const elements: FEAElement[] = [];
+    const elementType: ElementType = options.elementType || ELEMENT_TYPES.TET4;
 
     for (let ix = 0; ix < nx; ix++) {
       for (let iy = 0; iy < ny; iy++) {
@@ -273,7 +423,7 @@ export class FEAEngine {
     }
 
     // Identify boundary faces
-    const faceMap = new Map();
+    const faceMap = new Map<string, { count: number; nodes: number[]; elemId: number }>();
     for (const elem of elements) {
       const [n0, n1, n2, n3] = elem.nodes;
       const tetFaces = [
@@ -284,15 +434,16 @@ export class FEAEngine {
       ];
       for (const tf of tetFaces) {
         const sortedKey = [...tf].sort((a, b) => a - b).join('_');
-        if (faceMap.has(sortedKey)) {
-          faceMap.get(sortedKey).count++;
+        const seen = faceMap.get(sortedKey);
+        if (seen) {
+          seen.count++;
         } else {
           faceMap.set(sortedKey, { count: 1, nodes: tf, elemId: elem.id });
         }
       }
     }
 
-    const boundaryFaces = [];
+    const boundaryFaces: BoundaryFace[] = [];
     for (const entry of faceMap.values()) {
       if (entry.count === 1) {
         const [a, b, c] = entry.nodes;
@@ -310,7 +461,7 @@ export class FEAEngine {
         const area = 0.5 * ab.cross(ac).length() * 1e-6;
         const centroid = new THREE.Vector3().add(pa).add(pb).add(pc).multiplyScalar(1 / 3);
 
-        let plane = 'custom';
+        let plane: BoundaryFace['plane'] = 'custom';
         const eps = 1e-2;
         if (Math.abs(centroid.x - min.x) < eps) plane = 'xMin';
         else if (Math.abs(centroid.x - max.x) < eps) plane = 'xMax';
@@ -320,7 +471,7 @@ export class FEAEngine {
         else if (Math.abs(centroid.z - max.z) < eps) plane = 'zMax';
 
         boundaryFaces.push({
-          nodes: [a, b, c],
+          nodes: [a, b, c] as Vec3Tuple,
           normal,
           area,
           centroid,
@@ -348,7 +499,7 @@ export class FEAEngine {
     return this.solidMesh;
   }
 
-  _rayIntersectsTriangle(orig, dir, v0, v1, v2) {
+  _rayIntersectsTriangle(orig: ArrayLike<number>, dir: ArrayLike<number>, v0: ArrayLike<number>, v1: ArrayLike<number>, v2: ArrayLike<number>): boolean {
     const EPSILON = 1e-7;
     const edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
     const edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
@@ -374,7 +525,7 @@ export class FEAEngine {
     return t > EPSILON;
   }
 
-  _computeTetVolume(pts) {
+  _computeTetVolume(pts: ArrayLike<number>[]): number {
     const [p1, p2, p3, p4] = pts;
     const m11 = p2[0] * (p3[1] * p4[2] - p3[2] * p4[1]) - p2[1] * (p3[0] * p4[2] - p3[2] * p4[0]) + p2[2] * (p3[0] * p4[1] - p3[1] * p4[0]);
     const m12 = p1[0] * (p3[1] * p4[2] - p3[2] * p4[1]) - p1[1] * (p3[0] * p4[2] - p3[2] * p4[0]) + p1[2] * (p3[0] * p4[1] - p3[1] * p4[0]);
@@ -383,11 +534,18 @@ export class FEAEngine {
     return (m11 - m12 + m13 - m14) / 6.0;
   }
 
-  _upgradeToTet10(nodes, elements) {
-    const edgeMap = new Map();
-    const getMidEdgeNode = (n1, n2) => {
+  /** The current solid mesh (throws if tetrahedralize/generateMesh has not run). */
+  _requireMesh(): SolidMesh {
+    if (!this.solidMesh) throw new Error('No solid mesh: call generateMesh() or tetrahedralize() first');
+    return this.solidMesh;
+  }
+
+  _upgradeToTet10(nodes: FEANode[], elements: FEAElement[]): void {
+    const edgeMap = new Map<string, number>();
+    const getMidEdgeNode = (n1: number, n2: number): number => {
       const key = n1 < n2 ? `${n1}_${n2}` : `${n2}_${n1}`;
-      if (edgeMap.has(key)) return edgeMap.get(key);
+      const existing = edgeMap.get(key);
+      if (existing !== undefined) return existing;
       const p1 = nodes[n1].point;
       const p2 = nodes[n2].point;
       const midPoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
@@ -395,7 +553,7 @@ export class FEAEngine {
       const node = {
         id,
         point: midPoint,
-        posMeters: [midPoint.x * 1e-3, midPoint.y * 1e-3, midPoint.z * 1e-3],
+        posMeters: [midPoint.x * 1e-3, midPoint.y * 1e-3, midPoint.z * 1e-3] as Vec3Tuple,
         isBoundary: nodes[n1].isBoundary && nodes[n2].isBoundary,
       };
       nodes.push(node);
@@ -417,7 +575,7 @@ export class FEAEngine {
     }
   }
 
-  computeTet4Stiffness(nodeCoords, E, nu) {
+  computeTet4Stiffness(nodeCoords: ArrayLike<number>[] | null | undefined, E: number, nu: unknown): Tet4Stiffness | null {
     if (!nodeCoords || nodeCoords.length < 4) return null;
     let [p1, p2, p3, p4] = nodeCoords;
     if (!p1 || !p2 || !p3 || !p4) return null;
@@ -505,7 +663,7 @@ export class FEAEngine {
     return { Ke, B, D, volume, beta, gamma, delta };
   }
 
-  _invert4x4(M) {
+  _invert4x4(M: number[][] | null | undefined): Float64Array[] | null {
     if (!M || M.length !== 4) return null;
     const A = M.map(row => [...row]);
     const n = 4;
@@ -555,7 +713,7 @@ export class FEAEngine {
     return I;
   }
 
-  _solvePCG(K, F, maxIter = 2500, tol = 1e-7) {
+  _solvePCG(K: SparseMatrix, F: Float64Array, maxIter = 2500, tol = 1e-7): Float64Array {
     const n = F.length;
     const U = new Float64Array(n);
     if (n === 0) return U;
@@ -637,9 +795,10 @@ export class FEAEngine {
     return U;
   }
 
-  computeStressTensor(element, displacements, E, nu) {
+  computeStressTensor(element: FEAElement, displacements: ArrayLike<number>, E: number, nu: unknown): StressData {
     const nodes = element.nodes.slice(0, 4);
-    const nodeCoords = nodes.map(nIdx => this.solidMesh.nodes[nIdx].posMeters);
+    const meshNodes = this._requireMesh().nodes;
+    const nodeCoords = nodes.map(nIdx => meshNodes[nIdx].posMeters);
     const stiffnessRes = this.computeTet4Stiffness(nodeCoords, E, nu);
 
     if (!stiffnessRes) {
@@ -706,7 +865,7 @@ export class FEAEngine {
     };
   }
 
-  computePrincipalAndVonMises(sxx, syy, szz, txy, tyz, tzx) {
+  computePrincipalAndVonMises(sxx: number, syy: number, szz: number, txy: number, tyz: number, tzx: number): { sigma1: number; sigma2: number; sigma3: number; vonMises: number } {
     const I1 = sxx + syy + szz;
     const sm = I1 / 3.0;
     const s11 = sxx - sm;
@@ -737,7 +896,7 @@ export class FEAEngine {
     return { sigma1, sigma2, sigma3, vonMises };
   }
 
-  solveSolidFEA(config = {}) {
+  solveSolidFEA(config: SolidConfig = {}): SolidResult | null {
     if (!this.solidMesh) return null;
 
     const { nodes, elements, boundaryFaces } = this.solidMesh;
@@ -936,9 +1095,8 @@ export class FEAEngine {
     };
   }
 
-  _findNodesForFixture(fix) {
-    const nodes = this.solidMesh.nodes;
-    const box = this.solidMesh.boundingBox;
+  _findNodesForFixture(fix: Fixture): number[] {
+    const { nodes, boundingBox: box } = this._requireMesh();
     const eps = 1e-2;
     const target = [];
 
@@ -958,9 +1116,8 @@ export class FEAEngine {
     return target;
   }
 
-  _findNodesForLoad(ld) {
-    const nodes = this.solidMesh.nodes;
-    const box = this.solidMesh.boundingBox;
+  _findNodesForLoad(ld: Load): number[] {
+    const { nodes, boundingBox: box } = this._requireMesh();
     const eps = 1e-2;
     const target = [];
 
@@ -980,10 +1137,10 @@ export class FEAEngine {
     return target;
   }
 
-  _applyPressureLoad(ld, F) {
+  _applyPressureLoad(ld: Load, F: Float64Array): void {
     const p = ld.pressure || 0;
     const plane = ld.plane;
-    for (const face of this.solidMesh.boundaryFaces) {
+    for (const face of this._requireMesh().boundaryFaces) {
       if (!plane || face.plane === plane) {
         const fTotal = p * face.area;
         const fNode = fTotal / 3;
@@ -997,7 +1154,7 @@ export class FEAEngine {
     }
   }
 
-  _createDeformedGeometry(nodes, boundaryFaces, displacementVectors, nodalVonMisesMPa, minStressMPa, maxStressMPa) {
+  _createDeformedGeometry(nodes: FEANode[], boundaryFaces: BoundaryFace[], displacementVectors: THREE.Vector3[], nodalVonMisesMPa: Float32Array, minStressMPa: number, maxStressMPa: number): THREE.BufferGeometry {
     const geom = new THREE.BufferGeometry();
     if (!boundaryFaces || boundaryFaces.length === 0 || !nodes || nodes.length === 0) {
       geom.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
@@ -1064,7 +1221,7 @@ export class FEAEngine {
     return geom;
   }
 
-  _stressToColor(t) {
+  _stressToColor(t: number): Vec3Tuple {
     t = Math.max(0, Math.min(1, t));
     let r = 0, g = 0, b = 0;
     if (t < 0.25) {
@@ -1083,7 +1240,7 @@ export class FEAEngine {
     return [r, g, b];
   }
 
-  generateMesh(geometry, options = 20) {
+  generateMesh(geometry: THREE.BufferGeometry | null | undefined, options: number | MeshOptions = 20): SolidMesh | BeamMesh | null {
     if (!geometry) return null;
 
     geometry.computeBoundingBox();
@@ -1094,7 +1251,7 @@ export class FEAEngine {
     if (!Number.isFinite(size.y) || size.y <= 0) size.y = 10;
     if (!Number.isFinite(size.z) || size.z <= 0) size.z = 10;
 
-    let axis = 'x';
+    let axis: 'x' | 'y' | 'z' = 'x';
     let length = size.x;
     let b = size.z || 10;
     let h = size.y || 10;
@@ -1158,14 +1315,14 @@ export class FEAEngine {
       I,
     };
 
-    const solidOpts = typeof options === 'object' ? options : { divisions: [3, 3, Math.min(15, numStations)] };
+    const solidOpts: MeshOptions = typeof options === 'object' ? options : { divisions: [3, 3, Math.min(15, numStations)] };
     this.tetrahedralize(geometry, solidOpts);
 
     this.mesh = this.solidMesh || this.beamMesh;
     return this.mesh;
   }
 
-  solve(loadMagnitude = 1000, materialYieldStrength = 250e6, youngsModulus = 200e9, poissonRatio = 0.3, options = {}) {
+  solve(loadMagnitude = 1000, materialYieldStrength = 250e6, youngsModulus = 200e9, poissonRatio = 0.3, options: { fixtures?: Fixture[]; loads?: Load[] } = {}): FEAResults {
     let solidResult = null;
     if (this.solidMesh) {
       solidResult = this.solveSolidFEA({
@@ -1273,7 +1430,7 @@ export class FEAEngine {
     return this.results;
   }
 
-  _gaussianElimination(A, b) {
+  _gaussianElimination(A: ArrayLike<number>[], b: ArrayLike<number>): Float64Array | null {
     const n = b.length;
     const M = Array.from({ length: n }, (_, i) => {
       const row = new Float64Array(n + 1);
