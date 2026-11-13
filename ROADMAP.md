@@ -43,9 +43,24 @@ Make every later step safe to take.
 - [ ] **0.1b** Clear the remaining `no-unused-vars` warnings (137 at 0.1), then make warnings fail CI
 - [x] **0.2** Error boundary: a crash in one panel shows a recoverable message instead of a blank app
 - [x] **0.3** CI: GitHub Actions runs lint, tests and build on every push and PR
-- [ ] **0.4** Type checking: `// @ts-check` + JSDoc on the kernel and store, `tsc --noEmit` in CI (no rewrite to TS yet)
+- [x] **0.4** Type checking → replaced by the full TypeScript migration, track T below
 - [ ] **0.5** Split the single test file into per-module test files
 - [ ] **0.6** Autosave the current document to IndexedDB; restore on reload
+
+## Track T — Full TypeScript migration
+
+Goal: every `.js` → `.ts` and every `.jsx` → `.tsx` (tests included), strict
+mode everywhere, no `any`. Converted bottom-up so each step leaves the app
+working. Node runs `.ts` directly (type stripping), so tests need no build step.
+
+- [x] **T.0** Tooling: TypeScript 6, strict `tsconfig.json`, `npm run typecheck` in CI, typescript-eslint; first file converted (`utils/clone.ts`) to prove Vite + Node + lint
+- [ ] **T.1** Domain types (`types/`: Feature, SketchEntity, MassProperties, …) and `utils/` → `.ts`
+- [ ] **T.2** Public API → `.ts` (typed API for script and add-in authors)
+- [ ] **T.3** Store and rebuild → `.ts`
+- [ ] **T.4** Kernel → `.ts` (several steps: math/sketch, geometry, B-Rep/topology, import/export)
+- [ ] **T.5** Assembly, simulation, drawings → `.ts`
+- [ ] **T.6** Viewport and UI components → `.tsx`
+- [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 
 ## Phase 1 — Command layer and public API v1
 

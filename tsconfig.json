@@ -1,0 +1,32 @@
+{
+  // Migration mode: .ts/.tsx files are checked strictly; remaining .js/.jsx files
+  // are allowed (not checked) until they are converted. See ROADMAP.md, track T.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Node runs the tests by stripping types (no build step). That requires
+    // erasable syntax only (no enums/namespaces/parameter properties) and
+    // explicit `import type` for type-only imports.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "tests", "vite.config.js", "eslint.config.js"]
+}

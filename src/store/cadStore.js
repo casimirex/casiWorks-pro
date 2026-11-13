@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { generateId } from '../utils/math.js';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES } from '../utils/constants.js';
 import { assemblyManager } from '../assembly/AssemblyManager.js';
-import { safeDeepClone } from '../utils/clone.js';
+import { safeDeepClone } from '../utils/clone.ts';
 
 // State holds a Set (expandedNodes); immer needs this plugin to draft it.
 enableMapSet();

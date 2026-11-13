@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint, test, build (Node ${{ matrix.node }})
+    name: Typecheck, lint, test, build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -28,6 +28,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run lint
       - run: npm test
       - run: npm run build
