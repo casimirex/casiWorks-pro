@@ -10,8 +10,8 @@ import * as THREE from 'three';
 import { generateId } from '../utils/math.ts';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
-import { assemblyManager } from '../assembly/AssemblyManager.js';
-import type { AssemblyComponent } from '../assembly/AssemblyManager.js';
+import { assemblyManager } from '../assembly/AssemblyManager.ts';
+import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
 import type {
   ExampleModel,

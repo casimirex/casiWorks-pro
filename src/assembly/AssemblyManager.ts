@@ -18,6 +18,77 @@ import * as THREE from 'three';
 import { generateId } from '../utils/math.ts';
 import { MATE_TYPES } from '../utils/constants.ts';
 
+type Vec3Like = { x?: number; y?: number; z?: number };
+
+/** A reference on a component: a face/axis name ('top', 'y', …) or explicit local geometry. */
+export type MateRef =
+  | string
+  | { point?: THREE.Vector3 | Vec3Like; normal?: THREE.Vector3 | Vec3Like; axis?: THREE.Vector3 | Vec3Like; radius?: number }
+  | null
+  | undefined;
+
+export interface FaceFrame { point: THREE.Vector3; normal: THREE.Vector3 }
+export interface AxisFrame { point: THREE.Vector3; axis: THREE.Vector3; radius: number }
+
+export interface Mate {
+  id: string;
+  type: string;
+  comp1Id: string;
+  ref1: MateRef;
+  comp2Id: string;
+  ref2: MateRef;
+  /** mm (distance/width/tangent) */
+  offset: number;
+  ref1Secondary: MateRef;
+  ref2Secondary: MateRef;
+  pathPoints: Array<THREE.Vector3 | Vec3Like> | null;
+  axis: Vec3Like | null;
+  /** Degrees (angle mate). */
+  angle: number;
+}
+
+export interface MateOptions {
+  ref1Secondary?: MateRef;
+  ref2Secondary?: MateRef;
+  pathPoints?: Array<THREE.Vector3 | Vec3Like>;
+  points?: Array<THREE.Vector3 | Vec3Like>;
+  axis?: Vec3Like;
+  angle?: number;
+}
+
+export interface AssemblySolveResult {
+  components: AssemblyComponent[];
+  /** Largest remaining mate error (mm or radians). */
+  error: number;
+  converged: boolean;
+  iterations: number;
+}
+
+export interface ExplodedComponent {
+  id: string;
+  name: string;
+  position: THREE.Vector3;
+  originalPosition: THREE.Vector3;
+  explosionAxis: THREE.Vector3;
+  distance: number;
+}
+
+export interface LeaderLine {
+  componentId: string;
+  componentName: string;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  points: THREE.Vector3[];
+}
+
+export type ExplodedViewResult = ExplodedComponent[] & {
+  leaderLines: LeaderLine[];
+  distance: number;
+  components: ExplodedComponent[];
+};
+
+export type ExplodeOptions = number | { distance?: number; axis?: THREE.Vector3 | 'x' | 'y' | 'z'; leaderLines?: boolean };
+
 /**
  * Robust quaternion construction from two direction vectors.
  * Handles exact colinearity (0°), exact anti-parallelism (180°),
@@ -26,7 +97,7 @@ import { MATE_TYPES } from '../utils/constants.ts';
  * @param {THREE.Vector3} vTo - Target vector
  * @returns {THREE.Quaternion}
  */
-export function safeQuaternionFromVectors(vFrom, vTo) {
+export function safeQuaternionFromVectors(vFrom: THREE.Vector3 | null | undefined, vTo: THREE.Vector3 | null | undefined): THREE.Quaternion {
   const q = new THREE.Quaternion();
   if (!vFrom || !vTo) return q;
 
@@ -69,7 +140,17 @@ export function safeQuaternionFromVectors(vFrom, vTo) {
 }
 
 export class AssemblyComponent {
-  constructor(id, name, geometry, isFixed = false) {
+  id: string;
+  name: string;
+  baseGeometry: THREE.BufferGeometry;
+  geometry: THREE.BufferGeometry;
+  isFixed: boolean;
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  scale: THREE.Vector3;
+  matrix: THREE.Matrix4;
+
+  constructor(id: string | null | undefined, name: string | null | undefined, geometry: THREE.BufferGeometry | null | undefined, isFixed = false) {
     this.id = id || generateId('comp');
     this.name = name || 'Component';
     this.baseGeometry = geometry ? geometry.clone() : new THREE.BoxGeometry(20, 20, 20);
@@ -83,7 +164,7 @@ export class AssemblyComponent {
     this.updateMatrix();
   }
 
-  updateMatrix() {
+  updateMatrix(): void {
     this.matrix.compose(this.position, this.quaternion, this.scale);
     this.geometry = this.baseGeometry.clone();
     this.geometry.applyMatrix4(this.matrix);
@@ -96,14 +177,14 @@ export class AssemblyComponent {
    * @param {string|object} faceRef - 'top'|'bottom'|'front'|'back'|'right'|'left' or { point, normal }
    * @returns {{ point: THREE.Vector3, normal: THREE.Vector3 }}
    */
-  getFaceReference(faceRef = 'top') {
+  getFaceReference(faceRef: MateRef = 'top'): FaceFrame {
     if (typeof faceRef === 'object' && faceRef !== null) {
       const p = (faceRef.point instanceof THREE.Vector3
         ? faceRef.point.clone()
         : new THREE.Vector3(faceRef.point?.x || 0, faceRef.point?.y || 0, faceRef.point?.z || 0)
       ).applyMatrix4(this.matrix);
 
-      let n = faceRef.normal instanceof THREE.Vector3
+      const n = faceRef.normal instanceof THREE.Vector3
         ? faceRef.normal.clone()
         : new THREE.Vector3(faceRef.normal?.x || 0, faceRef.normal?.y !== undefined ? faceRef.normal.y : 1, faceRef.normal?.z || 0);
 
@@ -123,8 +204,8 @@ export class AssemblyComponent {
     const center = new THREE.Vector3();
     box.getCenter(center);
 
-    let localNormal = new THREE.Vector3(0, 1, 0);
-    let localPoint = center.clone();
+    const localNormal = new THREE.Vector3(0, 1, 0);
+    const localPoint = center.clone();
 
     switch (String(faceRef || 'top').toLowerCase()) {
       case 'top':
@@ -158,7 +239,7 @@ export class AssemblyComponent {
     }
 
     const worldPoint = localPoint.clone().applyMatrix4(this.matrix);
-    let worldNormal = localNormal.clone().applyQuaternion(this.quaternion);
+    const worldNormal = localNormal.clone().applyQuaternion(this.quaternion);
     if (worldNormal.lengthSq() < 1e-8 || !Number.isFinite(worldNormal.lengthSq())) {
       worldNormal.set(0, 1, 0);
     } else {
@@ -170,7 +251,7 @@ export class AssemblyComponent {
   /**
    * Get opposing face name for bounding-box faces
    */
-  getOpposingFaceName(faceName = 'top') {
+  getOpposingFaceName(faceName: MateRef = 'top'): string {
     switch (String(faceName || 'top').toLowerCase()) {
       case 'top': return 'bottom';
       case 'bottom': return 'top';
@@ -187,7 +268,7 @@ export class AssemblyComponent {
    * @param {string|object} axisRef - 'x'|'y'|'z'|'cylinder' or { point, axis, radius }
    * @returns {{ point: THREE.Vector3, axis: THREE.Vector3, radius: number }}
    */
-  getAxisReference(axisRef = 'z') {
+  getAxisReference(axisRef: MateRef = 'z'): AxisFrame {
     if (!this.baseGeometry) {
       return { point: this.position.clone(), axis: new THREE.Vector3(0, 0, 1), radius: 10 };
     }
@@ -197,8 +278,8 @@ export class AssemblyComponent {
     const center = new THREE.Vector3();
     box.getCenter(center);
 
-    let localAxis = new THREE.Vector3(0, 0, 1);
-    let localPoint = center.clone();
+    const localAxis = new THREE.Vector3(0, 0, 1);
+    const localPoint = center.clone();
     let radius = 10;
 
     if (typeof axisRef === 'object' && axisRef !== null) {
@@ -228,7 +309,7 @@ export class AssemblyComponent {
     }
 
     const worldPoint = localPoint.clone().applyMatrix4(this.matrix);
-    let worldAxis = localAxis.clone().applyQuaternion(this.quaternion);
+    const worldAxis = localAxis.clone().applyQuaternion(this.quaternion);
     if (worldAxis.lengthSq() < 1e-8 || !Number.isFinite(worldAxis.lengthSq())) {
       worldAxis.set(0, 0, 1);
     } else {
@@ -240,12 +321,15 @@ export class AssemblyComponent {
   /**
    * Get cylindrical surface reference
    */
-  getCylinderReference(axisRef = 'z') {
+  getCylinderReference(axisRef: MateRef = 'z'): AxisFrame {
     return this.getAxisReference(axisRef);
   }
 }
 
 export class AssemblyManager {
+  components: AssemblyComponent[];
+  mates: Mate[];
+
   constructor() {
     this.components = [];
     this.mates = [];
@@ -257,7 +341,7 @@ export class AssemblyManager {
    * @param {import('three').BufferGeometry} geometry
    * @param {boolean|null} [isFixed] - null: fix only the first component
    */
-  insertComponent(name, geometry, isFixed = null) {
+  insertComponent(name: string, geometry: THREE.BufferGeometry, isFixed: boolean | null = null): AssemblyComponent {
     const shouldFix = isFixed !== null ? isFixed : this.components.length === 0;
     const comp = new AssemblyComponent(generateId('comp'), name, geometry, shouldFix);
     this.components.push(comp);
@@ -267,7 +351,7 @@ export class AssemblyManager {
   /**
    * Remove a component and clean up any dangling mates
    */
-  removeComponent(componentId) {
+  removeComponent(componentId: string): void {
     this.components = this.components.filter(c => c.id !== componentId);
     this.mates = this.mates.filter(m => m.comp1Id !== componentId && m.comp2Id !== componentId);
     this.solve();
@@ -283,14 +367,14 @@ export class AssemblyManager {
    * @param {number} offset - Linear or angular offset value
    * @param {object} options - Advanced options (e.g. pathPoints, secondary references)
    */
-  addMate(type, comp1Id, ref1, comp2Id, ref2, offset = 0, options = {}) {
-    const mate = {
+  addMate(type: string, comp1Id: string, ref1: MateRef | MateRef[], comp2Id: string, ref2: MateRef | MateRef[], offset = 0, options: MateOptions = {}): Mate {
+    const mate: Mate = {
       id: generateId('mate'),
       type: type || MATE_TYPES.COINCIDENT,
       comp1Id,
-      ref1: ref1 || 'top',
+      ref1: (Array.isArray(ref1) ? ref1[0] : ref1) || 'top',
       comp2Id,
-      ref2: ref2 || 'bottom',
+      ref2: (Array.isArray(ref2) ? ref2[0] : ref2) || 'bottom',
       offset: Number.isFinite(offset) ? offset : 0,
       ref1Secondary: options.ref1Secondary || (Array.isArray(ref1) && ref1.length > 1 ? ref1[1] : null),
       ref2Secondary: options.ref2Secondary || (Array.isArray(ref2) && ref2.length > 1 ? ref2[1] : null),
@@ -299,15 +383,12 @@ export class AssemblyManager {
       angle: options.angle !== undefined ? options.angle : offset,
     };
 
-    if (Array.isArray(ref1)) mate.ref1 = ref1[0];
-    if (Array.isArray(ref2)) mate.ref2 = ref2[0];
-
     this.mates.push(mate);
     this.solve();
     return mate;
   }
 
-  removeMate(mateId) {
+  removeMate(mateId: string): void {
     this.mates = this.mates.filter(m => m.id !== mateId);
     this.solve();
   }
@@ -319,7 +400,7 @@ export class AssemblyManager {
    * @param {number} tolerance - Residual convergence threshold
    * @returns {{ components: AssemblyComponent[], error: number, converged: boolean, iterations: number }}
    */
-  solve(maxIterations = 50, tolerance = 1e-4) {
+  solve(maxIterations = 50, tolerance = 1e-4): AssemblySolveResult {
     if (!this.components || this.components.length === 0) {
       return {
         components: [],
@@ -564,7 +645,7 @@ export class AssemblyManager {
 
             // 1. Cylinder axis must be perpendicular to plane normal
             const dot = cyl.axis.dot(plane.normal);
-            let perpAxis = cyl.axis.clone().sub(plane.normal.clone().multiplyScalar(dot));
+            const perpAxis = cyl.axis.clone().sub(plane.normal.clone().multiplyScalar(dot));
             if (perpAxis.lengthSq() > 1e-6) {
               perpAxis.normalize();
               const rotDelta = safeQuaternionFromVectors(cyl.axis, perpAxis);
@@ -603,7 +684,6 @@ export class AssemblyManager {
             const ref2A = mate.ref2 || 'left';
             const ref2B = mate.ref2Secondary || c2.getOpposingFaceName(ref2A);
             const f2A = c2.getFaceReference(ref2A);
-            const f2B = c2.getFaceReference(ref2B);
 
             const midBound = f1A.point.clone().add(f1B.point).multiplyScalar(0.5);
             const boundNormal = f1A.normal.clone();
@@ -631,8 +711,9 @@ export class AssemblyManager {
           // ----------------------------------------------------
           case MATE_TYPES.PATH:
           case 'path': {
-            let points = mate.pathPoints;
-            if (!points || points.length < 2) {
+            const given = mate.pathPoints;
+            let points: THREE.Vector3[];
+            if (!given || given.length < 2) {
               c1.baseGeometry.computeBoundingBox();
               const b = c1.baseGeometry.boundingBox || new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
               points = [
@@ -640,7 +721,7 @@ export class AssemblyManager {
                 new THREE.Vector3(b.max.x, b.max.y, 0).applyMatrix4(c1.matrix),
               ];
             } else {
-              points = points.map(p => (p instanceof THREE.Vector3 ? p.clone() : new THREE.Vector3(p.x, p.y, p.z)));
+              points = given.map(p => (p instanceof THREE.Vector3 ? p.clone() : new THREE.Vector3(p.x, p.y, p.z)));
             }
 
             const targetPoint = c2.position.clone();
@@ -697,7 +778,7 @@ export class AssemblyManager {
   /**
    * Helper to distribute rotation delta between source and target components
    */
-  _applyRotationDelta(c1, c2, rotDelta, w1, w2) {
+  _applyRotationDelta(c1: AssemblyComponent, c2: AssemblyComponent, rotDelta: THREE.Quaternion, w1: number, w2: number): void {
     if (!rotDelta || !Number.isFinite(rotDelta.x) || !Number.isFinite(rotDelta.y) || !Number.isFinite(rotDelta.z) || !Number.isFinite(rotDelta.w)) {
       return;
     }
@@ -727,7 +808,7 @@ export class AssemblyManager {
   /**
    * Helper to distribute translation delta between source and target components
    */
-  _applyTranslationDelta(c1, c2, shift, w1, w2) {
+  _applyTranslationDelta(c1: AssemblyComponent, c2: AssemblyComponent, shift: THREE.Vector3, w1: number, w2: number): void {
     if (!shift || !Number.isFinite(shift.x) || !Number.isFinite(shift.y) || !Number.isFinite(shift.z)) {
       return;
     }
@@ -748,7 +829,7 @@ export class AssemblyManager {
    * @param {number|object} options - Distance or { distance, axis, leaderLines }
    * @returns {Array} List of exploded component states with .leaderLines attached
    */
-  createExplodedView(options = 40) {
+  createExplodedView(options: ExplodeOptions = 40): ExplodedViewResult {
     let baseDist = 40;
     let explicitAxis = null;
     let generateLeaderLines = true;
@@ -763,7 +844,7 @@ export class AssemblyManager {
 
     // 0 components guard: return clean empty structure without division by zero
     if (!this.components || this.components.length === 0) {
-      const empty = [];
+      const empty = [] as unknown as ExplodedViewResult;
       empty.leaderLines = [];
       empty.distance = baseDist;
       empty.components = empty;
@@ -780,7 +861,7 @@ export class AssemblyManager {
         originalPosition: singleComp.position.clone(),
         explosionAxis: new THREE.Vector3(0, 0, 0),
         distance: 0,
-      }];
+      }] as ExplodedViewResult;
       results.leaderLines = [];
       results.distance = 0;
       results.components = results;
@@ -799,8 +880,8 @@ export class AssemblyManager {
     assemblyCenter.multiplyScalar(1 / this.components.length);
     const refCenter = fixedCentroid || assemblyCenter;
 
-    const leaderLines = [];
-    const results = this.components.map((comp, idx) => {
+    const leaderLines: LeaderLine[] = [];
+    const results = this.components.map((comp, idx): ExplodedComponent => {
       if (comp.isFixed) {
         return {
           id: comp.id,
@@ -813,7 +894,7 @@ export class AssemblyManager {
       }
 
       // Determine kinematic motion axis
-      let motionAxis = new THREE.Vector3(0, 1, 0);
+      const motionAxis = new THREE.Vector3(0, 1, 0);
 
       if (explicitAxis) {
         if (explicitAxis instanceof THREE.Vector3) motionAxis.copy(explicitAxis).normalize();
@@ -870,14 +951,15 @@ export class AssemblyManager {
     });
 
     // Attach leader lines & metadata for full compatibility
-    results.leaderLines = leaderLines;
-    results.distance = baseDist;
-    results.components = results;
+    const view = results as ExplodedViewResult;
+    view.leaderLines = leaderLines;
+    view.distance = baseDist;
+    view.components = view;
 
-    return results;
+    return view;
   }
 
-  generateExplodedView(options = 40) {
+  generateExplodedView(options: ExplodeOptions = 40): ExplodedViewResult {
     return this.createExplodedView(options);
   }
 }

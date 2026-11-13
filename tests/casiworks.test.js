@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 import { constraintSolver, ConstraintSolver, QRDecomposition } from '../src/kernel/ConstraintSolver.ts';
 import { featureEngine } from '../src/features/FeatureEngine.js';
-import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.js';
+import { AssemblyManager, safeQuaternionFromVectors } from '../src/assembly/AssemblyManager.ts';
 import { exportEngine } from '../src/kernel/ExportEngine.ts';
 import { importEngine } from '../src/kernel/ImportEngine.ts';
 import { feaEngine, ELEMENT_TYPES } from '../src/simulation/FEAEngine.js';
