@@ -1,6 +1,6 @@
 // CasiWorks Pro - Project file save / open / new (shared by toolbar and keyboard shortcuts)
 
-/** The slice of the CAD store these helpers use (replaced by the full store type in T.3). */
+/** The slice of the CAD store these helpers use (cadStore.ts checks the store satisfies it). */
 export interface ProjectFileState {
   documentName: string;
   isModified: boolean;

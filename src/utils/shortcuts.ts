@@ -4,7 +4,7 @@ import type { ToolId, ViewOrientation } from './constants.ts';
 import { downloadProject, openProject, newProject } from './projectFile.ts';
 import type { ProjectFileState, StoreHandle } from './projectFile.ts';
 
-/** The slice of the CAD store the shortcuts use (replaced by the full store type in T.3). */
+/** The slice of the CAD store the shortcuts use (cadStore.ts checks the store satisfies it). */
 export interface ShortcutState extends ProjectFileState {
   undo(): void;
   redo(): void;

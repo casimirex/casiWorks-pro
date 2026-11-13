@@ -18,7 +18,8 @@ import type { FeatureType } from '../utils/constants.ts';
 import { generateId } from '../utils/math.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.js';
 import { geometryEngine } from '../kernel/GeometryEngine.js';
-import { rebuildModel } from '../features/rebuildModel.js';
+import { rebuildModel } from '../features/rebuildModel.ts';
+import type { RebuildResult, RebuildState } from '../features/rebuildModel.ts';
 import type {
   BoundingBox,
   ExtrudeEndCondition,
@@ -28,7 +29,6 @@ import type {
   Point2,
   RebuildError,
   SketchEntity,
-  SketchEntityMap,
   SketchPlane,
 } from '../types/cad.ts';
 
@@ -100,11 +100,7 @@ export interface FeatureInfo {
   parameters: Record<string, unknown>;
 }
 
-export interface RebuildResult {
-  ok: boolean;
-  bodyCount: number;
-  errors: RebuildError[];
-}
+export type { RebuildResult };
 
 export interface MaterialInfo {
   key: string;
@@ -220,8 +216,9 @@ export class CasiWorksAPIError extends Error {
 }
 
 // =====================================================================
-// Store contract (the slice of the CAD store the API uses; becomes the
-// full store type when the store is converted in T.3)
+// Store contract: the slice of the CAD store the API uses. Kept as a
+// structural interface so the API stays decoupled from the UI store (e.g. a
+// headless server); cadStore.ts checks at compile time that the store satisfies it.
 // =====================================================================
 
 /** Omit that distributes over each member of a union. */
@@ -232,9 +229,7 @@ type NewFeature = FeatureData;
 /** A feature spec before the API assigns its id. */
 type FeatureSpec = DistributiveOmit<FeatureData, 'id'>;
 
-export interface ApiStoreState {
-  features: Feature[];
-  sketchEntities: SketchEntityMap;
+export interface ApiStoreState extends RebuildState {
   bodies: Array<{ geometry: BufferGeometry | null; visible?: boolean }>;
   needsRebuild: boolean;
   rebuildErrors: RebuildError[];
@@ -548,7 +543,7 @@ export function createCasiWorksAPI(store: ApiStore): CasiWorksAPI {
 
   const model: ModelAPI = Object.freeze({
     rebuild() {
-      return clone(rebuildModel(store) as RebuildResult);
+      return clone(rebuildModel(store));
     },
     errors() {
       ensureRebuilt();

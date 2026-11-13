@@ -1,7 +1,7 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
 import React, { useState } from 'react';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, Layers, FileText } from 'lucide-react';
-import { useCADStore } from '../store/cadStore.js';
+import { useCADStore } from '../store/cadStore.ts';
 import { feaEngine, ELEMENT_TYPES } from './FEAEngine.js';
 import { materialLibrary } from '../kernel/MaterialLibrary.js';
 import DrawingViewModal from '../drawings/DrawingViewModal.jsx';

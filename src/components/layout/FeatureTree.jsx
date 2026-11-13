@@ -6,7 +6,7 @@ import {
   Shield, Layers, CircleDot, X, Search, Sparkles,
   Ban, AlertTriangle, ArrowDownToLine, RotateCcw, ChevronUp
 } from 'lucide-react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { FEATURE_TYPES } from '../../utils/constants.ts';
 
 export default function FeatureTree({ onMaterialClick, isOpen, onClose }) {

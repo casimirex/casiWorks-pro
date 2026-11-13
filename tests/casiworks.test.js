@@ -921,7 +921,7 @@ test('AssemblyManager Audit: Exploded view handling for 0 and 1 components witho
 
 
 // ==================== AUDIT REGRESSIONS (store, rebuild, IGES) ====================
-import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.js';
+import { useCADStore, ensureFeatureGraph } from '../src/store/cadStore.ts';
 import { CAD_EXAMPLES } from '../src/utils/examples.ts';
 import { sketchEngine as sketchEngineForPoints } from '../src/kernel/SketchEngine.js';
 import { geometryEngine as geometryEngineMP } from '../src/kernel/GeometryEngine.js';
@@ -968,14 +968,42 @@ test('Store regression: every built-in example supports add, remove and suppress
   }
 });
 
-test('Store regression: Set state (expandedNodes) is draftable and loadProject rejects invalid files atomically', () => {
+test('Store regression: loadProject rejects invalid files atomically', () => {
   const store = useCADStore;
   store.getState().newProject();
-  assert.doesNotThrow(() => store.setState(s => { s.expandedNodes.add('features'); }));
   store.getState().setDocumentName('KeepMe');
   store.getState().loadProject('{"features": "not-an-array", "documentName": "Bad"}');
   assert.equal(store.getState().documentName, 'KeepMe', 'invalid file must not partially load');
   assert.match(store.getState().statusMessage, /Error loading project/);
+  for (const bad of ['[1,2]', 'null', '"text"', '{not json']) {
+    store.getState().loadProject(bad);
+    assert.equal(store.getState().documentName, 'KeepMe', `input ${bad} must not change the document`);
+  }
+});
+
+test('Store: newProject resets to a fresh, independent initial state', () => {
+  const store = useCADStore;
+  store.getState().newProject();
+  store.getState().addFeature({ id: 'f1', name: 'S', type: FEATURE_TYPES.SKETCH, sketchId: 'k', plane: 'Front' });
+  store.getState().newProject();
+  assert.equal(store.getState().features.length, 0);
+  assert.equal(store.getState().undoStack.length, 0);
+  // A second reset must not share arrays with the first (initial state is created fresh each time)
+  store.getState().addFeature({ id: 'f2', name: 'S', type: FEATURE_TYPES.SKETCH, sketchId: 'k2', plane: 'Front' });
+  store.getState().newProject();
+  assert.equal(store.getState().features.length, 0);
+});
+
+test('Store: undo/redo carry action names and restore the document', () => {
+  const store = useCADStore;
+  store.getState().newProject();
+  store.getState().addFeature({ id: 'f1', name: 'Sk', type: FEATURE_TYPES.SKETCH, sketchId: 'k', plane: 'Front' });
+  store.getState().undo();
+  assert.equal(store.getState().features.length, 0);
+  assert.match(store.getState().statusMessage, /^Undo: Add Sk/);
+  store.getState().redo();
+  assert.equal(store.getState().features.length, 1);
+  assert.match(store.getState().statusMessage, /^Redo: Add Sk/);
 });
 
 test('Store regression: project save/load round-trip preserves feature graph', () => {

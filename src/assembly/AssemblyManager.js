@@ -253,6 +253,9 @@ export class AssemblyManager {
 
   /**
    * Insert component into assembly
+   * @param {string} name
+   * @param {import('three').BufferGeometry} geometry
+   * @param {boolean|null} [isFixed] - null: fix only the first component
    */
   insertComponent(name, geometry, isFixed = null) {
     const shouldFix = isFixed !== null ? isFixed : this.components.length === 0;

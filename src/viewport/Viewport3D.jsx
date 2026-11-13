@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useCADStore } from '../store/cadStore';
+import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import { viewportPicker } from './ViewportPicker';
 import { sketchEngine } from '../kernel/SketchEngine';

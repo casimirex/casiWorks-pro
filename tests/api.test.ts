@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { useCADStore } from '../src/store/cadStore.js';
+import { useCADStore } from '../src/store/cadStore.ts';
 import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/CasiWorksAPI.ts';
 import type { CasiWorksAPI, CasiWorksAPIErrorCode, SketchRef } from '../src/api/CasiWorksAPI.ts';
 

@@ -9,7 +9,7 @@ import {
   Sparkles, Layers3, Cpu, FileText, Check, ArrowRight,
   ArrowDownToLine, Move, Crosshair
 } from 'lucide-react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS, FEATURE_TYPES } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { downloadProject, openProject, newProject as newProjectFile } from '../../utils/projectFile.ts';

@@ -1,6 +1,6 @@
 // CasiWorks Pro - Error boundary: contain a render crash to one region of the UI
 import React from 'react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { downloadProject } from '../../utils/projectFile.ts';
 
 /**

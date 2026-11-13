@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Download, Eye, Layers, Settings2, FileText, Check } from 'lucide-react';
 import { drawingEngine, SHEET_SIZES } from './DrawingEngine.js';
-import { useCADStore } from '../store/cadStore.js';
+import { useCADStore } from '../store/cadStore.ts';
 
 export default function DrawingViewModal({ isOpen, onClose }) {
   const bodies = useCADStore(s => s.bodies);

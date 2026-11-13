@@ -6,7 +6,7 @@ import PropertyPanel from './PropertyPanel';
 import StatusBar from './StatusBar';
 import Viewport3D from '../../viewport/Viewport3D';
 import ErrorBoundary from '../common/ErrorBoundary';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 
 export default function MainLayout({ onExportClick, onMaterialClick, onMassPropsClick }) {
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);

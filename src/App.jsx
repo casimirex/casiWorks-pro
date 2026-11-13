@@ -5,9 +5,9 @@ import ExportDialog from './components/dialogs/ExportDialog';
 import MaterialDialog from './components/dialogs/MaterialDialog';
 import MassPropsDialog from './components/dialogs/MassPropsDialog';
 import ResultsViewer from './simulation/ResultsViewer';
-import { useCADStore, ensureFeatureGraph } from './store/cadStore';
+import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
 import { setupKeyboardShortcuts } from './utils/shortcuts.ts';
-import { rebuildModel } from './features/rebuildModel';
+import { rebuildModel } from './features/rebuildModel.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants.ts';
 
 export default function App() {

@@ -1,7 +1,7 @@
 // CasiWorks Pro - Mass Properties Dialog
 import React, { useMemo } from 'react';
 import { X, Scale, Info } from 'lucide-react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary';
 import { geometryEngine } from '../../kernel/GeometryEngine';
 

@@ -1,7 +1,7 @@
 // CasiWorks Pro - Export Dialog
 import React, { useState } from 'react';
 import { X, Download, FileText } from 'lucide-react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { exportEngine } from '../../kernel/ExportEngine';
 
 export default function ExportDialog({ isOpen, onClose }) {

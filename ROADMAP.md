@@ -56,7 +56,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [x] **T.0** Tooling: TypeScript 6, strict `tsconfig.json`, `npm run typecheck` in CI, typescript-eslint; first file converted (`utils/clone.ts`) to prove Vite + Node + lint
 - [x] **T.1** Domain types (`types/`: Feature, SketchEntity, MassProperties, …) and `utils/` → `.ts`
 - [x] **T.2** Public API → `.ts` (typed API for script and add-in authors)
-- [ ] **T.3** Store and rebuild → `.ts`
+- [x] **T.3** Store and rebuild → `.ts`
 - [ ] **T.4** Kernel → `.ts` (several steps: math/sketch, geometry, B-Rep/topology, import/export)
 - [ ] **T.5** Assembly, simulation, drawings → `.ts`
 - [ ] **T.6** Viewport and UI components → `.tsx`

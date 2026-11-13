@@ -1,6 +1,6 @@
 // CasiWorks Pro - Bottom Status Bar (Modern Engineering Pill Layout)
 import React from 'react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { Magnet, Grid, Layers, Eye, Box, Compass, Sparkles } from 'lucide-react';
 
 export default function StatusBar() {

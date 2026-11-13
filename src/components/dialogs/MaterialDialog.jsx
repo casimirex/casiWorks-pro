@@ -1,7 +1,7 @@
 // CasiWorks Pro - Material Selection Dialog
 import React, { useState } from 'react';
 import { X, Check, Sliders, Info } from 'lucide-react';
-import { useCADStore } from '../../store/cadStore';
+import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary';
 
 export default function MaterialDialog({ isOpen, onClose }) {
