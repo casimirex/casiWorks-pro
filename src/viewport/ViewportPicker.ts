@@ -1,5 +1,6 @@
 // CasiWorks Pro - Viewport Picker and Raycaster
 import * as THREE from 'three';
+import { sketchPlaneNormal, worldToSketch } from '../utils/math.ts';
 
 /** A pointer position on a sketch plane: sketch coordinates plus the world point. */
 export interface SketchPlanePoint {
@@ -52,26 +53,14 @@ export class ViewportPicker {
     try {
       this.raycaster.setFromCamera(new THREE.Vector2(pointerX, pointerY), camera);
 
-      // Build the 3D plane for the sketch
-      const planeNormal = new THREE.Vector3(0, 0, 1);
-      if (planeName === 'Top' || planeName === 'XZ') planeNormal.set(0, 1, 0);
-      else if (planeName === 'Right' || planeName === 'YZ') planeNormal.set(1, 0, 0);
-
-      const mathPlane = new THREE.Plane(planeNormal, 0);
+      // The sketch plane through the origin, mapped exactly as the kernel maps sketches
+      const mathPlane = new THREE.Plane(sketchPlaneNormal(planeName), 0);
       const target = new THREE.Vector3();
       const hit = this.raycaster.ray.intersectPlane(mathPlane, target);
-
       if (!hit) return null;
 
-      // Transform world 3D target point into 2D sketch plane coordinates (x, y)
-      if (planeName === 'Top' || planeName === 'XZ') {
-        return { x: target.x, y: -target.z, z: 0, world: target };
-      } else if (planeName === 'Right' || planeName === 'YZ') {
-        return { x: target.z, y: target.y, z: 0, world: target };
-      } else {
-        // Front / XY
-        return { x: target.x, y: target.y, z: 0, world: target };
-      }
+      const { x, y } = worldToSketch(target, planeName);
+      return { x, y, z: 0, world: target };
     } catch {
       return null;
     }

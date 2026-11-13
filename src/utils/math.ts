@@ -63,6 +63,22 @@ export function getSketchPlaneMatrix(plane: string): THREE.Matrix4 {
   return matrix;
 }
 
+/** World point of a sketch point on a sketch plane (the same mapping the kernel extrudes with). */
+export function sketchToWorld(p: Point2, plane: string): THREE.Vector3 {
+  return new THREE.Vector3(p.x, p.y, 0).applyMatrix4(getSketchPlaneMatrix(plane));
+}
+
+/** Sketch coordinates of a world point on (or projected onto) a sketch plane. */
+export function worldToSketch(v: THREE.Vector3, plane: string): Point2 {
+  const local = v.clone().applyMatrix4(getSketchPlaneMatrix(plane).invert());
+  return { x: local.x, y: local.y };
+}
+
+/** Unit normal of a sketch plane in world space. */
+export function sketchPlaneNormal(plane: string): THREE.Vector3 {
+  return new THREE.Vector3(0, 0, 1).applyMatrix4(getSketchPlaneMatrix(plane));
+}
+
 /** Unit vector of `v`; `fallback` (cloned) when `v` is missing, non-finite or ~zero length. */
 export function safeNormalize(
   v: { x: number; y: number; z: number } | null | undefined,

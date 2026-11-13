@@ -142,6 +142,44 @@ function cleanLoop(pts: Point2[]): Point2[] {
 }
 
 /**
+ * The polyline of one entity as the kernel sees it: closed for circles,
+ * ellipses and rectangles, open for lines, arcs and splines; null for points
+ * and unknown entities. Also used to draw sketches, so what is shown is
+ * exactly what gets extruded.
+ */
+export function entityPolyline(e: ProfileEntity): { points: Point2[]; closed: boolean } | null {
+  switch (e.type) {
+    case 'line':
+      return { points: [lineStart(e), lineEnd(e)], closed: false };
+    case 'arc':
+      return { points: arcPoints(centerOf(e), e.radius ?? e.r ?? 10, e.startAngle ?? 0, e.endAngle ?? Math.PI * 2), closed: false };
+    case 'spline':
+      if (e.controlPoints && e.controlPoints.length >= 2) {
+        const curve = new THREE.SplineCurve(e.controlPoints.map(p => new THREE.Vector2(p.x, p.y)));
+        return { points: curve.getPoints(SPLINE_SEGMENTS).map(p => ({ x: p.x, y: p.y })), closed: false };
+      }
+      return null;
+    case 'circle':
+      return { points: circlePoints(centerOf(e), e.radius ?? e.r ?? 10), closed: true };
+    case 'ellipse': {
+      const c = centerOf(e);
+      const curve = new THREE.EllipseCurve(c.x, c.y, e.radiusX ?? e.rx ?? 10, e.radiusY ?? e.ry ?? 5, 0, Math.PI * 2, false,
+        (e as { rotation?: number }).rotation ?? 0);
+      return { points: curve.getPoints(CIRCLE_SEGMENTS).map(p => ({ x: p.x, y: p.y })), closed: true };
+    }
+    case 'rect': {
+      const x1 = e.x1 ?? e.corner1?.x ?? 0;
+      const y1 = e.y1 ?? e.corner1?.y ?? 0;
+      const x2 = e.x2 ?? e.corner2?.x ?? 0;
+      const y2 = e.y2 ?? e.corner2?.y ?? 0;
+      return { points: [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }], closed: true };
+    }
+    default:
+      return null; // points and unknown entities do not form profiles
+  }
+}
+
+/**
  * Closed loops of the profile. Construction geometry and points are ignored.
  * Open chains are closed with a straight segment (lenient, as before).
  */
@@ -151,40 +189,8 @@ export function profileLoops(entities: ProfileEntity[]): Point2[][] {
 
   for (const e of entities) {
     if (e.construction) continue;
-    switch (e.type) {
-      case 'line':
-        open.push([lineStart(e), lineEnd(e)]);
-        break;
-      case 'arc':
-        open.push(arcPoints(centerOf(e), e.radius ?? e.r ?? 10, e.startAngle ?? 0, e.endAngle ?? Math.PI * 2));
-        break;
-      case 'spline':
-        if (e.controlPoints && e.controlPoints.length >= 2) {
-          const curve = new THREE.SplineCurve(e.controlPoints.map(p => new THREE.Vector2(p.x, p.y)));
-          open.push(curve.getPoints(SPLINE_SEGMENTS).map(p => ({ x: p.x, y: p.y })));
-        }
-        break;
-      case 'circle':
-        loops.push(circlePoints(centerOf(e), e.radius ?? e.r ?? 10));
-        break;
-      case 'ellipse': {
-        const c = centerOf(e);
-        const curve = new THREE.EllipseCurve(c.x, c.y, e.radiusX ?? e.rx ?? 10, e.radiusY ?? e.ry ?? 5, 0, Math.PI * 2, false,
-          (e as { rotation?: number }).rotation ?? 0);
-        loops.push(curve.getPoints(CIRCLE_SEGMENTS).map(p => ({ x: p.x, y: p.y })));
-        break;
-      }
-      case 'rect': {
-        const x1 = e.x1 ?? e.corner1?.x ?? 0;
-        const y1 = e.y1 ?? e.corner1?.y ?? 0;
-        const x2 = e.x2 ?? e.corner2?.x ?? 0;
-        const y2 = e.y2 ?? e.corner2?.y ?? 0;
-        loops.push([{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }]);
-        break;
-      }
-      default:
-        break; // points and unknown entities do not form profiles
-    }
+    const poly = entityPolyline(e);
+    if (poly) (poly.closed ? loops : open).push(poly.points);
   }
 
   // Chain open pieces into loops, reversing pieces whose direction disagrees

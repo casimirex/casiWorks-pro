@@ -51,8 +51,8 @@ casiworks/
 │   │   └── DrawingViewModal.jsx  # Interactive engineering drawing sheet viewer modal
 │   │
 │   ├── viewport/                 # High-Performance 3D Viewport
-│   │   ├── Viewport3D.jsx        # R3F Canvas, OrbitControls, Reference Planes, Shading, Sharp Edges
-│   │   ├── ViewportPicker.js     # Raycaster, 3D to sketch plane projection, vertex & edge snapping
+│   │   ├── Viewport3D.tsx        # R3F Canvas, OrbitControls, Reference Planes, Shading, Sharp Edges
+│   │   ├── ViewportPicker.ts     # Raycaster, 3D to sketch plane projection, vertex & edge snapping
 │   │
 │   ├── components/
 │   │   ├── layout/

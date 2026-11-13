@@ -1,15 +1,19 @@
 // CasiWorks Pro - 3D Viewport Component
-import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import type { ElementRef } from 'react';
 import { Canvas, useThree, extend } from '@react-three/fiber';
 import type { Object3DNode, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
-import { TOOLS, SKETCH_ENTITY_TYPES, VIEW_ORIENTATIONS } from '../utils/constants.ts';
+import { TOOLS, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import type { ToolId, ViewOrientation } from '../utils/constants.ts';
-import type { Point2, SketchEntityMap } from '../types/cad.ts';
+import type { Point2, SketchEntity, SketchEntityMap } from '../types/cad.ts';
+import { sketchToWorld } from '../utils/math.ts';
+import { entityPolyline } from '../kernel/profile.ts';
+import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
+import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 
@@ -101,6 +105,8 @@ interface DisplayBody {
 interface CADBodyMeshProps {
   body: DisplayBody;
   isSelected: boolean;
+  /** False while sketching: clicks place sketch points instead of selecting. */
+  selectable: boolean;
   onSelect(body: DisplayBody): void;
   shadedMode: boolean;
   wireframeMode: boolean;
@@ -108,7 +114,7 @@ interface CADBodyMeshProps {
   materialKey: string;
 }
 
-function CADBodyMesh({ body, isSelected, onSelect, wireframeMode, edgeDisplay, materialKey }: CADBodyMeshProps) {
+function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, edgeDisplay, materialKey }: CADBodyMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   const material = useMemo(() => {
@@ -133,7 +139,7 @@ function CADBodyMesh({ body, isSelected, onSelect, wireframeMode, edgeDisplay, m
     try {
       const pos = bodyGeometry.getAttribute ? bodyGeometry.getAttribute('position') : bodyGeometry.attributes?.position;
       if (!pos || pos.count < 3) return null;
-      return new THREE.EdgesGeometry(bodyGeometry, 25);
+      return modelEdgesGeometry(bodyGeometry, 25);
     } catch {
       return null;
     }
@@ -152,6 +158,7 @@ function CADBodyMesh({ body, isSelected, onSelect, wireframeMode, edgeDisplay, m
         geometry={body.geometry}
         material={material}
         onClick={(e: ThreeEvent<MouseEvent>) => {
+          if (!selectable) return;
           e.stopPropagation();
           if (body && onSelect) onSelect(body);
         }}
@@ -170,6 +177,76 @@ function CADBodyMesh({ body, isSelected, onSelect, wireframeMode, edgeDisplay, m
 /**
  * Sketch Canvas Overlay inside 3D Viewport
  */
+/** The sketch being edited is drawn over the model, like other CAD systems do. */
+const SKETCH_ON_TOP = 10;
+
+/** One sketch entity drawn in the viewport: a polyline, or a dot for points. */
+function SketchEntityLine({ entity, toWorld }: { entity: SketchEntity; toWorld(p: Point2): [number, number, number] }) {
+  const color = entity.construction ? '#888888' : '#00e5ff';
+  const geometry = useMemo(() => {
+    const poly = entityPolyline(entity as ProfileEntity);
+    if (!poly) return null;
+    const pts = poly.points.map(p => new THREE.Vector3(...toWorld(p)));
+    if (poly.closed && pts.length > 0) pts.push(pts[0].clone());
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }, [entity, toWorld]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+
+  if (entity.type === 'point') {
+    return (
+      <mesh position={toWorld(entity)} renderOrder={SKETCH_ON_TOP}>
+        <sphereGeometry args={[0.5, 10, 10]} />
+        <meshBasicMaterial color={color} depthTest={false} />
+      </mesh>
+    );
+  }
+  if (!geometry) return null;
+  return (
+    // Construction geometry is dashed (dashes need per-vertex line distances)
+    <threeLine geometry={geometry} renderOrder={SKETCH_ON_TOP} onUpdate={(line: THREE.Line) => line.computeLineDistances()}>
+      {entity.construction
+        ? <lineDashedMaterial color={color} dashSize={2} gapSize={1} depthTest={false} />
+        : <lineBasicMaterial color={color} linewidth={2} depthTest={false} />}
+    </threeLine>
+  );
+}
+
+/** Keeps the default camera's projection in step with the Persp/Ortho toggle, preserving the view. */
+function ProjectionSwitch({ perspective }: { perspective: boolean }) {
+  const camera = useThree(s => s.camera);
+  const size = useThree(s => s.size);
+  const set = useThree(s => s.set);
+  const controls = useThree(s => s.controls) as unknown as { target: THREE.Vector3; update(): void } | null;
+
+  useLayoutEffect(() => {
+    const isPerspective = (camera as THREE.PerspectiveCamera).isPerspectiveCamera === true;
+    if (isPerspective === perspective) return;
+    const target = controls?.target?.clone() ?? new THREE.Vector3();
+    const halfFov = (FOV / 2) * Math.PI / 180;
+    let next: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+    if (perspective) {
+      // Stand back far enough to see the height the orthographic view showed
+      const ortho = camera as THREE.OrthographicCamera;
+      const visibleHeight = (ortho.top - ortho.bottom) / ortho.zoom;
+      next = new THREE.PerspectiveCamera(FOV, size.width / size.height, 0.1, 5000);
+      const offset = camera.position.clone().sub(target).setLength(visibleHeight / (2 * Math.tan(halfFov)));
+      next.position.copy(target).add(offset);
+    } else {
+      // Zoom so the model appears the same size as in perspective at the target
+      const visibleHeight = 2 * camera.position.distanceTo(target) * Math.tan(halfFov);
+      next = new THREE.OrthographicCamera(-size.width / 2, size.width / 2, size.height / 2, -size.height / 2, -5000, 5000);
+      next.zoom = size.height / visibleHeight;
+      next.position.copy(camera.position);
+    }
+    next.up.copy(camera.up);
+    next.lookAt(target);
+    next.updateProjectionMatrix();
+    set({ camera: next });
+  }, [perspective, camera, size, set, controls]);
+
+  return null;
+}
+
 interface ActiveSketchOverlayProps {
   activeSketchId: string | null;
   activeSketchPlane: string;
@@ -181,70 +258,34 @@ interface ActiveSketchOverlayProps {
 function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints }: ActiveSketchOverlayProps) {
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
-  // Transform 2D sketch points to 3D based on sketch plane
+  // Sketch point → world point, exactly as the kernel maps the sketch plane
   const transformPoint = useCallback((pt: Point2 | null | undefined): [number, number, number] => {
     if (!pt) return [0, 0, 0];
-    if (activeSketchPlane === 'Top' || activeSketchPlane === 'XZ') {
-      return [pt.x, 0, -pt.y];
-    } else if (activeSketchPlane === 'Right' || activeSketchPlane === 'YZ') {
-      return [0, pt.y, pt.x];
-    }
-    return [pt.x, pt.y, 0]; // Front / XY
+    return sketchToWorld(pt, activeSketchPlane).toArray() as [number, number, number];
   }, [activeSketchPlane]);
 
   return (
     <group name="ActiveSketchOverlay">
-      {/* Existing Entities */}
-      {entities.map((ent) => {
-        if (ent.type === SKETCH_ENTITY_TYPES.LINE && ent.p1 && ent.p2) {
-          const p1 = transformPoint(ent.p1);
-          const p2 = transformPoint(ent.p2);
-          const geom = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(...p1),
-            new THREE.Vector3(...p2),
-          ]);
-          return (
-            <threeLine key={ent.id} geometry={geom}>
-              <lineBasicMaterial color={ent.construction ? '#888888' : '#00e5ff'} linewidth={2} />
-            </threeLine>
-          );
-        } else if (ent.type === SKETCH_ENTITY_TYPES.CIRCLE && ent.center) {
-          const segments = 64;
-          const pts: THREE.Vector3[] = [];
-          for (let i = 0; i <= segments; i++) {
-            const angle = (i * Math.PI * 2) / segments;
-            const pt2D = {
-              x: ent.center.x + ent.radius * Math.cos(angle),
-              y: ent.center.y + ent.radius * Math.sin(angle),
-            };
-            pts.push(new THREE.Vector3(...transformPoint(pt2D)));
-          }
-          const geom = new THREE.BufferGeometry().setFromPoints(pts);
-          return (
-            <threeLine key={ent.id} geometry={geom}>
-              <lineBasicMaterial color={ent.construction ? '#888888' : '#00e5ff'} linewidth={2} />
-            </threeLine>
-          );
-        }
-        return null;
-      })}
+      {/* Existing entities, sampled the same way the kernel samples profiles */}
+      {entities.map((ent) => <SketchEntityLine key={ent.id} entity={ent} toWorld={transformPoint} />)}
 
       {/* Rubber-band preview line/points during drawing */}
       {currentPoints.length > 0 && (
         <group name="CurrentSketchPreview">
           {currentPoints.map((pt, i) => (
-            <mesh key={i} position={transformPoint(pt)}>
+            <mesh key={i} position={transformPoint(pt)} renderOrder={SKETCH_ON_TOP}>
               <sphereGeometry args={[0.6, 12, 12]} />
-              <meshBasicMaterial color="#ff9800" />
+              <meshBasicMaterial color="#ff9800" depthTest={false} />
             </mesh>
           ))}
           {currentPoints.length >= 2 && (
             <threeLine
+              renderOrder={SKETCH_ON_TOP}
               geometry={new THREE.BufferGeometry().setFromPoints(
                 currentPoints.map(p => new THREE.Vector3(...transformPoint(p)))
               )}
             >
-              <lineBasicMaterial color="#ff9800" linewidth={2} />
+              <lineBasicMaterial color="#ff9800" linewidth={2} depthTest={false} />
             </threeLine>
           )}
         </group>
@@ -394,6 +435,8 @@ function OrientationCubeHUD({ setViewOrientation }: { setViewOrientation(view: V
   );
 }
 
+const FOV = 45;
+
 /**
  * Main 3D Viewport Component
  */
@@ -486,7 +529,7 @@ export default function Viewport3D() {
     <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
         shadows
-        camera={{ position: [80, 80, 80], fov: 45, near: 0.1, far: 5000 }}
+        camera={{ position: [80, 80, 80], fov: FOV, near: 0.1, far: 5000 }}
         style={{ background: 'radial-gradient(ellipse at 50% 45%, #2a2e38 0%, #16171c 70%, #0d0e11 100%)' }}
       >
         <ambientLight intensity={0.7} />
@@ -494,6 +537,7 @@ export default function Viewport3D() {
         <directionalLight position={[-100, 80, -100]} intensity={0.5} />
         <hemisphereLight color="#ffffff" groundColor="#333333" intensity={0.4} />
 
+        <ProjectionSwitch perspective={perspectiveView} />
         <OrbitControls
           ref={controlsRef}
           makeDefault
@@ -522,6 +566,7 @@ export default function Viewport3D() {
             key={body.id}
             body={body}
             isSelected={selectedEntities.some(e => e.id === body.id)}
+            selectable={!isSketchActive}
             onSelect={(b) => setSelection({ id: b.id })}
             shadedMode={shadedMode}
             wireframeMode={wireframeMode}
@@ -536,6 +581,7 @@ export default function Viewport3D() {
             key={comp.id}
             body={comp}
             isSelected={selectedEntities.some(e => e.id === comp.id)}
+            selectable={!isSketchActive}
             onSelect={(b) => setSelection({ id: b.id })}
             shadedMode={shadedMode}
             wireframeMode={wireframeMode}

@@ -21,7 +21,6 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 | UI shell | Ribbon, feature tree with rollback, property panel, 3D viewport, dialogs |
 | Geometry | **Triangle-mesh kernel** (BSP CSG on polygons), verified by measured tests. No exact B-Rep yet (an earlier unused, incorrect B-Rep module was removed) |
 | Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); needs Phase 2 |
-| Display | Boolean cuts leave many thin triangles, so edge display shows stray fan lines around holes; resolved by the exact kernel |
 | STEP / IGES export | Standards-compliant faceted solids (every face, shared vertices); not exact surfaces — needs Phase 2 |
 | Sketcher | Lines, rectangles, circles, points; constraint solver exists but has little UI |
 | Assemblies | Primitive shapes only (box, cylinder…), not real part documents |
@@ -69,6 +68,10 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.5c** Drawing engine (plus real edge extraction and hidden-line removal, upright views, correct isometric, valid DXF)
   - [x] **T.5d** Feature engine (plus hole depth/entry, pattern vectors, revolve plane fixes)
 - [ ] **T.6** Viewport and UI components → `.tsx`
+  - [x] **T.6a** Viewport (plus Right-plane sketch mirroring, all entity types drawn, sketch over the model, no selection while sketching, working Ortho toggle, edge display without boolean fan lines)
+  - [ ] **T.6b** Common components and dialogs
+  - [ ] **T.6c** Feature tree, property panel, command manager (UI only sketches on the Front plane; property panel cannot set hole position/axis or pattern count/spacing/direction)
+  - [ ] **T.6d** Drawing modal, results viewer, App, entry point
 - [ ] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 
 ## Phase 1 — Command layer and public API v1
@@ -104,7 +107,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 - [ ] **3.1** Sketch on any planar face, not only the three default planes (also: clicks in sketch mode currently select the body as well)
 - [ ] **3.2** Constraint UI: add/show/delete geometric relations; fully-defined coloring
 - [ ] **3.3** Driving dimensions editable in the viewport
-- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (factories exist in SketchEngine; the old mirror/offset helpers were removed as incorrect) (the viewport currently draws only lines and circles; points and arcs are stored but not displayed)
+- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (factories exist in SketchEngine; the old mirror/offset helpers were removed as incorrect)
 - [ ] **3.5** Reference geometry: planes, axes, points, coordinate systems
 - [ ] **3.6** Hole wizard (counterbore, countersink, tapped) with standards tables
 - [ ] **3.7** Global variables and equations

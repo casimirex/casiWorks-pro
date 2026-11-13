@@ -200,8 +200,9 @@ export function buildViewMesh(geometry: THREE.BufferGeometry, projMat: THREE.Mat
  * Edges a drawing shows: creases, silhouettes and open boundaries. Edges with
  * a single adjacent triangle are matched to collinear overlapping edges first
  * (T-junctions left by booleans), so they are classified like normal edges.
+ * Without `silhouettes` only view-independent edges (creases, boundaries) are kept.
  */
-export function extractDrawingEdges(mesh: ViewMesh, creaseAngleDeg: number): Array<{ a: THREE.Vector3; b: THREE.Vector3 }> {
+export function extractDrawingEdges(mesh: ViewMesh, creaseAngleDeg: number, { silhouettes = true } = {}): Array<{ a: THREE.Vector3; b: THREE.Vector3 }> {
   const edgeMap = new Map<string, { a: number; b: number; faces: number[] }>();
   mesh.tris.forEach((tri, f) => {
     for (let k = 0; k < 3; k++) {
@@ -279,10 +280,24 @@ export function extractDrawingEdges(mesh: ViewMesh, creaseAngleDeg: number): Arr
       const anyFront = tris.some(t => t.front);
       const anyBack = tris.some(t => !t.front);
       const crease = tris.some((t, i) => tris.some((u, j) => j > i && t.normal.dot(u.normal) < cosCrease));
-      draw = crease || (anyFront && anyBack);
+      draw = crease || (silhouettes && anyFront && anyBack);
     }
     if (draw) out.push({ a: V[e.a], b: V[e.b] });
   }
+  return out;
+}
+
+/**
+ * Line segments of a model's real edges (sharp creases and open boundaries) for
+ * 3D display. Unlike THREE.EdgesGeometry it does not show the triangulation
+ * fans that booleans leave on flat faces.
+ */
+export function modelEdgesGeometry(geometry: THREE.BufferGeometry, creaseAngleDeg = 25): THREE.BufferGeometry {
+  const edges = extractDrawingEdges(buildViewMesh(geometry, new THREE.Matrix4()), creaseAngleDeg, { silhouettes: false });
+  const positions = new Float32Array(edges.length * 6);
+  edges.forEach(({ a, b }, i) => positions.set([a.x, a.y, a.z, b.x, b.y, b.z], i * 6));
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   return out;
 }
 
