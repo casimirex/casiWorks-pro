@@ -4,6 +4,7 @@ node_modules/
 .pnp.js
 
 # Production build
+e2e-output/
 dist/
 dist-ssr/
 

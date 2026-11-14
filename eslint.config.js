@@ -19,7 +19,7 @@ export default tseslint.config(
 
   // TypeScript sources
   {
-    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', '*.config.ts'],
+    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', 'scripts/**/*.ts', '*.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 'latest',
@@ -39,7 +39,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['tests/**/*.ts', '*.config.{js,ts}'],
+    files: ['tests/**/*.ts', 'scripts/**/*.ts', '*.config.{js,ts}'],
     languageOptions: { globals: { ...globals.node } },
   },
 );
