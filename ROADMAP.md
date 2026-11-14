@@ -85,7 +85,7 @@ the foundation of "API support": the UI becomes just one client of the API.
 - [x] **1.4** Events: `api.on('rebuild' | 'selectionChanged' | 'featureAdded', …)`; also featureChanged/Removed, documentChanged, commandExecuted (API 1.2)
 - [x] **1.5** Macro recorder: record commands to a replayable JS script; run macro from file (JSON macros replay without evaluating code; `.mjs` export; API 1.3)
 - [x] **1.6** Scripting console panel (run API snippets in-app): Tools ▸ Console / Ctrl+`, `api` and `run()` in scope, await, last-line value, history, command list and examples
-- [ ] **1.7** API reference docs generated from JSDoc, published with the app
+- [x] **1.7** API reference docs generated from JSDoc, published with the app (`/api/`, `npm run docs:api`; undocumented public members fail a test)
 - [ ] **1.8** Plugin manifest: load third-party add-ins that register commands and ribbon buttons
 
 ## Phase 2 — Exact B-Rep kernel

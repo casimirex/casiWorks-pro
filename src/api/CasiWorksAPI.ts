@@ -117,10 +117,13 @@ export interface MaterialInfo {
   yieldStrength: number;
 }
 
+/** The open part document: create, name, save to and load from JSON. */
 export interface DocumentAPI {
   /** Start a new, empty part. Discards the current document without prompting. */
   'new'(): void;
+  /** The document name shown in the title bar. */
   getName(): string;
+  /** Rename the document (not undoable). Throws INVALID_ARGUMENT for an empty name. */
   setName(name: string): void;
   /** true when there are unsaved changes. */
   isModified(): boolean;
@@ -130,6 +133,7 @@ export interface DocumentAPI {
   load(project: string | object): void;
 }
 
+/** 2D sketches on the Front, Top or Right plane; features are built from them. */
 export interface SketchesAPI {
   /**
    * Create a sketch on a standard plane.
@@ -140,7 +144,9 @@ export interface SketchesAPI {
   getEntities(sketchId: string): SketchEntity[];
 }
 
+/** The feature tree: create, inspect, edit, suppress and roll back features. */
 export interface FeaturesAPI {
+  /** Every feature in tree order (sketches included). */
   list(): FeatureInfo[];
   /** Throws NOT_FOUND. */
   get(id: string): FeatureInfo;
@@ -159,6 +165,7 @@ export interface FeaturesAPI {
   shell(spec: ShellSpec): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
+  /** Delete a feature; features that depend on it lose their parent. Throws NOT_FOUND. */
   remove(id: string): void;
   /** Suppression cascades to dependent features. */
   setSuppressed(id: string, suppressed: boolean): void;
@@ -166,10 +173,13 @@ export interface FeaturesAPI {
   rollbackTo(index: number | null): void;
 }
 
+/** The solid built from the feature tree: rebuild it and measure it. Queries rebuild first when needed. */
 export interface ModelAPI {
+  /** Rebuild now and report the result (normally automatic after every change). */
   rebuild(): RebuildResult;
   /** Errors from the last rebuild. */
   errors(): RebuildError[];
+  /** true when the features produce a solid. */
   hasBody(): boolean;
   /** Mass properties with the active material; null when there is no body. */
   massProperties(): MassProperties | null;
@@ -177,15 +187,21 @@ export interface ModelAPI {
   boundingBox(): BoundingBox | null;
 }
 
+/** The material library and the part's material (used for mass and FEA). */
 export interface MaterialsAPI {
+  /** Every material with its physical properties. */
   list(): MaterialInfo[];
+  /** Key of the part's material, e.g. 'Steel_1020'. */
   getActive(): string;
   /** Throws NOT_FOUND for an unknown key. */
   setActive(key: string): void;
 }
 
+/** Undo and redo of document changes (the same history as the toolbar). */
 export interface HistoryAPI {
+  /** true when there is a change to undo. */
   canUndo(): boolean;
+  /** true when there is an undone change to redo. */
   canRedo(): boolean;
   /** false when there was nothing to undo. */
   undo(): boolean;
@@ -210,7 +226,9 @@ export type { CommandInfo };
  * Commands that open dialogs or files need the running app.
  */
 export interface CommandsAPI {
+  /** Every command: id, label, category, shortcuts, whether it needs the UI. */
   list(): CommandInfo[];
+  /** true when a command with this id exists. */
   has(id: string): boolean;
   /** Run a command. Errors: NOT_FOUND (unknown id), INVALID_ARGUMENT, OPERATION_FAILED (incl. needs the UI). */
   execute(id: string, args?: unknown): unknown;
@@ -251,6 +269,7 @@ export interface MacrosAPI {
   startRecording(name?: string): void;
   /** Stop recording and return the macro (plain JSON data). */
   stopRecording(): Macro;
+  /** true while a recording is in progress (from the UI or the API). */
   isRecording(): boolean;
   /** Replay a macro object or its JSON text; ids it creates are mapped to new ones. */
   run(macro: Macro | string): { steps: number; ids: Record<string, string> };
@@ -276,23 +295,32 @@ export interface CasiWorksAPIOptions {
 
 /** The CasiWorks public API. */
 export interface CasiWorksAPI {
+  /** Semantic version of this API, e.g. '1.3.0'. */
   readonly version: string;
+  /** Units used by every input and result. */
   readonly units: ApiUnits;
+  /** The open part document. */
   readonly document: DocumentAPI;
+  /** 2D sketches. */
   readonly sketches: SketchesAPI;
+  /** The feature tree. */
   readonly features: FeaturesAPI;
+  /** The built solid and its measurements. */
   readonly model: ModelAPI;
+  /** Materials. */
   readonly materials: MaterialsAPI;
+  /** Undo / redo. */
   readonly history: HistoryAPI;
-  /** Since 1.1. */
+  /** Named commands (everything the ribbon and keyboard do). Since 1.1. */
   readonly commands: CommandsAPI;
   /**
    * Listen for an event; returns a function that stops listening. Since 1.2.
-   *   const stop = api.on('featureAdded', (e) => console.log(e.feature.name));
+   * @example const stop = api.on('featureAdded', (e) => console.log(e.feature.name));
    */
   on<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): () => void;
+  /** Stop a listener added with `on`. Since 1.2. */
   off<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): void;
-  /** Since 1.3. */
+  /** Record, replay and export macros. Since 1.3. */
   readonly macros: MacrosAPI;
 }
 

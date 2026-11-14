@@ -311,6 +311,21 @@ const CHECKS: Check[] = [
       return `tree ${names.join(', ')}; error shown with its code; history and Esc work`;
     },
   },
+  {
+    name: 'API reference is served and opened from Tools',
+    async run(p) {
+      const page = await p.eval<string>(`fetch('/api/').then(r => r.ok ? r.text() : 'HTTP ' + r.status)`);
+      const title = /<title>([^<]+)<\/title>/.exec(page)?.[1];
+      const version = await p.eval<string>('window.casiworks.version');
+      assert(title === `CasiWorks API ${version}`, `title: ${title ?? page.slice(0, 80)}`);
+      await p.eval(`window.__opened = []; window.open = (url) => { window.__opened.push(url); return null; }`);
+      await p.click('Tools');
+      await p.click('API reference (opens in a new tab)');
+      const opened = await p.eval<string[]>('window.__opened');
+      assert(opened.length === 1 && opened[0].endsWith('/api/'), `opened ${opened}`);
+      return `${title}; button opens ${opened[0]}`;
+    },
+  },
 ];
 
 // ------------------------------------------------------------------ runner

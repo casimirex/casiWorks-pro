@@ -701,6 +701,10 @@ export default function CommandManager() {
                   <Hash size={19} color="#a78bfa" />
                   <span>Console</span>
                 </button>
+                <button className="ribbon-btn" onClick={() => runCommand('help.apiReference')} title="API reference (opens in a new tab)">
+                  <FileText size={19} color="#94a3b8" />
+                  <span>API Reference</span>
+                </button>
               </div>
               <div className="tool-group-label">SCRIPTING</div>
             </div>

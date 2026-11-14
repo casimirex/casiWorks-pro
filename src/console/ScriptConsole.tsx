@@ -34,6 +34,7 @@ const HELP = [
   'In scope: api (the public API), run(id, args) = api.commands.execute, clear().',
   'Namespaces: api.document, sketches, features, model, materials, history, commands, macros; api.on(event, handler).',
   'await works; the value of the last line is shown. Click a command or example on the right to insert it.',
+  "Full reference: Tools ▸ API Reference, or run('help.apiReference').",
 ].join('\n');
 
 function loadHistory(): string[] {

@@ -257,6 +257,11 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   toggle('view.togglePerspective', 'Perspective / orthographic', s => s.togglePerspective()),
   toggle('view.toggleSection', 'Section view', s => s.toggleSectionView()),
   { id: 'view.toggleFeatureTree', label: 'Feature tree', category: 'View', requiresUI: true, run: ({ ui }) => ui().toggleFeatureTree() },
+  {
+    id: 'help.apiReference', label: 'API reference', category: 'Help', requiresUI: true, record: false,
+    description: 'Opens the generated API reference (/api/) in a new tab',
+    run: () => { window.open(`${import.meta.env?.BASE_URL ?? '/'}api/`, '_blank', 'noopener'); },
+  },
   { id: 'view.toggleConsole', label: 'Scripting console', category: 'View', shortcuts: ['Ctrl+`'], requiresUI: true, record: false, run: ({ ui }) => ui().toggleConsole() },
 
   // ------------------------------------------------------------------ evaluate & drawing

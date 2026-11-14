@@ -90,7 +90,8 @@ casiworks/
     ├── commands.test.ts          # Command registry, keymap, built-in commands
     ├── events.test.ts            # API events
     ├── macros.test.ts            # Macro recording, replay, script export
-    └── console.test.ts           # Scripting console evaluator
+    ├── console.test.ts           # Scripting console evaluator
+    └── apidocs.test.ts           # API reference completeness
 ```
 
 ---
@@ -245,6 +246,11 @@ const api = createHeadlessAPI();   // same API, no browser or React
 
 `api.version` follows semantic versioning: minor versions only add, major
 versions may break.
+
+**API reference:** generated from the sources' doc comments by
+`npm run docs:api` (also run automatically before `dev` and `build`) and served
+with the app at **`/api/`** (Tools ▸ API Reference). It lists every namespace,
+member, event, command and type; a test fails if a public member is undocumented.
 
 **Commands** (since 1.1): every ribbon button, status-bar toggle and keyboard
 shortcut runs a named command, and scripts can run the same ones:
