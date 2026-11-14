@@ -120,3 +120,40 @@ test('Sketch planes: the viewport picks, draws and the kernel extrudes the same 
     assert.ok(Math.abs(picked.x - p.x) < 1e-6 && Math.abs(picked.y - p.y) < 1e-6, `${plane}: picked (${picked.x}, ${picked.y})`);
   }
 });
+
+test('Sketch sessions: discarding edits keeps the sketch; undo reverts an edit or a new sketch', async () => {
+  const { useCADStore: S } = await import('../src/store/cadStore.ts');
+  const { CAD_EXAMPLES } = await import('../src/utils/examples.ts');
+  const s = () => S.getState();
+  const load = () => {
+    s().loadExampleModel(CAD_EXAMPLES[0].create());
+    return s().features.find(f => f.type === 'sketch')!;
+  };
+  const extra = { id: 'extra', type: 'point' as const, x: 1, y: 1 };
+
+  let sk = load();
+  const original = JSON.stringify(s().sketchEntities[sk.sketchId]);
+  s().editSketch(sk.id);
+  s().addSketchEntity(extra);
+  s().endSketch(false);
+  assert.equal(JSON.stringify(s().sketchEntities[sk.sketchId]), original, 'discard restores the sketch (it used to delete it)');
+
+  sk = load();
+  s().editSketch(sk.id);
+  s().addSketchEntity(extra);
+  s().endSketch(true);
+  assert.equal(s().sketchEntities[sk.sketchId].length, JSON.parse(original).length + 1);
+  assert.equal(s().undoStack.at(-1)!.actionName, 'Edit Sketch');
+  s().undo();
+  assert.equal(JSON.stringify(s().sketchEntities[sk.sketchId]), original, 'undo reverts the edit');
+
+  load();
+  const count = s().features.length;
+  s().startSketch('Top');
+  s().addSketchEntity(extra);
+  s().endSketch(true);
+  assert.equal(s().features.length, count + 1);
+  s().undo();
+  assert.equal(s().features.length, count, 'undo removes the new sketch');
+  assert.equal(s().sketchSession, null);
+});

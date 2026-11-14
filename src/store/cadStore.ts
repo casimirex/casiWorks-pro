@@ -102,6 +102,8 @@ export interface CADState {
   // Sketching
   isSketchActive: boolean;
   activeSketchId: string | null;
+  /** The document as it was when the current sketch session began (for discard and undo). */
+  sketchSession: DocumentSnapshot | null;
   activeSketchPlane: SketchPlane;
   sketchEntities: SketchEntityMap;
   sketchConstraints: Record<string, unknown[]>;
@@ -344,6 +346,7 @@ function initialState(): CADState {
     rollbackIndex: -1,
     isSketchActive: false,
     activeSketchId: null,
+    sketchSession: null,
     activeSketchPlane: 'Front',
     sketchEntities: {},
     sketchConstraints: {},
@@ -535,6 +538,7 @@ export const useCADStore = create<CADStore>()(
 
     // ==================== SKETCHES ====================
     startSketch: (plane = 'Front') => set(state => {
+      state.sketchSession = snapshotOf(state) as Draft<DocumentSnapshot>;
       const sketchId = generateId('sketch');
       state.isSketchActive = true;
       state.activeSketchId = sketchId;
@@ -554,9 +558,12 @@ export const useCADStore = create<CADStore>()(
       const sketchId = state.activeSketchId;
       if (!sketchId) return;
 
+      const exists = state.features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId);
+      // Sketch edits are applied live; the session snapshot is the document before them
+      const session = state.sketchSession as DocumentSnapshot | null;
       if (confirm && (state.sketchEntities[sketchId]?.length ?? 0) > 0) {
-        get()._captureUndoSnapshot(state, 'Create Sketch');
-        const exists = state.features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId);
+        get()._captureUndoSnapshot(state, exists ? 'Edit Sketch' : 'Create Sketch');
+        if (session) state.undoStack[state.undoStack.length - 1].snapshot = session as Draft<DocumentSnapshot>;
         if (!exists) {
           insertFeature(state, {
             id: generateId('feat_sketch'),
@@ -571,10 +578,18 @@ export const useCADStore = create<CADStore>()(
           });
         }
       } else if (!confirm) {
-        delete state.sketchEntities[sketchId];
-        delete state.sketchConstraints[sketchId];
-        delete state.sketchDimensions[sketchId];
+        if (exists && session) {
+          // Discarding edits to an existing sketch restores it (it used to delete its geometry)
+          state.sketchEntities[sketchId] = (session.sketchEntities[sketchId] ?? []) as Draft<SketchEntity>[];
+          state.sketchConstraints[sketchId] = (session.sketchConstraints[sketchId] ?? []) as Draft<unknown>[];
+          state.sketchDimensions[sketchId] = (session.sketchDimensions[sketchId] ?? []) as Draft<unknown>[];
+        } else if (!exists) {
+          delete state.sketchEntities[sketchId];
+          delete state.sketchConstraints[sketchId];
+          delete state.sketchDimensions[sketchId];
+        }
       }
+      state.sketchSession = null;
 
       state.isSketchActive = false;
       state.activeSketchId = null;
@@ -642,6 +657,7 @@ export const useCADStore = create<CADStore>()(
     editSketch: (featureId) => set(state => {
       const feature = state.features.find(f => f.id === featureId);
       if (feature?.type !== FEATURE_TYPES.SKETCH) return;
+      state.sketchSession = snapshotOf(state) as Draft<DocumentSnapshot>;
       state.isSketchActive = true;
       state.activeSketchId = feature.sketchId;
       state.activeSketchPlane = feature.plane || 'Front';
