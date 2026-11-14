@@ -134,9 +134,9 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 ## Phase 6 — Simulation
 
 - [ ] **6.1** Solver in a Web Worker with progress and cancel
-- [ ] **6.2** Meshing from exact geometry with local refinement
-- [ ] **6.3** Fixtures and loads picked on faces (known: the property panel's FEA setup card is not connected; studies run from the FEA panel with a fixed end and a tip load, and results are not yet shown as a colour plot on the model)
-- [ ] **6.4** Results: deformed shape, probes, report export
+- [ ] **6.2** Meshing from exact geometry with local refinement (known: the current voxel mesh is coarse; small features such as the L-bracket's mounting holes are not in the analysed mesh — the result plot shows this)
+- [ ] **6.3** Fixtures and loads picked on faces (known: the property panel's FEA setup card is not connected; studies run from the FEA panel with a fixed end and a tip load)
+- [ ] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement on the model and exaggerated deformed shape done; probes and report to do)
 - [ ] **6.5** Modal (frequency) analysis
 
 ## Phase 7 — Platform (cloud and collaboration)

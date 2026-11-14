@@ -1,9 +1,11 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useCADStore } from '../store/cadStore.ts';
 import { feaEngine, ELEMENT_TYPES } from './FEAEngine.ts';
-import type { ElementType, FEAResults } from './FEAEngine.ts';
+import type { ElementType, FEAResults, SolidMesh } from './FEAEngine.ts';
+import { buildResultPlot, COLORMAP_CSS } from './resultPlot.ts';
+import type { PlotQuantity } from './resultPlot.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
 
@@ -15,6 +17,7 @@ export default function ResultsViewer() {
   const [load, setLoad] = useState(5000); // 5000 N
   const [solved, setSolved] = useState<{
     results: FEAResults;
+    mesh: SolidMesh | null;
     // What the results were computed for
     geometry: unknown; material: string; load: number; elementType: ElementType; documentRevision: number;
   } | null>(null);
@@ -22,12 +25,28 @@ export default function ResultsViewer() {
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
+  // Result plot on the model
+  const [showPlot, setShowPlot] = useState(true);
+  const [quantity, setQuantity] = useState<PlotQuantity>('vonMises');
+  const [deformed, setDeformed] = useState(false);
+  const feaPlot = useCADStore(s => s.feaPlot);
+  const setFeaPlot = useCADStore(s => s.setFeaPlot);
 
   // Results of another document are dropped; results of an earlier state of this
   // model (geometry, material, load or element type changed) are shown as stale
   const results = solved && solved.documentRevision === documentRevision ? solved.results : null;
   const stale = !!results && !!solved && (solved.geometry !== bodies[0]?.geometry || solved.material !== activeMaterial
     || solved.load !== load || solved.elementType !== elementType);
+
+  // The plot is shown only for current results (never for an older model state)
+  const plotMesh = solved?.mesh ?? null;
+  const solidResult = results?.solidResult ?? null;
+  const plotVisible = showPlot && !stale && !!plotMesh && !!solidResult;
+  useEffect(() => {
+    setFeaPlot(plotVisible && plotMesh && solidResult ? buildResultPlot(plotMesh, solidResult, { quantity, deformed }) : null);
+  }, [plotVisible, plotMesh, solidResult, quantity, deformed, setFeaPlot]);
+  // Free the plot's GPU buffers when it is replaced
+  useEffect(() => () => feaPlot?.geometry.dispose(), [feaPlot]);
 
   // Stress state of the most-stressed element (by von Mises at its centre)
   const elementStresses = results?.solidResult?.elementStresses ?? [];
@@ -51,7 +70,8 @@ export default function ResultsViewer() {
         // The material field is poissonsRatio (this read poissonRatio, so ν was always 0.3)
         mat.poissonsRatio ?? 0.3
       );
-      setSolved({ results: res, geometry: bodies[0].geometry, material: activeMaterial, load, elementType, documentRevision });
+      setSolved({ results: res, mesh: feaEngine.solidMesh, geometry: bodies[0].geometry, material: activeMaterial, load, elementType, documentRevision });
+      setShowPlot(true);
     } catch (err) {
       console.error('FEA solve failed:', err);
       alert('Simulation error: ' + ((err instanceof Error && err.message) || 'Unable to solve FEA model.'));
@@ -219,16 +239,37 @@ export default function ResultsViewer() {
                 <span>Safety Factor: {results.factorOfSafety.toFixed(2)}</span>
               </div>
 
-              {/* Color Gradient Legend */}
-              <div style={{ marginTop: 4 }}>
-                <div style={{
-                  height: 10,
-                  borderRadius: 3,
-                  background: 'linear-gradient(90deg, #0000ff 0%, #00ffff 25%, #00ff00 50%, #ffff00 75%, #ff0000 100%)',
-                }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#aaa', marginTop: 2 }}>
-                  <span>{results.minStressMPa.toFixed(0)} MPa</span>
-                  <span>{results.maxStressMPa.toFixed(0)} MPa</span>
+              {/* Result plot on the model */}
+              <div className="fea-plot-controls" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                  <input type="checkbox" className="fea-show-plot" checked={showPlot} onChange={(e) => setShowPlot(e.target.checked)} /> Show on model
+                </label>
+                <select className="fea-quantity" value={quantity} onChange={(e) => setQuantity(e.target.value as PlotQuantity)} disabled={!showPlot}
+                  style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '1px 3px', fontSize: 10 }}>
+                  <option value="vonMises">von Mises stress</option>
+                  <option value="displacement">Displacement</option>
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                  <input type="checkbox" className="fea-deformed" checked={deformed} onChange={(e) => setDeformed(e.target.checked)} disabled={!showPlot} /> Deformed
+                </label>
+              </div>
+
+              {/* Colour legend of the plot (or of the stress range when the plot is off) */}
+              <div style={{ marginTop: 2 }}>
+                <div style={{ height: 10, borderRadius: 3, background: COLORMAP_CSS }} />
+                <div className="fea-legend" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#aaa', marginTop: 2 }}>
+                  {feaPlot ? (
+                    <>
+                      <span>{feaPlot.min.toPrecision(3)} {feaPlot.unit}</span>
+                      {feaPlot.deformationScale > 0 && <span>deformation ×{feaPlot.deformationScale.toPrecision(3)}</span>}
+                      <span>{feaPlot.max.toPrecision(3)} {feaPlot.unit}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{results.minStressMPa.toFixed(0)} MPa</span>
+                      <span>{results.maxStressMPa.toFixed(0)} MPa</span>
+                    </>
+                  )}
                 </div>
               </div>
 

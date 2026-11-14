@@ -443,6 +443,7 @@ const FOV = 45;
  */
 export default function Viewport3D() {
   const bodies = useCADStore(s => s.bodies);
+  const feaPlot = useCADStore(s => s.feaPlot);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const setSelection = useCADStore(s => s.setSelection);
@@ -561,8 +562,15 @@ export default function Viewport3D() {
         <OriginDisplay showOrigin={showOrigin} showAxes={showAxes} />
         <ReferencePlanes showPlanes={showPlanes} activePlane={activeSketchPlane} />
 
+        {/* FEA result plot replaces the bodies while it is shown */}
+        {feaPlot && (
+          <mesh geometry={feaPlot.geometry} name="FEAResultPlot">
+            <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
+          </mesh>
+        )}
+
         {/* Bodies */}
-        {bodies.map((body) => (
+        {!feaPlot && bodies.map((body) => (
           <CADBodyMesh
             key={body.id}
             body={body}

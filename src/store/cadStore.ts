@@ -25,6 +25,7 @@ import type {
 } from '../types/cad.ts';
 import type { Body, RebuildState } from '../features/rebuildModel.ts';
 import type { ApiStoreState } from '../api/CasiWorksAPI.ts';
+import type { ResultPlot } from '../simulation/resultPlot.ts';
 
 const MAX_UNDO_HISTORY = 40;
 
@@ -113,6 +114,8 @@ export interface CADState {
 
   // Model
   bodies: Body[];
+  /** FEA result plot shown on the model instead of the bodies (null: show the bodies). */
+  feaPlot: ResultPlot | null;
   activeMaterial: string;
 
   // View
@@ -189,6 +192,7 @@ export interface CADActions {
 
   // Model, material, view
   setBodies(bodies: Body[]): void;
+  setFeaPlot(plot: ResultPlot | null): void;
   setMaterial(materialKey: string): void;
   setViewOrientation(orientation: ViewOrientation): void;
   toggleGrid(): void;
@@ -356,6 +360,7 @@ function initialState(): CADState {
     snapEnabled: true,
     constructionMode: false,
     bodies: [],
+    feaPlot: null,
     activeMaterial: 'Steel_1020',
     viewOrientation: 'isometric',
     viewRequest: 0,
@@ -675,6 +680,10 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== MODEL, MATERIAL, VIEW ====================
+    setFeaPlot: (plot) => set(state => {
+      state.feaPlot = plot as Draft<ResultPlot> | null;
+    }),
+
     setBodies: (bodies) => set(state => {
       state.bodies = bodies as Draft<Body>[];
     }),

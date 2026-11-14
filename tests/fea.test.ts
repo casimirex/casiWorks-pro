@@ -77,3 +77,55 @@ test('SparseMatrix.toCSR gives exactly the same products as the row maps', () =>
   const b = K.toCSR().mult(x, new Float64Array(5));
   assert.deepEqual(Array.from(b), Array.from(a));
 });
+
+test('Result plot: colours follow the result, deformation is exaggerated to 10% of the part size', async () => {
+  const { buildResultPlot, colormap } = await import('../src/simulation/resultPlot.ts');
+  assert.deepEqual(colormap(0), [0, 0, 1]);
+  assert.deepEqual(colormap(1), [1, 0, 0]);
+  assert.deepEqual(colormap(0.5), [0, 1, 0]);
+
+  const fea = new FEAEngine();
+  fea.generateMesh(new THREE.BoxGeometry(10, 10, 100), { elementType: ELEMENT_TYPES.TET10 });
+  const r = fea.solve(1000, 250e6, E, 0.3, {});
+  const mesh = fea.solidMesh!;
+  const solid = r.solidResult!;
+
+  const stress = buildResultPlot(mesh, solid);
+  assert.equal(stress.unit, 'MPa');
+  near(stress.max, r.maxStressMPa, 1e-6, 'plot max = max von Mises');
+  assert.equal(stress.deformationScale, 0, 'undeformed unless asked');
+  const pos = stress.geometry.getAttribute('position');
+  const col = stress.geometry.getAttribute('color');
+  assert.equal(pos.count, mesh.boundaryFaces.length * 3);
+  // The surface vertex at the highest stress is red, at the lowest blue
+  // (the plot range is over all nodes; surface extremes are at least as extreme here)
+  let hi = -Infinity, hiIdx = 0, lo = Infinity, loIdx = 0;
+  for (const i of new Set(mesh.boundaryFaces.flatMap(f => [...f.nodes]))) {
+    const v = solid.nodalVonMisesMPa[i];
+    if (v > hi) { hi = v; hiIdx = i; }
+    if (v < lo) { lo = v; loIdx = i; }
+  }
+  const colourAt = (node: number) => {
+    const p = mesh.nodes[node].point;
+    for (let k = 0; k < pos.count; k++) if (Math.abs(pos.getX(k) - p.x) + Math.abs(pos.getY(k) - p.y) + Math.abs(pos.getZ(k) - p.z) < 1e-9) return [col.getX(k), col.getY(k), col.getZ(k)];
+    return null;
+  };
+  const [red, blue] = [colourAt(hiIdx), colourAt(loIdx)];
+  assert.ok(red && blue, 'surface extremes are plotted');
+  const t = (v: number) => (v - stress.min) / (stress.max - stress.min);
+  assert.deepEqual(red.map(c => Math.round(c * 100) / 100), colormap(t(hi)).map(c => Math.round(c * 100) / 100));
+  assert.deepEqual(blue.map(c => Math.round(c * 100) / 100), colormap(t(lo)).map(c => Math.round(c * 100) / 100));
+  assert.ok(t(hi) > 0.99 && red[0] > 0.99, 'peak stress is red');
+
+  const disp = buildResultPlot(mesh, solid, { quantity: 'displacement', deformed: true });
+  assert.equal(disp.unit, 'mm');
+  near(disp.max, r.maxDisplacementMM, 1e-6, 'plot max = max displacement (mm)');
+  // Largest drawn displacement = 10% of the model diagonal
+  const diag = mesh.size.length();
+  near(disp.deformationScale * r.maxDisplacementMM, 0.1 * diag, 1e-6, 'auto exaggeration');
+  const moved = disp.geometry.getAttribute('position');
+  let maxShift = 0;
+  const original = stress.geometry.getAttribute('position');
+  for (let k = 0; k < moved.count; k++) maxShift = Math.max(maxShift, Math.hypot(moved.getX(k) - original.getX(k), moved.getY(k) - original.getY(k), moved.getZ(k) - original.getZ(k)));
+  near(maxShift, 0.1 * diag, 0.01, 'largest drawn shift');
+});

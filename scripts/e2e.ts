@@ -190,6 +190,20 @@ const CHECKS: Check[] = [
       await sleep(300);
       await p.click('Solve');
       const fea = await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 30000);
+      const legend = () => p.eval<string>(`document.querySelector('.fea-legend')?.textContent`);
+      const stressLegend = await legend();
+      assert(/MPa.*MPa/.test(stressLegend), `stress legend: ${stressLegend}`);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.fea-quantity');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'displacement');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('.fea-deformed').click();
+      })()`);
+      await sleep(600);
+      const dispLegend = await legend();
+      assert(/mm.*deformation ×[\d.]+.*mm/.test(dispLegend), `displacement legend: ${dispLegend}`);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(500);
       await p.screenshot('04-fea');
       const staleBefore = await p.eval<boolean>(`!!document.querySelector('.fea-stale')`);
       await p.eval(`window.casiworks.commands.execute('model.setMaterial', { key: 'Titanium_Ti6Al4V' })`);
@@ -201,7 +215,7 @@ const CHECKS: Check[] = [
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`); // later checks need a body
       await sleep(1500);
       assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
-      return `${lines} drawing lines; ${fea}; marked out of date after a change, cleared by New`;
+      return `${lines} drawing lines; ${fea}; plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
     },
   },
   {
