@@ -7,12 +7,13 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Layers3, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, Move, Crosshair
+  ArrowDownToLine, Move, Crosshair, Puzzle
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { macroRecorder, runCommand } from '../../commands/index.ts';
+import { pluginManager } from '../../plugins/index.ts';
 
 /** Same colours as the reference planes in the viewport and tree. */
 const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
@@ -34,6 +35,8 @@ export default function CommandManager() {
     () => (macroRecorder.isRecording ? macroRecorder.stepCount : -1),
   );
   const recording = macroState >= 0;
+  const addinButtons = useSyncExternalStore((onChange) => pluginManager.subscribe(onChange), () => pluginManager.buttons());
+  const addinGroups = [...new Set(addinButtons.map(b => b.pluginId))].map(id => addinButtons.filter(b => b.pluginId === id));
   const [examplesOpen, setExamplesOpen] = useState(false);
 
   const tabList = [
@@ -45,6 +48,7 @@ export default function CommandManager() {
     { id: 'Evaluate', label: 'Evaluate', icon: <Scale size={14} /> },
     { id: 'Drawing', label: 'Drawing', icon: <FileText size={14} /> },
     { id: 'Tools', label: 'Tools', icon: <Play size={14} /> },
+    { id: 'Add-ins', label: 'Add-ins', icon: <Puzzle size={14} /> },
   ];
 
   return (
@@ -708,6 +712,34 @@ export default function CommandManager() {
               </div>
               <div className="tool-group-label">SCRIPTING</div>
             </div>
+          )}
+
+          {/* ADD-INS TAB: buttons contributed by plugins, grouped per plugin */}
+          {activeTab === 'Add-ins' && (
+            <>
+              <div className="tool-group">
+                <div className="tool-group-buttons">
+                  <button className="ribbon-btn" onClick={() => runCommand('addins.manage')} title="Load, list and unload add-ins">
+                    <Puzzle size={19} color="#a78bfa" />
+                    <span>Manage</span>
+                  </button>
+                </div>
+                <div className="tool-group-label">ADD-INS</div>
+              </div>
+              {addinGroups.map(group => (
+                <div className="tool-group addin-group" key={group[0].pluginId}>
+                  <div className="tool-group-buttons">
+                    {group.map(b => (
+                      <button key={b.commandId + b.label} className="ribbon-btn addin-btn" onClick={() => runCommand(b.commandId, b.args)} title={b.title}>
+                        <span style={{ fontSize: 17, lineHeight: '19px', height: 19 }}>{b.icon ?? '◆'}</span>
+                        <span>{b.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="tool-group-label">{group[0].pluginName.toUpperCase()}</div>
+                </div>
+              ))}
+            </>
           )}
 
           {/* SURFACES, SHEET METAL tabs */}

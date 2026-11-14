@@ -24,6 +24,7 @@ casiworks/
 │   │   ├── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
 │   │   └── macros.ts             # Macro recorder, replay with id mapping, script export
 │   ├── console/                  # In-app scripting console (ScriptConsole.tsx, evaluate.ts)
+│   ├── plugins/                  # Add-ins: PluginManager (load, namespacing, rollback, unload)
 │   │
 │   ├── types/
 │   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
@@ -91,7 +92,8 @@ casiworks/
     ├── events.test.ts            # API events
     ├── macros.test.ts            # Macro recording, replay, script export
     ├── console.test.ts           # Scripting console evaluator
-    └── apidocs.test.ts           # API reference completeness
+    ├── apidocs.test.ts           # API reference completeness
+    └── plugins.test.ts           # Add-ins: loading, conflicts, rollback, unload
 ```
 
 ---
@@ -221,7 +223,7 @@ console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
 shown. Or use the browser's developer console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.3.0'
+const api = window.casiworks;          // api.version === '1.4.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -246,6 +248,24 @@ const api = createHeadlessAPI();   // same API, no browser or React
 
 `api.version` follows semantic versioning: minor versions only add, major
 versions may break.
+
+**Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
+object; it gets the public API and can add commands and Add-ins ribbon buttons.
+Load one from **Add-ins ▸ Manage** (URL or file) or with `api.plugins.load(url)`.
+Commands are named `<pluginId>.<name>`, cannot replace built-in commands or
+key bindings, and everything an add-in registered is removed when it is
+unloaded. The bundled example, [`public/plugins/washer.js`](public/plugins/washer.js),
+adds ISO 7089 washers:
+
+```js
+export default {
+  id: 'washer', name: 'Washer generator', version: '1.0.0', apiVersion: '1.4',
+  commands: [{ name: 'create', label: 'Washer', run: (args, host) => { /* host.api.sketches…, host.api.features… */ } }],
+  buttons: [{ command: 'create', label: 'M8', args: { size: 'M8' }, icon: '◎' }],
+};
+```
+
+An add-in runs with the same access as the app, so load only add-ins you trust.
 
 **API reference:** generated from the sources' doc comments by
 `npm run docs:api` (also run automatically before `dev` and `build`) and served

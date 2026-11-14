@@ -4,6 +4,7 @@ import MainLayout from './components/layout/MainLayout.tsx';
 import ExportDialog from './components/dialogs/ExportDialog.tsx';
 import MaterialDialog from './components/dialogs/MaterialDialog.tsx';
 import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
+import AddinsDialog from './components/dialogs/AddinsDialog.tsx';
 import ResultsViewer from './simulation/ResultsViewer.tsx';
 import DrawingViewModal from './drawings/DrawingViewModal.tsx';
 import { commands } from './commands/index.ts';
@@ -23,6 +24,7 @@ export default function App() {
   const [drawingOpen, setDrawingOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [addinsOpen, setAddinsOpen] = useState(false);
 
   // The UI that commands open dialogs in, and keyboard shortcuts that run commands
   useEffect(() => {
@@ -32,6 +34,7 @@ export default function App() {
         else if (name === 'material') setMaterialOpen(true);
         else if (name === 'massProperties') setMassPropsOpen(true);
         else if (name === 'drawing') setDrawingOpen(true);
+        else if (name === 'addins') setAddinsOpen(true);
       },
       toggleFeatureTree: () => setTreeOpen(open => !open),
       toggleConsole: () => setConsoleOpen(open => !open),
@@ -92,6 +95,7 @@ export default function App() {
       <ExportDialog isOpen={exportOpen} onClose={() => setExportOpen(false)} />
       <MaterialDialog isOpen={materialOpen} onClose={() => setMaterialOpen(false)} />
       <MassPropsDialog isOpen={massPropsOpen} onClose={() => setMassPropsOpen(false)} />
+      <AddinsDialog isOpen={addinsOpen} onClose={() => setAddinsOpen(false)} />
 
       {/* FEA stress simulation overlay */}
       <ResultsViewer />

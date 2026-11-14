@@ -258,6 +258,11 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   toggle('view.toggleSection', 'Section view', s => s.toggleSectionView()),
   { id: 'view.toggleFeatureTree', label: 'Feature tree', category: 'View', requiresUI: true, run: ({ ui }) => ui().toggleFeatureTree() },
   {
+    id: 'addins.manage', label: 'Manage add-ins…', category: 'Add-ins', requiresUI: true, record: false,
+    description: 'Load add-ins (plugins) from a URL or file, list and unload them',
+    run: ({ ui }) => ui().openDialog('addins'),
+  },
+  {
     id: 'help.apiReference', label: 'API reference', category: 'Help', requiresUI: true, record: false,
     description: 'Opens the generated API reference (/api/) in a new tab',
     run: () => { window.open(`${import.meta.env?.BASE_URL ?? '/'}api/`, '_blank', 'noopener'); },

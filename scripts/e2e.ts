@@ -326,6 +326,32 @@ const CHECKS: Check[] = [
       return `${title}; button opens ${opened[0]}`;
     },
   },
+  {
+    name: 'add-ins: load the example, use its ribbon button, unload it',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Add-ins');
+      await p.click('Load, list and unload add-ins');
+      await p.click('Example: washer generator', 200);
+      await p.click('Load', 1500);
+      const message = await p.eval<string>(`document.querySelector('.addins-message')?.textContent`);
+      assert(/Loaded Washer generator 1\.0\.0/.test(message), `message: ${message}`);
+      await p.click('Close');
+      await p.click('ISO 7089 washer M8 (Ø16 × 1.6)', 1200);
+      const names = await treeNames(p);
+      assert(names.includes('Washer M8'), `tree: ${names}`);
+      const v = await volume(p);
+      const exact = Math.PI * (64 - 4.2 ** 2) * 1.6;
+      assert(Math.abs(v - exact) / exact < 0.01, `volume ${v}`);
+      await p.screenshot('07-addins');
+      await p.click('Load, list and unload add-ins');
+      await p.click('Unload Washer generator', 300);
+      await p.click('Close');
+      const left = await p.eval<number>(`document.querySelectorAll('.addin-btn').length`);
+      assert(left === 0, `${left} add-in buttons left after unload`);
+      return `washer M8 built (${v.toFixed(0)} mm³); unloaded cleanly`;
+    },
+  },
 ];
 
 // ------------------------------------------------------------------ runner

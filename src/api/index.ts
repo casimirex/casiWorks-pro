@@ -27,8 +27,11 @@ import { createCasiWorksAPI } from './CasiWorksAPI.ts';
 import type { ApiStore, CasiWorksAPI, CasiWorksAPIOptions } from './CasiWorksAPI.ts';
 import { useCADStore } from '../store/cadStore.ts';
 import { commands, macroRecorder } from '../commands/index.ts';
+import { PluginManager } from '../plugins/PluginManager.ts';
 
 export * from './CasiWorksAPI.ts';
+/** Types for writing plugins (add-ins); see `api.plugins`. */
+export type { CasiWorksPlugin, PluginCommand, PluginButton, PluginHost } from '../plugins/PluginManager.ts';
 
 /** Name of the event dispatched on the target once `casiworks` is installed. */
 export const READY_EVENT = 'casiworks:ready';
@@ -55,7 +58,11 @@ declare global {
  * every call returns an API over the same document.
  */
 export function createHeadlessAPI(): CasiWorksAPI {
-  return createCasiWorksAPI(useCADStore, { commands, macros: macroRecorder });
+  // The plugin manager hands plugins this API, created right after it
+  const self: { api?: CasiWorksAPI } = {};
+  const plugins = new PluginManager(commands, () => self.api!);
+  self.api = createCasiWorksAPI(useCADStore, { commands, macros: macroRecorder, plugins });
+  return self.api;
 }
 
 /** Where the API is installed: `window` in the app, any object in tests. */

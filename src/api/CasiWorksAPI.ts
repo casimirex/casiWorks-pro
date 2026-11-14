@@ -35,7 +35,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.3.0';
+export const API_VERSION = '1.4.0';
 
 // =====================================================================
 // Public types
@@ -286,11 +286,51 @@ export interface ApiMacroRecorder {
   run(macro: unknown): { steps: number; ids: Record<string, string> };
 }
 
+/** A loaded plugin (add-in). */
+export interface ApiPluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  author?: string;
+  /** URL, file name or 'code'. */
+  source: string;
+  /** Ids of the commands it registered. */
+  commands: string[];
+}
+
+/**
+ * Plugins (add-ins): modules that add commands and Add-ins ribbon buttons
+ * through this API. A plugin runs with the same rights as the app. Since 1.4.
+ */
+export interface PluginsAPI {
+  /** Loaded plugins. */
+  list(): ApiPluginInfo[];
+  /**
+   * Load a plugin from a module URL or a plugin object.
+   * Errors: INVALID_ARGUMENT (not a valid plugin), OPERATION_FAILED (incompatible, conflict, failed to start).
+   * @example await api.plugins.load('/plugins/washer.js')
+   */
+  load(source: string | object): Promise<ApiPluginInfo>;
+  /** Unload a plugin: its commands, buttons and event listeners are removed. Throws NOT_FOUND. */
+  unload(id: string): void;
+}
+
+/** The part of a plugin manager the API uses. */
+export interface ApiPluginManager {
+  list(): ApiPluginInfo[];
+  load(plugin: unknown, source?: string): Promise<ApiPluginInfo>;
+  loadFromUrl(url: string): Promise<ApiPluginInfo>;
+  unload(id: string): void;
+}
+
 export interface CasiWorksAPIOptions {
   /** Registry behind `api.commands` (without one, the namespace is empty). */
   commands?: ApiCommandRegistry;
   /** Recorder behind `api.macros` (without one, recording is unavailable). */
   macros?: ApiMacroRecorder;
+  /** Manager behind `api.plugins` (without one, plugins are unavailable). */
+  plugins?: ApiPluginManager;
 }
 
 /** The CasiWorks public API. */
@@ -322,6 +362,8 @@ export interface CasiWorksAPI {
   off<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): void;
   /** Record, replay and export macros. Since 1.3. */
   readonly macros: MacrosAPI;
+  /** Load and unload plugins (add-ins). Since 1.4. */
+  readonly plugins: PluginsAPI;
 }
 
 /** Error thrown by every API call that rejects its input or cannot complete. */
@@ -829,10 +871,38 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     toScript: (macro: Macro | string) => macroCall(() => macroToScript(parseMacro(macro))),
   });
 
+  // ---------------------------------------------------------------- plugins
+  const pluginError = (err: unknown): never => {
+    if (err instanceof CasiWorksAPIError) throw err;
+    const code = (err as { code?: string } | null)?.code;
+    const message = err instanceof Error ? err.message : String(err);
+    return fail(code === 'INVALID_PLUGIN' ? 'INVALID_ARGUMENT' : code === 'NOT_FOUND' ? 'NOT_FOUND' : 'OPERATION_FAILED', message);
+  };
+  const needPlugins = (): ApiPluginManager => options.plugins ?? fail('OPERATION_FAILED', 'Plugins are not available here');
+  const plugins: PluginsAPI = Object.freeze({
+    list: () => clone(options.plugins?.list() ?? []),
+    async load(source: string | object) {
+      const manager = needPlugins();
+      try {
+        return clone(await (typeof source === 'string' ? manager.loadFromUrl(source) : manager.load(source)));
+      } catch (err) {
+        return pluginError(err);
+      }
+    },
+    unload(id: string) {
+      try {
+        needPlugins().unload(id);
+      } catch (err) {
+        pluginError(err);
+      }
+    },
+  });
+
   return Object.freeze({
     on,
     off,
     macros,
+    plugins,
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),
     document,

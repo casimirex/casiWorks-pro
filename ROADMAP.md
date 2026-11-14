@@ -74,7 +74,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
   - [x] **T.6d** Drawing modal, results viewer, App, entry point (plus Poisson's ratio passed to FEA, whole drawing sheet visible, stress tensor at the peak element)
 - [x] **T.7** Tests → `.ts`; set `allowJs: false`; delete the JavaScript lint block
 
-## Phase 1 — Command layer and public API v1
+## Phase 1 — Command layer and public API v1 (complete)
 
 One command path used by the UI, keyboard, macros and external code. This is
 the foundation of "API support": the UI becomes just one client of the API.
@@ -86,7 +86,7 @@ the foundation of "API support": the UI becomes just one client of the API.
 - [x] **1.5** Macro recorder: record commands to a replayable JS script; run macro from file (JSON macros replay without evaluating code; `.mjs` export; API 1.3)
 - [x] **1.6** Scripting console panel (run API snippets in-app): Tools ▸ Console / Ctrl+`, `api` and `run()` in scope, await, last-line value, history, command list and examples
 - [x] **1.7** API reference docs generated from JSDoc, published with the app (`/api/`, `npm run docs:api`; undocumented public members fail a test)
-- [ ] **1.8** Plugin manifest: load third-party add-ins that register commands and ribbon buttons
+- [x] **1.8** Plugin manifest: load third-party add-ins that register commands and ribbon buttons (Add-ins tab and dialog, `api.plugins` in API 1.4, example `public/plugins/washer.js`; persisting installed add-ins across sessions is not done yet)
 
 ## Phase 2 — Exact B-Rep kernel
 
