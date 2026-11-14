@@ -55,6 +55,11 @@ class Page {
       if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') {
         this.problems.push('console.error: ' + d.params.args.map((a: { value?: unknown; description?: string }) => a.value ?? a.description).join(' ').slice(0, 200));
       }
+      // A dialog would block the page forever: dismiss it and report it
+      if (d.method === 'Page.javascriptDialogOpening') {
+        this.problems.push(`${d.params.type} dialog: ${d.params.message}`);
+        void this.send('Page.handleJavaScriptDialog', { accept: false });
+      }
       if (d.id && this.pending.has(d.id)) {
         this.pending.get(d.id)!(d);
         this.pending.delete(d.id);
@@ -186,7 +191,17 @@ const CHECKS: Check[] = [
       await p.click('Solve');
       const fea = await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 30000);
       await p.screenshot('04-fea');
-      return `${lines} drawing lines; ${fea}`;
+      const staleBefore = await p.eval<boolean>(`!!document.querySelector('.fea-stale')`);
+      await p.eval(`window.casiworks.commands.execute('model.setMaterial', { key: 'Titanium_Ti6Al4V' })`);
+      await sleep(300);
+      const staleAfterEdit = await p.eval<boolean>(`!!document.querySelector('.fea-stale')`);
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await sleep(500);
+      const resultsAfterNew = await p.eval<boolean>(`!!document.querySelector('.fea-results')`);
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`); // later checks need a body
+      await sleep(1500);
+      assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
+      return `${lines} drawing lines; ${fea}; marked out of date after a change, cleared by New`;
     },
   },
   {
@@ -297,7 +312,10 @@ async function main(): Promise<number> {
     for (const check of CHECKS) {
       const t = Date.now();
       try {
-        const detail = await check.run(page);
+        const detail = await Promise.race([
+          check.run(page),
+          sleep(60000).then(() => { throw new Error('timed out after 60 s'); }),
+        ]);
         console.log(`  ✓ ${check.name} (${Date.now() - t} ms) — ${detail}`);
       } catch (err) {
         failed++;

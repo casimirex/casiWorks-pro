@@ -10,13 +10,24 @@ import { runCommand } from '../commands/index.ts';
 export default function ResultsViewer() {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
+  const documentRevision = useCADStore(s => s.documentRevision);
 
   const [load, setLoad] = useState(5000); // 5000 N
-  const [results, setResults] = useState<FEAResults | null>(null);
+  const [solved, setSolved] = useState<{
+    results: FEAResults;
+    // What the results were computed for
+    geometry: unknown; material: string; load: number; elementType: ElementType; documentRevision: number;
+  } | null>(null);
   const [minimized, setMinimized] = useState(window.innerWidth <= 768);
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
+
+  // Results of another document are dropped; results of an earlier state of this
+  // model (geometry, material, load or element type changed) are shown as stale
+  const results = solved && solved.documentRevision === documentRevision ? solved.results : null;
+  const stale = !!results && !!solved && (solved.geometry !== bodies[0]?.geometry || solved.material !== activeMaterial
+    || solved.load !== load || solved.elementType !== elementType);
 
   // Stress state of the most-stressed element (by von Mises at its centre)
   const elementStresses = results?.solidResult?.elementStresses ?? [];
@@ -40,11 +51,11 @@ export default function ResultsViewer() {
         // The material field is poissonsRatio (this read poissonRatio, so ν was always 0.3)
         mat.poissonsRatio ?? 0.3
       );
-      setResults(res);
+      setSolved({ results: res, geometry: bodies[0].geometry, material: activeMaterial, load, elementType, documentRevision });
     } catch (err) {
       console.error('FEA solve failed:', err);
       alert('Simulation error: ' + ((err instanceof Error && err.message) || 'Unable to solve FEA model.'));
-      setResults(null);
+      setSolved(null);
     }
   };
 
@@ -189,7 +200,12 @@ export default function ResultsViewer() {
           </div>
 
           {results && (
-            <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="fea-results" style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4, opacity: stale ? 0.55 : 1 }}>
+              {stale && (
+                <div className="fea-stale" style={{ color: '#fbbf24', fontWeight: 600 }}>
+                  Out of date — the model or study changed. Press Solve to update.
+                </div>
+              )}
               <div><strong>Max von Mises:</strong> {results.maxStressMPa.toFixed(1)} MPa</div>
               <div><strong>Max Deflection:</strong> {(results.maxDisplacementMM * 1000).toFixed(3)} μm</div>
               <div style={{
