@@ -16,6 +16,8 @@ import { viewportPicker } from './ViewportPicker.ts';
 import { TOOL_CLICKS, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
 import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
+import { DIRECTION_VECTORS, arrowAnchors, faceRect } from '../simulation/studySetup.ts';
+import type { StudySetup } from '../simulation/studySetup.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 
@@ -179,6 +181,47 @@ function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, ed
 /**
  * Sketch Canvas Overlay inside 3D Viewport
  */
+/** FEA study setup on the model: the fixed face in green, load arrows in red. */
+function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup; geometry: THREE.BufferGeometry }) {
+  const markers = useMemo(() => {
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    const diag = box.getSize(new THREE.Vector3()).length() || 1;
+    const fixed = faceRect(box, setup.fixedFace);
+    // PlaneGeometry lies in XY; turn it to face along the face normal, just outside the part.
+    // size = extents along the two other axes in x, y, z order; after rotateY a plane's
+    // width runs along Z, so an x face is built as (z extent, y extent).
+    const normal = new THREE.Vector3(...fixed.normal);
+    const k = Math.abs(normal.x) > 0 ? 'x' : Math.abs(normal.y) > 0 ? 'y' : 'z';
+    const plane = k === 'x' ? new THREE.PlaneGeometry(fixed.size[1], fixed.size[0]) : new THREE.PlaneGeometry(fixed.size[0], fixed.size[1]);
+    if (k === 'x') plane.rotateY(Math.PI / 2);
+    else if (k === 'y') plane.rotateX(Math.PI / 2);
+    plane.translate(...(new THREE.Vector3(...fixed.center).addScaledVector(normal, diag * 0.002).toArray() as [number, number, number]));
+
+    const dir = new THREE.Vector3(...DIRECTION_VECTORS[setup.loadDirection]);
+    const len = diag * 0.18;
+    const arrows = arrowAnchors(box, setup.loadFace, 3).map(p => {
+      // Arrow ends on the face, pointing the way the load acts
+      const tip = new THREE.Vector3(...p);
+      return new THREE.ArrowHelper(dir, tip.clone().addScaledVector(dir, -len), len, 0xef4444, len * 0.3, len * 0.15);
+    });
+    return { plane, arrows };
+  }, [setup, geometry]);
+  useEffect(() => () => {
+    markers.plane.dispose();
+    markers.arrows.forEach(a => a.dispose());
+  }, [markers]);
+
+  return (
+    <group name="FeaSetupMarkers">
+      <mesh geometry={markers.plane} renderOrder={5}>
+        <meshBasicMaterial color="#22c55e" transparent opacity={0.45} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {markers.arrows.map((a, i) => <primitive key={i} object={a} />)}
+    </group>
+  );
+}
+
 /** The sketch being edited is drawn over the model, like other CAD systems do. */
 const SKETCH_ON_TOP = 10;
 
@@ -450,6 +493,7 @@ const FOV = 45;
 export default function Viewport3D() {
   const bodies = useCADStore(s => s.bodies);
   const feaPlot = useCADStore(s => s.feaPlot);
+  const feaSetupMarkers = useCADStore(s => s.feaSetupMarkers);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const setSelection = useCADStore(s => s.setSelection);
@@ -567,6 +611,8 @@ export default function Viewport3D() {
             <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
           </mesh>
         )}
+
+        {feaSetupMarkers && bodies[0]?.geometry && <FeaSetupMarkers setup={feaSetupMarkers} geometry={bodies[0].geometry} />}
 
         {/* Bodies */}
         {!feaPlot && bodies.map((body) => (

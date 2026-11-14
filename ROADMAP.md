@@ -135,7 +135,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 
 - [x] **6.1** Solver in a Web Worker with progress and cancel (phases: meshing / solving; inline fallback where workers are unavailable)
 - [ ] **6.2** Meshing from exact geometry with local refinement (voxel mesh now sized from an element budget — Coarse / Medium / Fine — choosing the grid whose volume best matches the part, with the coverage reported and a warning beyond ±5%; thin-walled parts such as the sheet-metal enclosure still mesh far too thick until the exact kernel)
-- [ ] **6.3** Fixtures and loads picked on faces (known: the property panel's FEA setup card is not connected; studies run from the FEA panel with a fixed end and a tip load)
+- [ ] **6.3** Fixtures and loads picked on faces (the FEA panel chooses the fixed face, loaded face and load direction among the six bounding-box faces, shown on the model; picking real faces needs the exact kernel)
 - [ ] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement on the model and exaggerated deformed shape done; probes and report to do)
 - [ ] **6.5** Modal (frequency) analysis
 

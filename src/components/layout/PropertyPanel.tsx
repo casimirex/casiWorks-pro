@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Check, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { FEATURE_TYPES, MATERIALS } from '../../utils/constants.ts';
+import { FEATURE_TYPES } from '../../utils/constants.ts';
 import type { MateType } from '../../utils/constants.ts';
 import type { ExtrudeEndCondition, HoleFeature, Point3, SketchPlane } from '../../types/cad.ts';
 
@@ -75,7 +75,6 @@ export default function PropertyPanel() {
   const cancelTool = useCADStore(s => s.cancelTool);
   const features = useCADStore(s => s.features);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
-  const activeMaterial = useCADStore(s => s.activeMaterial);
 
   // Form State
   const [depth, setDepth] = useState(25);
@@ -129,13 +128,6 @@ export default function PropertyPanel() {
   const [gdtDatumB, setGdtDatumB] = useState('B');
   const [gdtDatumC, setGdtDatumC] = useState('');
 
-  // Solid 3D FEA Simulation Setup State
-  const [feaStudyName, setFeaStudyName] = useState('Linear Static Study 1');
-  const [feaElementType, setFeaElementType] = useState('Tet10');
-  const [feaMeshSize, setFeaMeshSize] = useState(10);
-  const [feaFixtureType, setFeaFixtureType] = useState('fixed');
-  const [feaLoadValue, setFeaLoadValue] = useState(1000);
-  const [feaPressureValue, setFeaPressureValue] = useState(5);
 
   // Debounced slider handler to keep UI fluid
   const debouncedSetExplodeDist = useMemo(
@@ -143,10 +135,6 @@ export default function PropertyPanel() {
     []
   );
 
-  const debouncedSetMeshSize = useMemo(
-    () => debounce((val: number) => setFeaMeshSize(val), 60),
-    []
-  );
 
   // Available sketches for feature references
   const sketchFeatures = features.filter(f => f.type === FEATURE_TYPES.SKETCH);
@@ -257,8 +245,6 @@ export default function PropertyPanel() {
       }
     } else if (featureType === 'exploded_view') {
       runCommand('assembly.solve');
-    } else if (featureType === 'fea_setup' || featureType === 'simulation') {
-      // FEA setup committed
     } else if (featureType.startsWith('drawing_')) {
       // Drawing annotation / view committed
     } else {
@@ -542,66 +528,6 @@ export default function PropertyPanel() {
                   <input type="text" className="property-select" style={{ width: 60, textAlign: 'center', fontWeight: 700 }} value={gdtDatumA} onChange={(e) => setGdtDatumA(e.target.value)} />
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* ==================== SOLID 3D FEA SIMULATION SETUP CARD ==================== */}
-        {(featureType === 'fea_setup' || featureType === 'simulation') && (
-          <div className="property-card">
-            <div className="property-card-header">3D Solid FEA Linear Static Setup</div>
-            <div className="property-card-body">
-              <label className="property-label">Study Name</label>
-              <input
-                type="text"
-                className="property-select"
-                value={feaStudyName}
-                onChange={(e) => setFeaStudyName(e.target.value)}
-              />
-
-              <label className="property-label" style={{ marginTop: 8 }}>Solid Element Type</label>
-              <select className="property-select" value={feaElementType} onChange={(e) => setFeaElementType(e.target.value)}>
-                <option value="Tet10">Tet10 (Quadratic 10-Node Tetrahedron - High Accuracy)</option>
-                <option value="Tet4">Tet4 (Linear 4-Node Tetrahedron - Fast Mesh)</option>
-              </select>
-
-              <div className="property-row" style={{ marginTop: 8 }}>
-                <span className="property-label">Mesh Element Size:</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8' }}>{feaMeshSize} mm</span>
-              </div>
-              <input
-                type="range"
-                min="2"
-                max="30"
-                step="1"
-                value={feaMeshSize}
-                onChange={(e) => debouncedSetMeshSize(parseFloat(e.target.value))}
-                style={{ width: '100%', margin: '4px 0 8px 0', accentColor: '#38bdf8' }}
-              />
-
-              <label className="property-label">Boundary Support Fixture</label>
-              <select className="property-select" value={feaFixtureType} onChange={(e) => setFeaFixtureType(e.target.value)}>
-                <option value="fixed">Fixed Support (Displacement u_x = u_y = u_z = 0)</option>
-                <option value="roller">Roller Support (Normal constrained)</option>
-                <option value="pin">Pinned Support</option>
-              </select>
-
-              <div className="property-row" style={{ marginTop: 8 }}>
-                <span className="property-label">Total Applied Force:</span>
-                <NumericInput value={feaLoadValue} onChange={setFeaLoadValue} min={1} max={100000} step={100} unit="N" />
-              </div>
-
-              <div className="property-row">
-                <span className="property-label">Distributed Pressure:</span>
-                <NumericInput value={feaPressureValue} onChange={setFeaPressureValue} min={0.1} max={500} step={1} unit="MPa" />
-              </div>
-
-              <div style={{ marginTop: 8, padding: 8, background: 'rgba(56,189,248,0.08)', borderRadius: 4, fontSize: 11 }}>
-                <div style={{ color: '#94a3b8' }}>Active Material: <strong style={{ color: '#38bdf8' }}>{MATERIALS[activeMaterial]?.name || activeMaterial}</strong></div>
-                <div style={{ color: '#94a3b8', marginTop: 2 }}>
-                  E = {((MATERIALS[activeMaterial]?.youngsModulus || 200e9) / 1e9).toFixed(1)} GPa | ν = {MATERIALS[activeMaterial]?.poissonsRatio || 0.29}
-                </div>
-              </div>
             </div>
           </div>
         )}

@@ -9,6 +9,8 @@ import type { ElementType, FEAResults, SolidResult } from './FEAEngine.ts';
 import type { PlotMesh } from './resultPlot.ts';
 import { autoMesh } from './autoMesh.ts';
 import type { MeshInfo, MeshQuality } from './autoMesh.ts';
+import { fixturesFor, loadsFor } from './studySetup.ts';
+import type { StudySetup } from './studySetup.ts';
 
 export interface SolveRequest {
   /** Model triangles (mm), as in a non-indexed or indexed BufferGeometry. */
@@ -24,6 +26,8 @@ export interface SolveRequest {
   poissonRatio: number;
   /** Mesh size preset (default medium). */
   quality?: MeshQuality;
+  /** Fixed face, loaded face and load direction (default: the engine's built-in cantilever study). */
+  setup?: StudySetup;
 }
 
 export type SolvePhase = 'meshing' | 'solving';
@@ -53,7 +57,8 @@ export function runSolve(req: SolveRequest, onPhase: (phase: SolvePhase) => void
   onPhase('meshing');
   const meshInfo = autoMesh(fea, geometry, req.elementType, req.quality ?? 'medium');
   onPhase('solving');
-  const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio);
+  const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio,
+    req.setup ? { fixtures: fixturesFor(req.setup), loads: loadsFor(req.setup, req.load) } : {});
   return { ...pack(res, fea.solidMesh), meshInfo };
 }
 

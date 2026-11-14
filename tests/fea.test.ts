@@ -189,3 +189,41 @@ test('Auto mesh: picks a grid near the element budget whose volume best matches 
     console.warn = warn;
   }
 });
+
+test('Study setup: chosen fixed face, load face and direction drive the solve', async () => {
+  const { fixturesFor, loadsFor, setupProblems, faceRect, arrowAnchors, DEFAULT_SETUP } = await import('../src/simulation/studySetup.ts');
+  const solveWith = (setup: typeof DEFAULT_SETUP, load = 1000) => {
+    const fea = new FEAEngine();
+    fea.generateMesh(new THREE.BoxGeometry(10, 10, 100), { elementType: ELEMENT_TYPES.TET10 });
+    return fea.solve(load, 250e6, E, 0.3, { fixtures: fixturesFor(setup), loads: loadsFor(setup, load) });
+  };
+  const I = 0.01 ** 4 / 12;
+
+  // Cantilever: fixed at the back, pushed down at the front = beam theory
+  const bend = solveWith(DEFAULT_SETUP);
+  near(bend.maxDisplacementMM, (1000 * 0.1 ** 3) / (3 * E * I) * 1000, 0.04, 'cantilever tip deflection');
+
+  // Pulled along the bar instead: elongation FL/EA
+  const pull = solveWith({ fixedFace: 'zMin', loadFace: 'zMax', loadDirection: '+Z' }, 10000);
+  near(pull.maxDisplacementMM, (10000 * 0.1) / (E * 1e-4) * 1000, 0.03, 'elongation');
+
+  // Pushed sideways (+X): the tip moves along +X, by the same amount as the −Y case (square section)
+  const side = solveWith({ fixedFace: 'zMin', loadFace: 'zMax', loadDirection: '+X' });
+  near(side.maxDisplacementMM, bend.maxDisplacementMM, 0.02, 'square section bends the same both ways');
+  const d = side.solidResult!.displacementVectors;
+  const tip = d.reduce((best, v) => (v.length() > best.length() ? v : best));
+  assert.ok(tip.x > 0 && Math.abs(tip.x) > 10 * Math.abs(tip.y), `tip moves along +X: ${tip.toArray()}`);
+
+  assert.deepEqual(setupProblems({ fixedFace: 'xMin', loadFace: 'xMin', loadDirection: '+Y' }).length, 1);
+  const fea = new FEAEngine();
+  fea.generateMesh(new THREE.BoxGeometry(10, 10, 100), { elementType: ELEMENT_TYPES.TET4 });
+  assert.throws(() => fea.solve(1000, 250e6, E, 0.3, { fixtures: [{ type: 'fixed', nodeIndices: [] }] }), /No mesh nodes on the fixed face/);
+
+  // Marker geometry: face rectangles and arrow anchors lie on the chosen face
+  const box = { min: { x: -5, y: -5, z: -50 }, max: { x: 5, y: 5, z: 50 } };
+  assert.deepEqual(faceRect(box, 'zMax'), { center: [0, 0, 50], normal: [0, 0, 1], size: [10, 10] });
+  assert.deepEqual(faceRect(box, 'xMin').size, [10, 100]);
+  const anchors = arrowAnchors(box, 'yMax', 3);
+  assert.equal(anchors.length, 9);
+  assert.ok(anchors.every(p => p[1] === 5 && Math.abs(p[0]) < 5 && Math.abs(p[2]) < 50));
+});

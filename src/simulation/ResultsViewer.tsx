@@ -11,6 +11,9 @@ import { buildResultPlot, COLORMAP_CSS } from './resultPlot.ts';
 import type { PlotMesh, PlotQuantity } from './resultPlot.ts';
 import { COVERAGE_TOLERANCE, MESH_BUDGET } from './autoMesh.ts';
 import type { MeshInfo, MeshQuality } from './autoMesh.ts';
+import { DEFAULT_SETUP, DIRECTIONS, FACES, FACE_LABELS, setupProblems } from './studySetup.ts';
+import type { Direction, StudySetup } from './studySetup.ts';
+import type { BoxPlane } from './FEAEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
 
@@ -25,13 +28,15 @@ export default function ResultsViewer() {
     mesh: PlotMesh | null;
     meshInfo?: MeshInfo;
     // What the results were computed for
-    geometry: unknown; material: string; load: number; elementType: ElementType; quality: MeshQuality; documentRevision: number;
+    geometry: unknown; material: string; load: number; elementType: ElementType; quality: MeshQuality; setup: StudySetup; documentRevision: number;
   } | null>(null);
   const [minimized, setMinimized] = useState(window.innerWidth <= 768);
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
   const [quality, setQuality] = useState<MeshQuality>('medium');
+  const [setup, setSetup] = useState<StudySetup>(DEFAULT_SETUP);
+  const setFeaSetupMarkers = useCADStore(s => s.setFeaSetupMarkers);
   // Result plot on the model
   const [showPlot, setShowPlot] = useState(true);
   const [quantity, setQuantity] = useState<PlotQuantity>('vonMises');
@@ -43,7 +48,14 @@ export default function ResultsViewer() {
   // model (geometry, material, load or element type changed) are shown as stale
   const results = solved && solved.documentRevision === documentRevision ? solved.results : null;
   const stale = !!results && !!solved && (solved.geometry !== bodies[0]?.geometry || solved.material !== activeMaterial
-    || solved.load !== load || solved.elementType !== elementType || solved.quality !== quality);
+    || solved.load !== load || solved.elementType !== elementType || solved.quality !== quality
+    || solved.setup.fixedFace !== setup.fixedFace || solved.setup.loadFace !== setup.loadFace || solved.setup.loadDirection !== setup.loadDirection);
+
+  // Show the fixed face and the load on the model while the panel is open
+  useEffect(() => {
+    setFeaSetupMarkers(minimized ? null : setup);
+  }, [minimized, setup, setFeaSetupMarkers]);
+  useEffect(() => () => setFeaSetupMarkers(null), [setFeaSetupMarkers]);
 
   // The plot is shown only for current results (never for an older model state)
   const plotMesh = solved?.mesh ?? null;
@@ -72,9 +84,14 @@ export default function ResultsViewer() {
       useCADStore.getState().setStatus('FEA: create a 3D solid body first');
       return;
     }
+    const problems = setupProblems(setup);
+    if (problems.length) {
+      useCADStore.getState().setStatus(`FEA: ${problems[0]}`);
+      return;
+    }
     const mat = materialLibrary.getMaterial(activeMaterial);
     // What this solve is for: compared with the current state to mark results stale
-    const input = { geometry, material: activeMaterial, load, elementType, quality, documentRevision };
+    const input = { geometry, material: activeMaterial, load, elementType, quality, setup, documentRevision };
     const handle = startSolve({
       geometry,
       elementType,
@@ -83,6 +100,7 @@ export default function ResultsViewer() {
       youngsModulus: mat.youngsModulus || 200e9,
       poissonRatio: mat.poissonsRatio ?? 0.3,
       quality,
+      setup,
     }, setPhase);
     solveRef.current = handle;
     setPhase('meshing');
@@ -253,6 +271,41 @@ export default function ResultsViewer() {
               <option value="fine">Fine (~{MESH_BUDGET.fine.toLocaleString()} elements)</option>
             </select>
           </div>
+
+          <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Fixed Face:</span>
+            <select
+              className="fea-fixed-face"
+              value={setup.fixedFace}
+              onChange={(e) => setSetup({ ...setup, fixedFace: e.target.value as BoxPlane })}
+              style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
+            >
+              {FACES.map(f => <option key={f} value={f}>{FACE_LABELS[f]}</option>)}
+            </select>
+          </div>
+          <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Load On:</span>
+            <select
+              className="fea-load-face"
+              value={setup.loadFace}
+              onChange={(e) => setSetup({ ...setup, loadFace: e.target.value as BoxPlane })}
+              style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
+            >
+              {FACES.map(f => <option key={f} value={f}>{FACE_LABELS[f]}</option>)}
+            </select>
+          </div>
+          <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Load Direction:</span>
+            <select
+              className="fea-load-direction"
+              value={setup.loadDirection}
+              onChange={(e) => setSetup({ ...setup, loadDirection: e.target.value as Direction })}
+              style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
+            >
+              {DIRECTIONS.map(d => <option key={d} value={d}>{d.replace('-', '−')}</option>)}
+            </select>
+          </div>
+          {setupProblems(setup).map(p => <div key={p} className="fea-setup-problem" style={{ fontSize: 10, color: '#f87171', marginBottom: 6 }}>{p}</div>)}
 
           <div style={{ fontSize: 11, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Applied Force:</span>

@@ -26,6 +26,7 @@ import type {
 import type { Body, RebuildState } from '../features/rebuildModel.ts';
 import type { ApiStoreState } from '../api/CasiWorksAPI.ts';
 import type { ResultPlot } from '../simulation/resultPlot.ts';
+import type { StudySetup } from '../simulation/studySetup.ts';
 
 const MAX_UNDO_HISTORY = 40;
 
@@ -118,6 +119,8 @@ export interface CADState {
   bodies: Body[];
   /** FEA result plot shown on the model instead of the bodies (null: show the bodies). */
   feaPlot: ResultPlot | null;
+  /** FEA study setup to mark on the model (fixed face, load arrows); null hides the markers. */
+  feaSetupMarkers: StudySetup | null;
   activeMaterial: string;
 
   // View
@@ -195,6 +198,7 @@ export interface CADActions {
   // Model, material, view
   setBodies(bodies: Body[]): void;
   setFeaPlot(plot: ResultPlot | null): void;
+  setFeaSetupMarkers(setup: StudySetup | null): void;
   setSketchPolygonSides(sides: number): void;
   setMaterial(materialKey: string): void;
   setViewOrientation(orientation: ViewOrientation): void;
@@ -365,6 +369,7 @@ function initialState(): CADState {
     constructionMode: false,
     bodies: [],
     feaPlot: null,
+    feaSetupMarkers: null,
     activeMaterial: 'Steel_1020',
     viewOrientation: 'isometric',
     viewRequest: 0,
@@ -686,6 +691,10 @@ export const useCADStore = create<CADStore>()(
     // ==================== MODEL, MATERIAL, VIEW ====================
     setSketchPolygonSides: (sides) => set(state => {
       state.sketchPolygonSides = Math.min(64, Math.max(3, Math.round(sides) || 6));
+    }),
+
+    setFeaSetupMarkers: (setup) => set(state => {
+      state.feaSetupMarkers = setup;
     }),
 
     setFeaPlot: (plot) => set(state => {

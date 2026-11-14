@@ -221,6 +221,23 @@ const CHECKS: Check[] = [
       await p.screenshot('03-drawing');
       await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
       await sleep(300);
+      // Study setup: the same face for fixture and load is refused
+      const pick = (cls: string, value: string) => p.eval(`(() => {
+        const sel = document.querySelector('.${cls}');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(value)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await pick('fea-load-face', 'zMin');
+      await sleep(200);
+      const problem = await p.eval<string>(`document.querySelector('.fea-setup-problem')?.textContent`);
+      await p.click('Solve', 300);
+      const refused = await status(p);
+      assert(/different face/.test(problem ?? '') && /different face/.test(refused), `same-face setup: ${problem} / ${refused}`);
+      await pick('fea-load-face', 'zMax');
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(500);
+      await p.screenshot('04a-fea-setup');
+
       // Cancel stops a running solve
       await p.click('Solve', 50);
       await p.click('Cancel', 300);

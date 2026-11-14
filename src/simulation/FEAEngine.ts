@@ -1161,6 +1161,8 @@ export class FEAEngine {
     } else {
       for (const fix of fixtures) {
         const targetNodes = this._findNodesForFixture(fix);
+        // Without any fixed node the system is singular and the "result" meaningless
+        if (targetNodes.length === 0) throw new Error(`No mesh nodes on the fixed face${fix.plane ? ` (${fix.plane})` : ''}: the part does not reach it`);
         for (const nIdx of targetNodes) {
           if (fix.type === FIXTURE_TYPES.ROLLER) {
             const dof = fix.dof !== undefined ? fix.dof : (nIdx * 3 + 1);
@@ -1207,6 +1209,7 @@ export class FEAEngine {
           }
         } else if (ld.type === LOAD_TYPES.FORCE) {
           const targetNodes = this._findNodesForLoad(ld);
+          if (targetNodes.length === 0) throw new Error(`No mesh nodes on the loaded face${ld.plane ? ` (${ld.plane})` : ''}: the part does not reach it`);
           if (targetNodes.length > 0) {
             const dir = ld.direction || [0, -1, 0];
             const mag = ld.magnitude !== undefined ? ld.magnitude : loadMagnitude;
