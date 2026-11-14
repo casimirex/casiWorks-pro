@@ -66,6 +66,8 @@ export interface ProjectedView {
 /** A view placed on the sheet (sheet millimetres). */
 export interface SheetView {
   label: string;
+  /** Baseline of the view label (sheet y); below the view and its annotations. */
+  labelY?: number;
   view: string;
   centerX: number;
   centerY: number;
@@ -630,64 +632,103 @@ export class DrawingEngine {
     const rightView = this.projectGeometry(geometry, PROJECTION_VIEWS.RIGHT, { enableHLR });
     const isoView = this.projectGeometry(geometry, PROJECTION_VIEWS.ISOMETRIC, { enableHLR });
 
-    // Sheet layout metrics (in mm)
+    // ---------------------------------------------------------------- layout (mm on the sheet)
+    // Third-angle arrangement: TOP above FRONT, RIGHT beside FRONT, ISO top-right.
+    // Every view gets bands for its label and annotations; the title block's
+    // strip at the bottom is kept clear.
     const margin = 12;
+    const inner = 2; // border inner frame
     const titleBlockWidth = 90;
     const titleBlockHeight = 40;
-
     const availWidth = sheetSize.width - 2 * margin;
     const availHeight = sheetSize.height - 2 * margin;
+    const area = {
+      minX: margin + inner + 4,
+      minY: margin + inner + 4,
+      maxX: sheetSize.width - margin - inner - 4,
+      maxY: sheetSize.height - margin - titleBlockHeight - 4,
+    };
+    const BAND = {
+      label: 9, // label baseline below a view
+      frontLeft: 26, // height dimension and its text
+      frontAbove: 16, // feature control frame
+      frontBelow: 34, // datum, width dimension, label
+      gap: 10, // between columns and rows
+      topRight: 24, // depth dimension and its text right of the top view
+    };
 
-    // Determine common scaling factor to fit views comfortably on the sheet
-    const maxViewWidth = Math.max(frontView.bounds.width || 0, topView.bounds.width || 0, rightView.bounds.width || 0, isoView.bounds.width || 0, 10);
-    const maxViewHeight = Math.max(frontView.bounds.height || 0, topView.bounds.height || 0, rightView.bounds.height || 0, isoView.bounds.height || 0, 10);
+    const size = (v: ProjectedView) => ({ w: v.bounds.width || 0, h: v.bounds.height || 0 });
+    const [F, T, R, I] = [size(frontView), size(topView), size(rightView), size(isoView)];
+    const col1 = Math.max(F.w, T.w); // top and front share x (model width)
+    const col2 = Math.max(R.w, I.w);
+    const titleTop = sheetSize.height - margin - titleBlockHeight - 4;
+    const titleLeft = sheetSize.width - margin - titleBlockWidth - 4;
+    const bottom = sheetSize.height - margin - inner - 4;
 
-    const targetWidth = availWidth * 0.35;
-    const targetHeight = availHeight * 0.35;
-    const scale = Math.min(targetWidth / maxViewWidth, targetHeight / maxViewHeight, 1.5);
+    /** Positions at scale k, and how much room is left (negative = does not fit). */
+    const arrange = (k: number) => {
+      const width = BAND.frontLeft + k * col1 + Math.max(BAND.topRight, BAND.gap) + k * col2;
+      const row1H = Math.max(k * T.h, k * I.h) + BAND.label;
+      const frontTop = BAND.frontAbove + row1H + BAND.gap; // from the top of the area
+      const col1Bottom = frontTop + k * F.h + BAND.frontBelow;
+      const col2Bottom = frontTop + k * R.h + BAND.label;
+      const col1Right = area.minX + BAND.frontLeft + k * col1;
+      // Column 2 always sits above the title block; column 1 only when it reaches it
+      const col1Limit = col1Right > titleLeft ? titleTop : bottom;
+      const roomX = area.maxX - area.minX - width;
+      const roomY = Math.min(col1Limit - area.minY - col1Bottom, titleTop - area.minY - col2Bottom);
+      return { width, row1H, frontTop, roomX, roomY };
+    };
+    // Largest standard scale that fits (ISO 5455); a non-standard one only for huge parts
+    const STANDARD_SCALES = [10, 5, 2, 1, 1 / 2, 1 / 5, 1 / 10, 1 / 20, 1 / 50, 1 / 100, 1 / 200, 1 / 500, 1 / 1000];
+    const fits = (k: number) => { const a = arrange(k); return a.roomX >= 0 && a.roomY >= 0; };
+    let scale = STANDARD_SCALES.find(fits) ?? 0;
+    if (!scale) {
+      scale = 1 / 1000;
+      while (!fits(scale) && scale > 1e-6) scale /= 2;
+    }
+    const scaleText = scale >= 1 ? `Scale: ${Math.round(scale)}:1` : `Scale: 1:${Math.round(1 / scale)}`;
 
-    // Arrange 4 views in standard 3rd angle projection:
-    // Top view (top-left), Front view (bottom-left), Right view (bottom-right), Iso view (top-right)
-    const col1X = margin + availWidth * 0.28;
-    const col2X = margin + availWidth * 0.68;
-    const row1Y = margin + availHeight * 0.30;
-    const row2Y = margin + availHeight * 0.70;
+    // Centre the arrangement horizontally; spread spare height above it
+    const fitted = arrange(scale);
+    const col1X = area.minX + Math.max(0, fitted.roomX) / 2 + BAND.frontLeft;
+    const col2X = col1X + scale * col1 + Math.max(BAND.topRight, BAND.gap);
+    const row1Y = area.minY + Math.max(0, fitted.roomY) / 3;
+    const frontY = row1Y + fitted.frontTop;
 
-    // Place a projected view (u right, v up) on the sheet (x right, y down):
-    // x = offsetX + u·scale, y = offsetY − v·scale. Views are shifted, never
-    // clamped, to stay inside the margin.
-    const layoutView = (viewData: ProjectedView, centerX: number, centerY: number, label: string): SheetView => {
+    // Place a projected view (u right, v up) with its top-left corner at (x, y)
+    // on the sheet (x right, y down)
+    const placeView = (viewData: ProjectedView, x: number, y: number, label: string, labelBelow: number): SheetView => {
       const b = viewData.bounds;
-      let offsetX = centerX - ((b.minX + b.maxX) / 2) * scale;
-      let offsetY = centerY + ((b.minY + b.maxY) / 2) * scale;
-      if (b.minX * scale + offsetX < margin) offsetX = margin - b.minX * scale;
-      if (offsetY - b.maxY * scale < margin) offsetY = margin + b.maxY * scale;
-
+      const offsetX = x - b.minX * scale;
+      const offsetY = y + b.maxY * scale;
       const place = (p: Point2D): Point2D => ({ x: p.x * scale + offsetX, y: offsetY - p.y * scale });
       const transformLine = (line: DrawingLine): DrawingLine => ({ p1: place(line.p1), p2: place(line.p2), type: line.type });
-
+      const bounds = {
+        minX: b.minX * scale + offsetX,
+        maxX: b.maxX * scale + offsetX,
+        minY: offsetY - b.maxY * scale,
+        maxY: offsetY - b.minY * scale,
+      };
       return {
         label,
+        labelY: bounds.maxY + labelBelow,
         view: viewData.view,
-        centerX,
-        centerY,
+        centerX: (bounds.minX + bounds.maxX) / 2,
+        centerY: (bounds.minY + bounds.maxY) / 2,
         scale,
         visible: viewData.visible.map(transformLine),
         hidden: viewData.hidden.map(transformLine),
-        bounds: {
-          minX: b.minX * scale + offsetX,
-          maxX: b.maxX * scale + offsetX,
-          minY: offsetY - b.maxY * scale,
-          maxY: offsetY - b.minY * scale,
-        },
+        bounds,
       };
     };
 
     const views = [
-      layoutView(topView, col1X, row1Y, 'TOP VIEW'),
-      layoutView(frontView, col1X, row2Y, 'FRONT VIEW'),
-      layoutView(rightView, col2X, row2Y, 'RIGHT VIEW'),
-      layoutView(isoView, col2X, row1Y, 'ISOMETRIC VIEW'),
+      // Top view directly above the front view (same x), front and right side by side (same y)
+      placeView(topView, col1X, row1Y, 'TOP VIEW', BAND.label - 2),
+      placeView(frontView, col1X, frontY, 'FRONT VIEW', BAND.frontBelow - 2),
+      placeView(rightView, col2X, frontY, 'RIGHT VIEW', BAND.label - 2),
+      placeView(isoView, col2X, row1Y, 'ISOMETRIC VIEW', BAND.label - 2),
     ];
 
     // Generate automatic overall dimensions on Front and Top views
@@ -695,12 +736,14 @@ export class DrawingEngine {
 
     // Add GD&T symbols & Feature Control Frames
     const gdtFrames = [
+      // In the band above the front view
       this.createFeatureControlFrame(
-        { x: views[1].bounds.minX - 10, y: views[1].bounds.minY },
+        { x: views[1].bounds.minX, y: views[1].bounds.minY - 13 },
         { characteristic: GDT_SYMBOLS.PERPENDICULARITY.symbol, tolerance: '⌀0.05', datums: ['A'] }
       ),
+      // On the bottom face of the front view, left of the width dimension text
       this.createDatumSymbol(
-        { x: views[1].bounds.minX, y: views[1].bounds.maxY + 5 },
+        { x: views[1].bounds.minX + Math.min(8, (views[1].bounds.maxX - views[1].bounds.minX) / 4), y: views[1].bounds.maxY },
         'A'
       ),
     ];
@@ -726,7 +769,7 @@ export class DrawingEngine {
         title: sheetOptions.title || 'MECHANICAL COMPONENT',
         partNumber: sheetOptions.partNumber || 'CADW-001',
         material: sheetOptions.material || 'Steel 1020',
-        scaleText: `Scale: ${scale.toFixed(2)}:1`,
+        scaleText,
         date: new Date().toISOString().slice(0, 10),
         revision: 'REV A',
       },
@@ -751,7 +794,7 @@ export class DrawingEngine {
         dims.push(this.createLinearDimension(
           { x: fb.minX, y: fb.maxY },
           { x: fb.maxX, y: fb.maxY },
-          { offset: 12, orientation: 'horizontal', text: `${(width / scale).toFixed(1)} mm` }
+          { offset: 24, orientation: 'horizontal', text: `${(width / scale).toFixed(1)} mm` }
         ));
       }
 
@@ -760,7 +803,7 @@ export class DrawingEngine {
         dims.push(this.createLinearDimension(
           { x: fb.minX, y: fb.minY },
           { x: fb.minX, y: fb.maxY },
-          { offset: -12, orientation: 'vertical', text: `${(height / scale).toFixed(1)} mm` }
+          { offset: -14, orientation: 'vertical', text: `${(height / scale).toFixed(1)} mm` }
         ));
       }
     }
@@ -930,7 +973,7 @@ export class DrawingEngine {
       for (const v of views) {
         const safeId = escapeXml(v.label.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, ''));
         svg += `  <g id="${safeId}">\n`;
-        svg += `    <text class="view-label" x="${v.centerX.toFixed(2)}" y="${(v.bounds.maxY + 8).toFixed(2)}">${escapeXml(v.label)}</text>\n`;
+        svg += `    <text class="view-label" x="${((v.bounds.minX + v.bounds.maxX) / 2).toFixed(2)}" y="${(v.labelY ?? v.bounds.maxY + 8).toFixed(2)}">${escapeXml(v.label)}</text>\n`;
 
         // Hidden lines first
         for (const line of (v.hidden || [])) {
@@ -1036,3 +1079,76 @@ export class DrawingEngine {
 
 export const drawingEngine = new DrawingEngine();
 export default DrawingEngine;
+
+// =====================================================================
+// Sheet layout checking
+// =====================================================================
+
+export interface Box { minX: number; minY: number; maxX: number; maxY: number }
+export interface SheetElementBox { kind: 'view' | 'label' | 'dimension' | 'gdt' | 'datum' | 'titleBlock'; name: string; box: Box }
+
+/** Approximate extent of a line of text (Helvetica-like proportions). */
+function textBox(x: number, baseline: number, text: string, size: number, anchor: 'middle' | 'start' = 'middle'): Box {
+  const w = text.length * size * 0.58;
+  const minX = anchor === 'middle' ? x - w / 2 : x;
+  return { minX, maxX: minX + w, minY: baseline - size * 0.8, maxY: baseline + size * 0.25 };
+}
+
+const segBox = (l: { p1: Point2D; p2: Point2D }): Box => ({
+  minX: Math.min(l.p1.x, l.p2.x), maxX: Math.max(l.p1.x, l.p2.x), minY: Math.min(l.p1.y, l.p2.y), maxY: Math.max(l.p1.y, l.p2.y),
+});
+
+/** The area every drawn element of a sheet occupies (for layout checks). */
+export function sheetElementBoxes(sheet: SheetData): SheetElementBox[] {
+  const out: SheetElementBox[] = [];
+  for (const v of sheet.views) {
+    out.push({ kind: 'view', name: v.label, box: { ...v.bounds } });
+    out.push({ kind: 'label', name: `${v.label} label`, box: textBox((v.bounds.minX + v.bounds.maxX) / 2, v.labelY ?? v.bounds.maxY + 8, v.label, 3.5) });
+  }
+  // A dimension is its three lines and its text (the space between the extension lines is free)
+  sheet.dimensions.forEach((d, i) => {
+    const name = `dimension ${i + 1} (${d.text})`;
+    for (const box of [segBox(d.dimLine), segBox(d.extLine1), segBox(d.extLine2), textBox(d.textPos.x, d.textPos.y, d.text, 3.2)]) {
+      out.push({ kind: 'dimension', name, box });
+    }
+  });
+  for (const f of sheet.gdtFrames) {
+    if (f.type === 'gdt_fcf') out.push({ kind: 'gdt', name: 'feature control frame', box: { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height } });
+    else out.push({ kind: 'datum', name: `datum ${f.letter}`, box: { minX: f.x - 4, minY: f.y, maxX: f.x + 4, maxY: f.y + 9 + f.boxHeight } });
+  }
+  const tb = sheet.titleBlock;
+  if (tb) out.push({ kind: 'titleBlock', name: 'title block', box: { minX: tb.x, minY: tb.y, maxX: tb.x + tb.width, maxY: tb.y + tb.height } });
+  return out;
+}
+
+/**
+ * Layout problems of a sheet: elements that overlap (a datum may touch the
+ * edge it marks) or leave the drawing border. Empty when the sheet is clean.
+ */
+export function layoutProblems(sheet: SheetData, gap = 0.5): string[] {
+  const boxes = sheetElementBoxes(sheet);
+  const problems: string[] = [];
+  const b = sheet.border;
+  const inner = b
+    ? { minX: b.x + b.innerMargin, minY: b.y + b.innerMargin, maxX: b.x + b.width - b.innerMargin, maxY: b.y + b.height - b.innerMargin }
+    : { minX: 0, minY: 0, maxX: sheet.sheetSize.width, maxY: sheet.sheetSize.height };
+  for (const e of boxes) {
+    if (e.kind === 'titleBlock') continue;
+    if (e.box.minX < inner.minX - 1e-6 || e.box.minY < inner.minY - 1e-6 || e.box.maxX > inner.maxX + 1e-6 || e.box.maxY > inner.maxY + 1e-6) {
+      problems.push(`${e.name} is outside the border`);
+    }
+  }
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const [p, q] = [boxes[i], boxes[j]];
+      if (p.name === q.name) continue; // parts of one dimension
+      // The datum triangle sits on the edge it marks
+      // Boxes must be `t` apart; a datum may touch the view edge it marks
+      const t = (p.kind === 'datum' && q.kind === 'view') || (q.kind === 'datum' && p.kind === 'view') ? -0.01 : gap;
+      if (p.box.minX < q.box.maxX + t && q.box.minX < p.box.maxX + t && p.box.minY < q.box.maxY + t && q.box.minY < p.box.maxY + t) {
+        problems.push(`${p.name} overlaps ${q.name}`);
+      }
+    }
+  }
+  return problems;
+}

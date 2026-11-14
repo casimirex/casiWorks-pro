@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { DrawingEngine, buildViewMesh, extractDrawingEdges } from '../src/drawings/DrawingEngine.ts';
+import { DrawingEngine, buildViewMesh, extractDrawingEdges, layoutProblems, SHEET_SIZES } from '../src/drawings/DrawingEngine.ts';
 import type { DrawingLine } from '../src/drawings/DrawingEngine.ts';
 import { geometryEngine as G } from '../src/kernel/GeometryEngine.ts';
 import type { ProfileEntity } from '../src/kernel/GeometryEngine.ts';
@@ -126,4 +126,32 @@ test('Drawing sheets of large examples are fast and uncluttered', () => {
   } finally {
     console.warn = realWarn;
   }
+});
+
+test('Sheet layout: nothing overlaps or leaves the border, for every example on every sheet size', () => {
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    for (const ex of CAD_EXAMPLES) {
+      useCADStore.getState().loadExampleModel(ex.create());
+      rebuildModel(useCADStore);
+      const geometry = useCADStore.getState().bodies[0].geometry;
+      for (const [name, sheetSize] of Object.entries(SHEET_SIZES)) {
+        const sheet = D.createStandardSheet(geometry, { sheetSize });
+        assert.deepEqual(layoutProblems(sheet), [], `${ex.id} on ${name}`);
+        assert.match(sheet.titleBlock!.scaleText, /^Scale: (1:(1|2|5|10|20|50|100)|(2|5|10):1)$/, `${ex.id} on ${name}: standard scale`);
+      }
+    }
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
+test('Sheet layout checker reports overlaps and elements outside the border', () => {
+  const sheet = bracketSheet();
+  const front = sheet.views.find(v => v.label === 'FRONT VIEW')!;
+  const moved = { ...sheet, titleBlock: { ...sheet.titleBlock!, x: front.bounds.minX, y: front.bounds.minY } };
+  assert.ok(layoutProblems(moved).some(p => p === 'FRONT VIEW overlaps title block'));
+  const outside = { ...sheet, gdtFrames: sheet.gdtFrames.map(f => (f.type === 'gdt_fcf' ? { ...f, x: -50 } : f)) };
+  assert.ok(layoutProblems(outside).includes('feature control frame is outside the border'));
 });
