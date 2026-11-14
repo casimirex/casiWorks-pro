@@ -270,6 +270,47 @@ const CHECKS: Check[] = [
       return `"${label}" → ${steps}; replayed volume ${replayed.toFixed(0)} mm³`;
     },
   },
+  {
+    name: 'scripting console: run an example, see errors and history',
+    async run(p) {
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '\`', ctrlKey: true }))`);
+      await sleep(300);
+      assert(await p.eval<boolean>(`!!document.querySelector('.script-console')`), 'Ctrl+` opens the console');
+      const type = (text: string) => p.eval(`(() => {
+        const el = document.querySelector('.script-console-input');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(text)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      const enter = async () => {
+        await p.eval(`document.querySelector('.script-console-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
+        await sleep(1500);
+      };
+      const lastOf = (kind: string) => p.eval<string>(`[...document.querySelectorAll('.script-console .console-${kind}')].at(-1)?.textContent`);
+
+      await p.eval(`[...document.querySelectorAll('.console-example')].find(b => b.textContent === 'Plate with a hole').click()`);
+      await sleep(200);
+      await enter();
+      const value = await lastOf('value');
+      const names = await treeNames(p);
+      assert(names.join() === 'Sketch1,Plate,Sketch2,Hole', `tree after example: ${names}`);
+      assert(/"volume":/.test(value), `value: ${value}`);
+
+      await type("run('nope.nope')");
+      await enter();
+      const error = await lastOf('error');
+      assert(/NOT_FOUND/.test(error), `error: ${error}`);
+
+      await p.eval(`document.querySelector('.script-console-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))`);
+      await sleep(200);
+      const recalled = await p.eval<string>(`document.querySelector('.script-console-input').value`);
+      assert(recalled === "run('nope.nope')", `history: ${recalled}`);
+      await p.screenshot('06-console');
+      await p.eval(`document.querySelector('.script-console-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+      await sleep(300);
+      assert(!(await p.eval<boolean>(`!!document.querySelector('.script-console')`)), 'Esc closes the console');
+      return `tree ${names.join(', ')}; error shown with its code; history and Esc work`;
+    },
+  },
 ];
 
 // ------------------------------------------------------------------ runner

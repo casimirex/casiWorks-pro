@@ -15,6 +15,8 @@ export interface UIHost {
   openDialog(name: DialogName): void;
   /** Show or hide the feature tree drawer (small screens). */
   toggleFeatureTree(): void;
+  /** Show or hide the scripting console. */
+  toggleConsole(): void;
 }
 
 export type DialogName = 'export' | 'material' | 'massProperties' | 'drawing';

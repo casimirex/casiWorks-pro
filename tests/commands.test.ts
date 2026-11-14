@@ -43,7 +43,7 @@ test('Registry: ids, duplicates, unknown commands, UI-only commands, listeners s
   throwsCode(() => r.execute('demo.missing'), 'UNKNOWN_COMMAND');
   throwsCode(() => r.execute('demo.dialog'), 'NOT_AVAILABLE');
   const opened: string[] = [];
-  r.setUIHost({ openDialog: (n) => opened.push(n), toggleFeatureTree: () => {} } satisfies UIHost);
+  r.setUIHost({ openDialog: (n) => opened.push(n), toggleFeatureTree: () => {}, toggleConsole: () => {} } satisfies UIHost);
   r.execute('demo.dialog');
   assert.deepEqual(opened, ['export']);
 

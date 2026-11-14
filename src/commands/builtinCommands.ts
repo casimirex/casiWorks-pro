@@ -257,6 +257,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   toggle('view.togglePerspective', 'Perspective / orthographic', s => s.togglePerspective()),
   toggle('view.toggleSection', 'Section view', s => s.toggleSectionView()),
   { id: 'view.toggleFeatureTree', label: 'Feature tree', category: 'View', requiresUI: true, run: ({ ui }) => ui().toggleFeatureTree() },
+  { id: 'view.toggleConsole', label: 'Scripting console', category: 'View', shortcuts: ['Ctrl+`'], requiresUI: true, record: false, run: ({ ui }) => ui().toggleConsole() },
 
   // ------------------------------------------------------------------ evaluate & drawing
   { id: 'evaluate.massProperties', label: 'Mass properties…', category: 'Evaluate', requiresUI: true, run: ({ ui }) => ui().openDialog('massProperties') },

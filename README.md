@@ -23,6 +23,7 @@ casiworks/
 │   │   ├── CommandRegistry.ts    # Registry, key bindings, execution listeners
 │   │   ├── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
 │   │   └── macros.ts             # Macro recorder, replay with id mapping, script export
+│   ├── console/                  # In-app scripting console (ScriptConsole.tsx, evaluate.ts)
 │   │
 │   ├── types/
 │   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
@@ -88,7 +89,8 @@ casiworks/
     ├── api.test.ts               # Public API (headless)
     ├── commands.test.ts          # Command registry, keymap, built-in commands
     ├── events.test.ts            # API events
-    └── macros.test.ts            # Macro recording, replay, script export
+    ├── macros.test.ts            # Macro recording, replay, script export
+    └── console.test.ts           # Scripting console evaluator
 ```
 
 ---
@@ -212,7 +214,10 @@ CasiWorks Pro exposes a public, versioned, fully typed API (`src/api/`).
 It drives the same store as the UI, so API edits appear in the feature tree and
 viewport, and can be undone like any other edit.
 
-**In the running app** it is `window.casiworks` — try it in the browser console:
+**In the running app** it is `window.casiworks`. The built-in **scripting
+console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
+`run(id, args)` for commands; `await` works and the value of the last line is
+shown. Or use the browser's developer console:
 
 ```js
 const api = window.casiworks;          // api.version === '1.3.0'

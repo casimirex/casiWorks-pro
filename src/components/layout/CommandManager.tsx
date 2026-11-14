@@ -694,6 +694,17 @@ export default function CommandManager() {
               <div className="tool-group-label">MACROS</div>
             </div>
           )}
+          {activeTab === 'Tools' && (
+            <div className="tool-group">
+              <div className="tool-group-buttons">
+                <button className="ribbon-btn" onClick={() => runCommand('view.toggleConsole')} title="Scripting console (Ctrl+`)">
+                  <Hash size={19} color="#a78bfa" />
+                  <span>Console</span>
+                </button>
+              </div>
+              <div className="tool-group-label">SCRIPTING</div>
+            </div>
+          )}
 
           {/* SURFACES, SHEET METAL tabs */}
           {(activeTab === 'Surfaces' || activeTab === 'Sheet Metal') && (

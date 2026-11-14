@@ -22,6 +22,7 @@ export default function App() {
   const [massPropsOpen, setMassPropsOpen] = useState(false);
   const [drawingOpen, setDrawingOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
 
   // The UI that commands open dialogs in, and keyboard shortcuts that run commands
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function App() {
         else if (name === 'drawing') setDrawingOpen(true);
       },
       toggleFeatureTree: () => setTreeOpen(open => !open),
+      toggleConsole: () => setConsoleOpen(open => !open),
     });
     const removeShortcuts = setupKeyboardShortcuts(commands, (message) => useCADStore.getState().setStatus(message));
     return () => {
@@ -85,7 +87,7 @@ export default function App() {
 
   return (
     <>
-      <MainLayout treeOpen={treeOpen} onCloseTree={() => setTreeOpen(false)} />
+      <MainLayout treeOpen={treeOpen} onCloseTree={() => setTreeOpen(false)} consoleOpen={consoleOpen} onCloseConsole={() => setConsoleOpen(false)} />
 
       <ExportDialog isOpen={exportOpen} onClose={() => setExportOpen(false)} />
       <MaterialDialog isOpen={materialOpen} onClose={() => setMaterialOpen(false)} />
