@@ -129,3 +129,30 @@ test('Result plot: colours follow the result, deformation is exaggerated to 10% 
   for (let k = 0; k < moved.count; k++) maxShift = Math.max(maxShift, Math.hypot(moved.getX(k) - original.getX(k), moved.getY(k) - original.getY(k), moved.getZ(k) - original.getZ(k)));
   near(maxShift, 0.1 * diag, 0.01, 'largest drawn shift');
 });
+
+test('FEA transfer: packed results rebuild into the same plot (worker round trip)', async () => {
+  const { runSolve, unpack, transferables } = await import('../src/simulation/feaTransfer.ts');
+  const { buildResultPlot } = await import('../src/simulation/resultPlot.ts');
+  const box = new THREE.BoxGeometry(10, 10, 100).toNonIndexed();
+  const phases: string[] = [];
+  const packed = runSolve({
+    positions: box.getAttribute('position').array as Float32Array, index: null,
+    elementType: ELEMENT_TYPES.TET10, load: 1000, yieldStrength: 250e6, youngsModulus: E, poissonRatio: 0.3,
+  }, (p) => phases.push(p));
+  assert.deepEqual(phases, ['meshing', 'solving']);
+
+  // Through structuredClone, like a worker message
+  const copy = structuredClone(packed, { transfer: transferables(packed) });
+  const { results, mesh } = unpack(copy);
+
+  const direct = new FEAEngine();
+  direct.generateMesh(box, { elementType: ELEMENT_TYPES.TET10 });
+  const expected = direct.solve(1000, 250e6, E, 0.3);
+  near(results.maxStressMPa, expected.maxStressMPa, 1e-12, 'max stress');
+  near(results.maxDisplacementMM, expected.maxDisplacementMM, 1e-12, 'max displacement');
+
+  const a = buildResultPlot(mesh!, results.solidResult!, { quantity: 'displacement', deformed: true });
+  const b = buildResultPlot(direct.solidMesh!, expected.solidResult!, { quantity: 'displacement', deformed: true });
+  assert.deepEqual(Array.from(a.geometry.getAttribute('position').array), Array.from(b.geometry.getAttribute('position').array));
+  assert.deepEqual(Array.from(a.geometry.getAttribute('color').array), Array.from(b.geometry.getAttribute('color').array));
+});

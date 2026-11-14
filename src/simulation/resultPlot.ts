@@ -1,8 +1,15 @@
 // CasiWorks Pro - FEA result plot: the analysed mesh coloured by a result, optionally deformed
 import * as THREE from 'three';
-import type { SolidMesh, SolidResult } from './FEAEngine.ts';
+import type { SolidResult } from './FEAEngine.ts';
 
 export type PlotQuantity = 'vonMises' | 'displacement';
+
+/** The parts of the analysed mesh a plot needs (node positions in mm, surface triangles). */
+export interface PlotMesh {
+  nodes: Array<{ point: THREE.Vector3 }>;
+  boundaryFaces: Array<{ nodes: ArrayLike<number> }>;
+  size: THREE.Vector3;
+}
 
 export interface PlotOptions {
   quantity?: PlotQuantity;
@@ -42,7 +49,7 @@ export const COLORMAP_CSS = 'linear-gradient(90deg, #0000ff 0%, #00ffff 25%, #00
  * Surface of the analysed mesh coloured by the chosen result. Positions are in
  * mm like the model; displacements (m) are drawn exaggerated when `deformed`.
  */
-export function buildResultPlot(mesh: Pick<SolidMesh, 'nodes' | 'boundaryFaces' | 'size'>, result: Pick<SolidResult, 'nodalVonMisesMPa' | 'displacementVectors'>, options: PlotOptions = {}): ResultPlot {
+export function buildResultPlot(mesh: PlotMesh, result: Pick<SolidResult, 'nodalVonMisesMPa' | 'displacementVectors'>, options: PlotOptions = {}): ResultPlot {
   const quantity = options.quantity ?? 'vonMises';
   const { nodes, boundaryFaces } = mesh;
 
@@ -79,9 +86,9 @@ export function buildResultPlot(mesh: Pick<SolidMesh, 'nodes' | 'boundaryFaces' 
   const positions: number[] = [];
   const colors: number[] = [];
   for (const face of boundaryFaces) {
-    const ids = face.nodes;
-    if (!ids || ids.length < 3 || ids.some(i => !nodes[i])) continue;
-    for (const i of ids.slice(0, 3)) {
+    const ids = [face.nodes[0], face.nodes[1], face.nodes[2]];
+    if (ids.some(i => i === undefined || !nodes[i])) continue;
+    for (const i of ids) {
       const p = position(i);
       positions.push(p.x, p.y, p.z);
       colors.push(...colormap((values[i] - min) / range));

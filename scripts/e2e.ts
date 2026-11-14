@@ -221,7 +221,22 @@ const CHECKS: Check[] = [
       await p.screenshot('03-drawing');
       await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
       await sleep(300);
-      await p.click('Solve');
+      // Cancel stops a running solve
+      await p.click('Solve', 50);
+      await p.click('Cancel', 300);
+      const cancelled = await status(p);
+      assert(cancelled === 'FEA solve cancelled' && !(await p.eval<boolean>(`!!document.querySelector('.fea-solving')`)), `after cancel: ${cancelled}`);
+
+      // The solve runs in a worker: the page answers immediately while it is solving
+      await p.click('Solve', 30);
+      let responsive = 0;
+      while (await p.eval<boolean>(`!!document.querySelector('.fea-solving')`)) {
+        const t = Date.now();
+        await p.eval('1');
+        responsive = Math.max(responsive, Date.now() - t);
+        await sleep(50);
+      }
+      assert(responsive < 200, `page blocked for ${responsive} ms during the solve`);
       const fea = await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 30000);
       const legend = () => p.eval<string>(`document.querySelector('.fea-legend')?.textContent`);
       const stressLegend = await legend();
@@ -248,7 +263,7 @@ const CHECKS: Check[] = [
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`); // later checks need a body
       await sleep(1500);
       assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
-      return `${lines} drawing lines; ${fea}; plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
+      return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works); plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
     },
   },
   {

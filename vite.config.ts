@@ -28,6 +28,8 @@ export default defineConfig({
       },
     },
   },
+  // The FEA solver worker is an ES module (it imports three.js and the engine)
+  worker: { format: 'es' },
   optimizeDeps: {
     include: ['three', 'zustand', 'immer'],
   },

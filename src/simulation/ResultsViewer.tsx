@@ -1,11 +1,14 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useCADStore } from '../store/cadStore.ts';
-import { feaEngine, ELEMENT_TYPES } from './FEAEngine.ts';
-import type { ElementType, FEAResults, SolidMesh } from './FEAEngine.ts';
+import { ELEMENT_TYPES } from './FEAEngine.ts';
+import type { ElementType, FEAResults } from './FEAEngine.ts';
+import { startSolve, CancelledError } from './feaRunner.ts';
+import type { SolveHandle } from './feaRunner.ts';
+import type { SolvePhase } from './feaTransfer.ts';
 import { buildResultPlot, COLORMAP_CSS } from './resultPlot.ts';
-import type { PlotQuantity } from './resultPlot.ts';
+import type { PlotMesh, PlotQuantity } from './resultPlot.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
 
@@ -17,7 +20,7 @@ export default function ResultsViewer() {
   const [load, setLoad] = useState(5000); // 5000 N
   const [solved, setSolved] = useState<{
     results: FEAResults;
-    mesh: SolidMesh | null;
+    mesh: PlotMesh | null;
     // What the results were computed for
     geometry: unknown; material: string; load: number; elementType: ElementType; documentRevision: number;
   } | null>(null);
@@ -54,30 +57,52 @@ export default function ResultsViewer() {
   const peak = peakIndex >= 0 ? elementStresses[peakIndex] : null;
   const mpa = (pa: number | undefined) => ((pa || 0) / 1e6).toFixed(2);
 
-  const handleRunFEA = () => {
-    if (bodies.length === 0 || !bodies[0]?.geometry) {
-      alert('Please create a 3D solid body first!');
+  // Solving runs in a worker: the UI stays responsive and the solve can be cancelled
+  const [phase, setPhase] = useState<SolvePhase | null>(null);
+  const solveRef = useRef<SolveHandle | null>(null);
+  useEffect(() => () => solveRef.current?.cancel(), []);
+
+  const handleRunFEA = async () => {
+    const geometry = bodies[0]?.geometry;
+    if (!geometry) {
+      useCADStore.getState().setStatus('FEA: create a 3D solid body first');
       return;
     }
-
+    const mat = materialLibrary.getMaterial(activeMaterial);
+    // What this solve is for: compared with the current state to mark results stale
+    const input = { geometry, material: activeMaterial, load, elementType, documentRevision };
+    const handle = startSolve({
+      geometry,
+      elementType,
+      load,
+      yieldStrength: mat.yieldStrength || 250e6,
+      youngsModulus: mat.youngsModulus || 200e9,
+      poissonRatio: mat.poissonsRatio ?? 0.3,
+    }, setPhase);
+    solveRef.current = handle;
+    setPhase('meshing');
     try {
-      const mat = materialLibrary.getMaterial(activeMaterial);
-      feaEngine.generateMesh(bodies[0].geometry, { elementType });
-      const res = feaEngine.solve(
-        load,
-        mat.yieldStrength || 250e6,
-        mat.youngsModulus || 200e9,
-        // The material field is poissonsRatio (this read poissonRatio, so ν was always 0.3)
-        mat.poissonsRatio ?? 0.3
-      );
-      setSolved({ results: res, mesh: feaEngine.solidMesh, geometry: bodies[0].geometry, material: activeMaterial, load, elementType, documentRevision });
+      const { results: res, mesh } = await handle.promise;
+      setSolved({ results: res, mesh, ...input });
       setShowPlot(true);
+      useCADStore.getState().setStatus(`FEA solved: max von Mises ${res.maxStressMPa.toFixed(1)} MPa`);
     } catch (err) {
-      console.error('FEA solve failed:', err);
-      alert('Simulation error: ' + ((err instanceof Error && err.message) || 'Unable to solve FEA model.'));
-      setSolved(null);
+      if (err instanceof CancelledError) {
+        useCADStore.getState().setStatus('FEA solve cancelled');
+      } else {
+        console.error('FEA solve failed:', err);
+        useCADStore.getState().setStatus('Simulation error: ' + ((err instanceof Error && err.message) || 'unable to solve the FEA model'));
+        setSolved(null);
+      }
+    } finally {
+      if (solveRef.current === handle) {
+        solveRef.current = null;
+        setPhase(null);
+      }
     }
   };
+
+  const cancelSolve = () => solveRef.current?.cancel();
 
   return (
     <>
@@ -168,9 +193,11 @@ export default function ResultsViewer() {
                 <FileText size={11} /> 2D Dwg
               </button>
               <button
-                onClick={handleRunFEA}
+                className={phase ? 'fea-cancel' : 'fea-solve'}
+                onClick={phase ? cancelSolve : () => void handleRunFEA()}
+                title={phase ? 'Stop the running solve' : 'Mesh the part and solve the linear static study'}
                 style={{
-                  background: '#007acc',
+                  background: phase ? '#b45309' : '#007acc',
                   border: 'none',
                   color: '#fff',
                   borderRadius: 4,
@@ -182,7 +209,7 @@ export default function ResultsViewer() {
                   gap: 4,
                 }}
               >
-                <Play size={12} /> Solve
+                {phase ? <>Cancel</> : <><Play size={12} /> Solve</>}
               </button>
               <button
                 className="icon-btn"
@@ -218,6 +245,12 @@ export default function ResultsViewer() {
               /> N
             </div>
           </div>
+
+          {phase && (
+            <div className="fea-solving" style={{ fontSize: 11, color: '#fbbf24', marginBottom: 6 }}>
+              {phase === 'meshing' ? 'Meshing the part…' : 'Solving…'} (the app stays usable; Cancel stops it)
+            </div>
+          )}
 
           {results && (
             <div className="fea-results" style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4, opacity: stale ? 0.55 : 1 }}>
