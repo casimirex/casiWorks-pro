@@ -439,33 +439,45 @@ export class FEAEngine {
     const index = geometry.getIndex();
     const numTris = index ? index.count / 3 : (pos ? pos.count / 3 : 0);
 
-    // Helper: test if point is inside geometry using ray-triangle parity
+    // Inside test: ray parity, voted over three ray directions. Hits are
+    // counted half-open (u, v >= 0, u + v < 1) so a ray through an edge shared
+    // by two triangles counts once (a widened test counted it twice and
+    // flipped the parity), and one degenerate ray cannot decide on its own.
+    const tri = new Float64Array(numTris * 9);
+    for (let t = 0; t < numTris; t++) {
+      for (let k = 0; k < 3; k++) {
+        const i = index ? index.getX(t * 3 + k) : t * 3 + k;
+        tri[t * 9 + k * 3] = pos.getX(i);
+        tri[t * 9 + k * 3 + 1] = pos.getY(i);
+        tri[t * 9 + k * 3 + 2] = pos.getZ(i);
+      }
+    }
+    const RAYS: Vec3Tuple[] = [[0.267, 0.534, 0.801], [-0.613, 0.296, 0.733], [0.392, -0.817, 0.423]];
+    const crossings = (pt: Vec3Tuple, d: Vec3Tuple) => {
+      let count = 0;
+      for (let t = 0; t < numTris; t++) {
+        const o = t * 9;
+        const e1x = tri[o + 3] - tri[o], e1y = tri[o + 4] - tri[o + 1], e1z = tri[o + 5] - tri[o + 2];
+        const e2x = tri[o + 6] - tri[o], e2y = tri[o + 7] - tri[o + 1], e2z = tri[o + 8] - tri[o + 2];
+        const px = d[1] * e2z - d[2] * e2y, py = d[2] * e2x - d[0] * e2z, pz = d[0] * e2y - d[1] * e2x;
+        const det = e1x * px + e1y * py + e1z * pz;
+        if (det === 0) continue;
+        const inv = 1 / det;
+        const tx = pt[0] - tri[o], ty = pt[1] - tri[o + 1], tz = pt[2] - tri[o + 2];
+        const u = (tx * px + ty * py + tz * pz) * inv;
+        if (u < 0 || u >= 1) continue;
+        const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+        const v = (d[0] * qx + d[1] * qy + d[2] * qz) * inv;
+        if (v < 0 || u + v >= 1) continue;
+        if ((e2x * qx + e2y * qy + e2z * qz) * inv > 1e-9) count++;
+      }
+      return count;
+    };
     const isPointInside = (pt: Vec3Tuple) => {
       if (!pos || numTris === 0) return true;
-      const dir = [0.267, 0.534, 0.801];
-      let count = 0;
-
-      for (let t = 0; t < numTris; t++) {
-        let i1, i2, i3;
-        if (index) {
-          i1 = index.getX(t * 3);
-          i2 = index.getX(t * 3 + 1);
-          i3 = index.getX(t * 3 + 2);
-        } else {
-          i1 = t * 3;
-          i2 = t * 3 + 1;
-          i3 = t * 3 + 2;
-        }
-
-        const v0 = [pos.getX(i1), pos.getY(i1), pos.getZ(i1)];
-        const v1 = [pos.getX(i2), pos.getY(i2), pos.getZ(i2)];
-        const v2 = [pos.getX(i3), pos.getY(i3), pos.getZ(i3)];
-
-        if (this._rayIntersectsTriangle(pt, dir, v0, v1, v2)) {
-          count++;
-        }
-      }
-      return count % 2 === 1;
+      let votes = 0;
+      for (const d of RAYS) if (crossings(pt, d) % 2 === 1) votes++;
+      return votes >= 2;
     };
 
     // Node dictionary & storage

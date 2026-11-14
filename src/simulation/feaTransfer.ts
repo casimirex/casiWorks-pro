@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import { FEAEngine } from './FEAEngine.ts';
 import type { ElementType, FEAResults, SolidResult } from './FEAEngine.ts';
 import type { PlotMesh } from './resultPlot.ts';
+import { autoMesh } from './autoMesh.ts';
+import type { MeshInfo, MeshQuality } from './autoMesh.ts';
 
 export interface SolveRequest {
   /** Model triangles (mm), as in a non-indexed or indexed BufferGeometry. */
@@ -20,6 +22,8 @@ export interface SolveRequest {
   /** Pa */
   youngsModulus: number;
   poissonRatio: number;
+  /** Mesh size preset (default medium). */
+  quality?: MeshQuality;
 }
 
 export type SolvePhase = 'meshing' | 'solving';
@@ -30,11 +34,14 @@ export interface PackedSolve {
     solidResult: (Omit<SolidResult, 'displacementVectors' | 'deformedGeometry'> & { displacementVectors: Float64Array }) | null;
   };
   mesh: { points: Float64Array; faces: Uint32Array; size: [number, number, number] } | null;
+  /** How the part was meshed and how well the mesh matches it. */
+  meshInfo?: MeshInfo;
 }
 
 export interface Solved {
   results: FEAResults;
   mesh: PlotMesh | null;
+  meshInfo?: MeshInfo;
 }
 
 /** Mesh and solve (runs in the worker, or inline without one). */
@@ -44,10 +51,10 @@ export function runSolve(req: SolveRequest, onPhase: (phase: SolvePhase) => void
   if (req.index) geometry.setIndex(new THREE.BufferAttribute(req.index, 1));
   const fea = new FEAEngine();
   onPhase('meshing');
-  fea.generateMesh(geometry, { elementType: req.elementType });
+  const meshInfo = autoMesh(fea, geometry, req.elementType, req.quality ?? 'medium');
   onPhase('solving');
   const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio);
-  return pack(res, fea.solidMesh);
+  return { ...pack(res, fea.solidMesh), meshInfo };
 }
 
 export function pack(res: FEAResults, mesh: { nodes: Array<{ point: THREE.Vector3 }>; boundaryFaces: Array<{ nodes: ArrayLike<number> }>; size: THREE.Vector3 } | null): PackedSolve {
@@ -87,7 +94,7 @@ export function unpack(data: PackedSolve): Solved {
       size: new THREE.Vector3(...size),
     };
   }
-  return { results: { ...data.results, solidResult }, mesh };
+  return { results: { ...data.results, solidResult }, mesh, meshInfo: data.meshInfo };
 }
 
 /** Typed arrays the message can move instead of copy. */

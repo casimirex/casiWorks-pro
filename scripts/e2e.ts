@@ -238,6 +238,9 @@ const CHECKS: Check[] = [
       }
       assert(responsive < 200, `page blocked for ${responsive} ms during the solve`);
       const fea = await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 30000);
+      const meshReport = await p.eval<string>(`document.querySelector('.fea-mesh-report')?.textContent`);
+      const coverage = Number(/(\d+)% of the part volume/.exec(meshReport ?? '')?.[1]);
+      assert(coverage >= 95 && coverage <= 105, `mesh report: ${meshReport}`);
       const legend = () => p.eval<string>(`document.querySelector('.fea-legend')?.textContent`);
       const stressLegend = await legend();
       assert(/MPa.*MPa/.test(stressLegend), `stress legend: ${stressLegend}`);
@@ -263,7 +266,7 @@ const CHECKS: Check[] = [
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`); // later checks need a body
       await sleep(1500);
       assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
-      return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works); plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
+      return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works; ${meshReport}); plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
     },
   },
   {

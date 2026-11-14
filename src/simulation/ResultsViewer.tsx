@@ -9,6 +9,8 @@ import type { SolveHandle } from './feaRunner.ts';
 import type { SolvePhase } from './feaTransfer.ts';
 import { buildResultPlot, COLORMAP_CSS } from './resultPlot.ts';
 import type { PlotMesh, PlotQuantity } from './resultPlot.ts';
+import { COVERAGE_TOLERANCE, MESH_BUDGET } from './autoMesh.ts';
+import type { MeshInfo, MeshQuality } from './autoMesh.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
 
@@ -21,13 +23,15 @@ export default function ResultsViewer() {
   const [solved, setSolved] = useState<{
     results: FEAResults;
     mesh: PlotMesh | null;
+    meshInfo?: MeshInfo;
     // What the results were computed for
-    geometry: unknown; material: string; load: number; elementType: ElementType; documentRevision: number;
+    geometry: unknown; material: string; load: number; elementType: ElementType; quality: MeshQuality; documentRevision: number;
   } | null>(null);
   const [minimized, setMinimized] = useState(window.innerWidth <= 768);
   // Quadratic tetrahedra by default: linear Tet4 is far too stiff in bending (≈34% of the true deflection on a cantilever)
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
+  const [quality, setQuality] = useState<MeshQuality>('medium');
   // Result plot on the model
   const [showPlot, setShowPlot] = useState(true);
   const [quantity, setQuantity] = useState<PlotQuantity>('vonMises');
@@ -39,7 +43,7 @@ export default function ResultsViewer() {
   // model (geometry, material, load or element type changed) are shown as stale
   const results = solved && solved.documentRevision === documentRevision ? solved.results : null;
   const stale = !!results && !!solved && (solved.geometry !== bodies[0]?.geometry || solved.material !== activeMaterial
-    || solved.load !== load || solved.elementType !== elementType);
+    || solved.load !== load || solved.elementType !== elementType || solved.quality !== quality);
 
   // The plot is shown only for current results (never for an older model state)
   const plotMesh = solved?.mesh ?? null;
@@ -70,7 +74,7 @@ export default function ResultsViewer() {
     }
     const mat = materialLibrary.getMaterial(activeMaterial);
     // What this solve is for: compared with the current state to mark results stale
-    const input = { geometry, material: activeMaterial, load, elementType, documentRevision };
+    const input = { geometry, material: activeMaterial, load, elementType, quality, documentRevision };
     const handle = startSolve({
       geometry,
       elementType,
@@ -78,12 +82,13 @@ export default function ResultsViewer() {
       yieldStrength: mat.yieldStrength || 250e6,
       youngsModulus: mat.youngsModulus || 200e9,
       poissonRatio: mat.poissonsRatio ?? 0.3,
+      quality,
     }, setPhase);
     solveRef.current = handle;
     setPhase('meshing');
     try {
-      const { results: res, mesh } = await handle.promise;
-      setSolved({ results: res, mesh, ...input });
+      const { results: res, mesh, meshInfo } = await handle.promise;
+      setSolved({ results: res, mesh, meshInfo, ...input });
       setShowPlot(true);
       useCADStore.getState().setStatus(`FEA solved: max von Mises ${res.maxStressMPa.toFixed(1)} MPa`);
     } catch (err) {
@@ -234,6 +239,21 @@ export default function ResultsViewer() {
             </select>
           </div>
 
+          <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Mesh Size:</span>
+            <select
+              className="fea-mesh-quality"
+              value={quality}
+              onChange={(e) => setQuality(e.target.value as MeshQuality)}
+              title="Finer meshes follow the part more closely but take longer to solve"
+              style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
+            >
+              <option value="coarse">Coarse (~{MESH_BUDGET.coarse.toLocaleString()} elements)</option>
+              <option value="medium">Medium (~{MESH_BUDGET.medium.toLocaleString()} elements)</option>
+              <option value="fine">Fine (~{MESH_BUDGET.fine.toLocaleString()} elements)</option>
+            </select>
+          </div>
+
           <div style={{ fontSize: 11, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Applied Force:</span>
             <div>
@@ -259,6 +279,19 @@ export default function ResultsViewer() {
                   Out of date — the model or study changed. Press Solve to update.
                 </div>
               )}
+              {solved?.meshInfo && (() => {
+                const info = solved.meshInfo;
+                const off = Math.abs(info.coverage - 1) > COVERAGE_TOLERANCE;
+                return (
+                  <div className={off ? 'fea-mesh-report fea-mesh-warning' : 'fea-mesh-report'} style={{ color: off ? '#fbbf24' : '#94a3b8' }}
+                    title="Meshed volume compared with the part's volume. The mesh is made of grid cells, so thin walls and small features are approximated.">
+                    Mesh: {info.elements.toLocaleString()} elements, {(info.coverage * 100).toFixed(0)}% of the part volume
+                    {off && (info.coverage > 1
+                      ? ' — thicker than the part (thin walls?): stress and deflection are likely too low'
+                      : ' — thinner than the part (small features missed): stress and deflection are likely too high')}
+                  </div>
+                );
+              })()}
               <div><strong>Max von Mises:</strong> {results.maxStressMPa.toFixed(1)} MPa</div>
               <div><strong>Max Deflection:</strong> {(results.maxDisplacementMM * 1000).toFixed(3)} μm</div>
               <div style={{

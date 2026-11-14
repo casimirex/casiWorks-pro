@@ -27,6 +27,7 @@ export interface StudyInput {
   yieldStrength: number;
   youngsModulus: number;
   poissonRatio: number;
+  quality?: SolveRequest['quality'];
 }
 
 function requestFor(input: StudyInput): SolveRequest {
@@ -41,6 +42,7 @@ function requestFor(input: StudyInput): SolveRequest {
     yieldStrength: input.yieldStrength,
     youngsModulus: input.youngsModulus,
     poissonRatio: input.poissonRatio,
+    quality: input.quality,
   };
 }
 

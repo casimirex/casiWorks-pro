@@ -137,16 +137,18 @@ test('FEA transfer: packed results rebuild into the same plot (worker round trip
   const phases: string[] = [];
   const packed = runSolve({
     positions: box.getAttribute('position').array as Float32Array, index: null,
-    elementType: ELEMENT_TYPES.TET10, load: 1000, yieldStrength: 250e6, youngsModulus: E, poissonRatio: 0.3,
+    elementType: ELEMENT_TYPES.TET10, load: 1000, yieldStrength: 250e6, youngsModulus: E, poissonRatio: 0.3, quality: 'coarse',
   }, (p) => phases.push(p));
+  assert.ok(packed.meshInfo && Math.abs(packed.meshInfo.coverage - 1) < 1e-9, 'a box is meshed exactly');
   assert.deepEqual(phases, ['meshing', 'solving']);
 
   // Through structuredClone, like a worker message
   const copy = structuredClone(packed, { transfer: transferables(packed) });
   const { results, mesh } = unpack(copy);
 
+  const { autoMesh } = await import('../src/simulation/autoMesh.ts');
   const direct = new FEAEngine();
-  direct.generateMesh(box, { elementType: ELEMENT_TYPES.TET10 });
+  autoMesh(direct, box, ELEMENT_TYPES.TET10, 'coarse');
   const expected = direct.solve(1000, 250e6, E, 0.3);
   near(results.maxStressMPa, expected.maxStressMPa, 1e-12, 'max stress');
   near(results.maxDisplacementMM, expected.maxDisplacementMM, 1e-12, 'max displacement');
@@ -155,4 +157,35 @@ test('FEA transfer: packed results rebuild into the same plot (worker round trip
   const b = buildResultPlot(direct.solidMesh!, expected.solidResult!, { quantity: 'displacement', deformed: true });
   assert.deepEqual(Array.from(a.geometry.getAttribute('position').array), Array.from(b.geometry.getAttribute('position').array));
   assert.deepEqual(Array.from(a.geometry.getAttribute('color').array), Array.from(b.geometry.getAttribute('color').array));
+});
+
+test('Auto mesh: picks a grid near the element budget whose volume best matches the part, and reports it', async () => {
+  const { autoMesh, meshVolume, modelVolume, MESH_BUDGET } = await import('../src/simulation/autoMesh.ts');
+  // A box is meshed exactly
+  const box = new THREE.BoxGeometry(20, 10, 40);
+  const fea = new FEAEngine();
+  const boxInfo = autoMesh(fea, box, ELEMENT_TYPES.TET4, 'coarse');
+  near(modelVolume(box), 8000, 1e-9, 'box volume');
+  near(boxInfo.coverage, 1, 1e-9, 'box coverage');
+  near(meshVolume(fea.solidMesh!), 8000, 1e-9, 'meshed box volume');
+
+  // A part with walls and holes: within 5% at medium, the best of the grids tried, near the budget
+  const { useCADStore } = await import('../src/store/cadStore.ts');
+  const { CAD_EXAMPLES } = await import('../src/utils/examples.ts');
+  const { rebuildModel } = await import('../src/features/rebuildModel.ts');
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    for (const id of ['l_bracket', 'pipe_flange']) {
+      useCADStore.getState().loadExampleModel(CAD_EXAMPLES.find(e => e.id === id)!.create());
+      rebuildModel(useCADStore);
+      const g = useCADStore.getState().bodies[0].geometry;
+      const info = autoMesh(new FEAEngine(), g, ELEMENT_TYPES.TET10, 'medium');
+      assert.ok(Math.abs(info.coverage - 1) <= 0.05, `${id}: coverage ${info.coverage}`);
+      assert.ok(info.elements <= MESH_BUDGET.medium * 1.4, `${id}: ${info.elements} elements`);
+      assert.ok(info.tried.every(t => t.elements > MESH_BUDGET.medium * 1.4 || Math.abs(t.coverage - 1) >= Math.abs(info.coverage - 1)), `${id}: best of ${JSON.stringify(info.tried)}`);
+    }
+  } finally {
+    console.warn = warn;
+  }
 });
