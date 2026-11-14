@@ -4,7 +4,7 @@ import { Check, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { FEATURE_TYPES, MATERIALS } from '../../utils/constants.ts';
 import type { MateType } from '../../utils/constants.ts';
-import type { ExtrudeEndCondition, FeatureData, HoleFeature, Point3, SketchPlane } from '../../types/cad.ts';
+import type { ExtrudeEndCondition, HoleFeature, Point3, SketchPlane } from '../../types/cad.ts';
 
 /** Axis directions offered for holes and patterns. */
 const AXES = {
@@ -31,6 +31,7 @@ const HOLE_TYPES: Array<{ value: NonNullable<HoleFeature['holeType']>; label: st
   { value: 'countersink', label: 'Countersink' },
 ];
 import NumericInput from '../common/NumericInput.tsx';
+import { runCommand } from '../../commands/index.ts';
 import { debounce } from '../../utils/debounce.ts';
 
 /** Fields the panel reads from what it was opened with (a feature being edited, or a tool's defaults). */
@@ -71,13 +72,9 @@ export default function PropertyPanel() {
   const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);
   const propertyPanelContent = useCADStore(s => s.propertyPanelContent) as PanelContentFields | null;
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
-  const addFeature = useCADStore(s => s.addFeature);
-  const updateFeature = useCADStore(s => s.updateFeature);
   const cancelTool = useCADStore(s => s.cancelTool);
   const features = useCADStore(s => s.features);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
-  const addAssemblyMate = useCADStore(s => s.addAssemblyMate);
-  const solveAssembly = useCADStore(s => s.solveAssembly);
   const activeMaterial = useCADStore(s => s.activeMaterial);
 
   // Form State
@@ -154,9 +151,11 @@ export default function PropertyPanel() {
   // Available sketches for feature references
   const sketchFeatures = features.filter(f => f.type === FEATURE_TYPES.SKETCH);
 
+  // The chosen sketch must exist in the current document (New, Open and examples
+  // replace the document; a stale id made the new feature reference a missing sketch)
   useEffect(() => {
-    if (sketchFeatures.length > 0 && !selectedSketchId) {
-      setSelectedSketchId(sketchFeatures[sketchFeatures.length - 1].sketchId);
+    if (!sketchFeatures.some(f => f.sketchId === selectedSketchId)) {
+      setSelectedSketchId(sketchFeatures.at(-1)?.sketchId ?? '');
     }
   }, [sketchFeatures, selectedSketchId]);
 
@@ -168,6 +167,11 @@ export default function PropertyPanel() {
   }, [assemblyComponents, comp1Id, comp2Id]);
 
   useEffect(() => {
+    // A new feature starts from the most recent sketch; editing keeps its own (below)
+    if (propertyPanelContent && !propertyPanelContent.isEditing) {
+      const latest = useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.SKETCH).at(-1);
+      if (latest?.type === FEATURE_TYPES.SKETCH) setSelectedSketchId(latest.sketchId);
+    }
     if (propertyPanelContent) {
       if (propertyPanelContent.depth !== undefined) setDepth(propertyPanelContent.depth);
       if (propertyPanelContent.angle !== undefined) setAngle(propertyPanelContent.angle);
@@ -249,10 +253,10 @@ export default function PropertyPanel() {
 
     if (featureType === 'mate' || featureType === 'assembly_mate') {
       if (comp1Id && comp2Id) {
-        addAssemblyMate(mateType, comp1Id, ref1, comp2Id, ref2, mateOffset);
+        runCommand('assembly.mate', { type: mateType, component1: comp1Id, ref1, component2: comp2Id, ref2, offset: mateOffset });
       }
     } else if (featureType === 'exploded_view') {
-      solveAssembly();
+      runCommand('assembly.solve');
     } else if (featureType === 'fea_setup' || featureType === 'simulation') {
       // FEA setup committed
     } else if (featureType.startsWith('drawing_')) {
@@ -264,10 +268,11 @@ export default function PropertyPanel() {
         ...featureParameters(),
       };
 
+      // Through commands, so edits made in the panel are recorded in macros
       if (isEdit && featId) {
-        updateFeature(featId, featData);
+        runCommand('feature.update', { id: featId, changes: featData });
       } else {
-        addFeature(featData as FeatureData);
+        runCommand('feature.create', featData);
       }
     }
 

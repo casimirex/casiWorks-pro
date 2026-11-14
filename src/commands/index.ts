@@ -4,11 +4,15 @@
 // shortcuts and the public API (`casiworks.commands`) all execute through it.
 import { useCADStore } from '../store/cadStore.ts';
 import { createCommandRegistry } from './builtinCommands.ts';
+import { attachMacros } from './macros.ts';
 
 export * from './CommandRegistry.ts';
 export { BUILTIN_COMMANDS, createCommandRegistry } from './builtinCommands.ts';
+export * from './macros.ts';
 
 export const commands = createCommandRegistry(useCADStore);
+/** Records and replays commands of the app's registry (macro.* commands). */
+export const macroRecorder = attachMacros(commands);
 
 /**
  * Run a command from a UI control: failures are shown in the status bar

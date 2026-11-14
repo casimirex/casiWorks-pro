@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { X, Check, Sliders } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
+import { runCommand } from '../../commands/index.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 
 interface DialogProps {
@@ -11,7 +12,6 @@ interface DialogProps {
 
 export default function MaterialDialog({ isOpen, onClose }: DialogProps) {
   const activeMaterial = useCADStore(s => s.activeMaterial);
-  const setMaterial = useCADStore(s => s.setMaterial);
 
   const [selectedKey, setSelectedKey] = useState(activeMaterial);
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,7 +32,7 @@ export default function MaterialDialog({ isOpen, onClose }: DialogProps) {
   const selectedData = materialLibrary.getMaterial(selectedKey);
 
   const handleApply = () => {
-    setMaterial(selectedKey);
+    runCommand('model.setMaterial', { key: selectedKey });
     onClose();
   };
 

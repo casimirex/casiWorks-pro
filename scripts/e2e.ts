@@ -117,6 +117,13 @@ const setField = (p: Page, label: string, value: string | number) => p.eval(`(()
   el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 })()`);
 const assert = (cond: unknown, msg: string) => { if (!cond) throw new Error(msg); };
+/** Keep downloaded files in window.__blobs instead of saving them (idempotent). */
+const CAPTURE_DOWNLOADS = `if (!window.__blobs) {
+  window.__blobs = [];
+  const create = URL.createObjectURL;
+  URL.createObjectURL = (b) => { window.__blobs.push(b); return create(b); };
+  HTMLAnchorElement.prototype.click = function () {};
+}`;
 
 const CHECKS: Check[] = [
   {
@@ -201,8 +208,7 @@ const CHECKS: Check[] = [
   {
     name: 'model export writes a DXF of the faces',
     async run(p) {
-      await p.eval(`window.__blobs = []; const o = URL.createObjectURL; URL.createObjectURL = b => { window.__blobs.push(b); return o(b); };
-        HTMLAnchorElement.prototype.click = function () {};`);
+      await p.eval(CAPTURE_DOWNLOADS);
       await p.click('Export CAD Model');
       await p.eval(`[...document.querySelectorAll('.dialog-body label')].find(l => l.textContent.includes('DXF')).querySelector('input').click()`);
       await sleep(100);
@@ -210,6 +216,43 @@ const CHECKS: Check[] = [
       const faces = await p.eval<number>(`window.__blobs.at(-1).text().then(t => (t.match(/3DFACE/g) || []).length)`);
       assert(faces > 100, `${faces} faces`);
       return `${faces} 3DFACE entities`;
+    },
+  },
+  {
+    name: 'record a macro in the UI and replay it into a new part',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Tools');
+      await p.click('Record a macro of model changes');
+      // A sketch drawn with the mouse and an extrude from the property panel
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane');
+      await p.click('Corner Rectangle (R)');
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      await p.mouseClick(r.left + r.width * 0.4, r.top + r.height * 0.4);
+      await p.mouseClick(r.left + r.width * 0.6, r.top + r.height * 0.6);
+      await p.click('Confirm & Exit Sketch', 800);
+      await p.click('Extruded Boss/Base', 400);
+      await setField(p, 'Extrude Depth', 12);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const recordedVolume = await volume(p);
+      await p.click('Tools');
+      const label = await p.eval<string>(`[...document.querySelectorAll('button')].find(b => b.title.startsWith('Stop recording')).textContent`);
+      await p.eval(CAPTURE_DOWNLOADS);
+      await p.click('Stop recording and save the macro file', 400);
+      const macroText = await p.eval<string>(`window.__blobs.at(-1).text()`);
+      const macro = JSON.parse(macroText) as { steps: Array<{ command: string }> };
+      const steps = macro.steps.map(st => st.command).join(', ');
+      assert(steps === 'sketch.create, feature.create', `recorded: ${steps}`);
+
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`window.casiworks.commands.execute('macro.run', { macro: ${JSON.stringify(macroText)} })`);
+      await sleep(800);
+      const replayed = await volume(p);
+      assert(recordedVolume > 0 && Math.abs(replayed - recordedVolume) < 1e-6, `volume ${replayed} vs recorded ${recordedVolume}`);
+      await p.screenshot('05-macro');
+      return `"${label}" → ${steps}; replayed volume ${replayed.toFixed(0)} mm³`;
     },
   },
 ];

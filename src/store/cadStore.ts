@@ -182,6 +182,8 @@ export interface CADActions {
   addSketchConstraint(constraint: Record<string, unknown>): void;
   addSketchDimension(dimension: Record<string, unknown>): void;
   createSketchFeature(spec: { id: string; sketchId: string; plane?: SketchPlane; entities?: SketchEntity[]; name?: string }): void;
+  /** Replace a sketch's geometry (one undoable step). */
+  setSketchEntities(sketchId: string, entities: SketchEntity[]): void;
   toggleConstructionMode(): void;
   editSketch(featureId: string): void;
 
@@ -627,6 +629,13 @@ export const useCADStore = create<CADStore>()(
       const sketchId = state.activeSketchId;
       if (!sketchId) return;
       (state.sketchDimensions[sketchId] ??= []).push({ id: generateId('dim'), ...dimension });
+    }),
+
+    setSketchEntities: (sketchId, entities) => set(state => {
+      if (!state.features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId)) return;
+      get()._captureUndoSnapshot(state, 'Edit Sketch');
+      state.sketchEntities[sketchId] = safeDeepClone(entities) as Draft<SketchEntity>[];
+      state.needsRebuild = true;
     }),
 
     createSketchFeature: ({ id, sketchId, plane = 'Front', entities = [], name }) => set(state => {

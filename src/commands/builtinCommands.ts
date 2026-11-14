@@ -1,10 +1,11 @@
 // CasiWorks Pro - Built-in commands: everything the ribbon, status bar and keyboard do
 import { CommandError, CommandRegistry } from './CommandRegistry.ts';
-import type { CommandDefinition } from './CommandRegistry.ts';
+import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
 import type { CADStore, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
-import { FEATURE_TYPES, TOOLS } from '../utils/constants.ts';
+import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
-import type { SketchPlane } from '../types/cad.ts';
+import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
+import { generateId } from '../utils/math.ts';
 import { CAD_EXAMPLES } from '../utils/examples.ts';
 import { downloadProject, newProject, openProject } from '../utils/projectFile.ts';
 
@@ -16,6 +17,7 @@ const PLANES: SketchPlane[] = ['Front', 'Top', 'Right'];
 /** Open the property panel for a feature tool (the panel creates the feature on OK). */
 const featureTool = (id: string, label: string, tool: ToolId, type: string, shortcuts?: string[]): Def => ({
   id, label, category: 'Features', shortcuts,
+  record: false, // the panel's OK runs feature.create, which is recorded
   run: ({ state }) => {
     state().setActiveTool(tool);
     state().openPropertyPanel({ type });
@@ -23,18 +25,33 @@ const featureTool = (id: string, label: string, tool: ToolId, type: string, shor
 });
 
 const sketchTool = (id: string, label: string, tool: ToolId, shortcuts?: string[]): Def => ({
-  id, label, category: 'Sketch', shortcuts,
+  id, label, category: 'Sketch', shortcuts, record: false,
   run: ({ state }) => state().setActiveTool(tool),
 });
 
 const view = (orientation: ViewOrientation, label: string, shortcuts: string[]): Def => ({
-  id: `view.${orientation}`, label, category: 'View', shortcuts,
+  id: `view.${orientation}`, label, category: 'View', shortcuts, record: false,
   run: ({ state }) => state().setViewOrientation(orientation),
 });
 
 const toggle = (id: string, label: string, action: (s: CADStore) => void): Def => ({
-  id, label, category: 'View', run: ({ state }) => action(state()),
+  id, label, category: 'View', record: false, run: ({ state }) => action(state()),
 });
+
+const FEATURE_TYPE_VALUES = new Set<string>(Object.values(FEATURE_TYPES));
+
+const requireFeature = (s: CADStore, id: unknown) => {
+  const f = s.features.find(x => x.id === id);
+  if (!f) throw new CommandError('INVALID_ARGUMENT', `No feature with id ${JSON.stringify(id)}`);
+  return f;
+};
+
+const requireEntities = (entities: unknown): SketchEntity[] => {
+  if (!Array.isArray(entities) || entities.some(e => !e || typeof e !== 'object' || typeof (e as { type?: unknown }).type !== 'string')) {
+    throw new CommandError('INVALID_ARGUMENT', 'entities must be an array of sketch entities ({ type, … })');
+  }
+  return entities as SketchEntity[];
+};
 
 /** Default references the ribbon mate buttons use (first two components). */
 const MATE_DEFAULTS: Record<MateType, { ref1: string; ref2: string; offset: number; swap?: boolean }> = {
@@ -66,6 +83,8 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   // ------------------------------------------------------------------ file & edit
   {
     id: 'file.new', label: 'New part', category: 'File', shortcuts: ['Ctrl+Alt+N'], requiresUI: true,
+    // Replayed without the "discard changes?" question
+    record: (_args, _result, state) => (state.features.length === 0 ? { command: 'document.new' } : null),
     // Browsers reserve plain Ctrl+N for a new window
     description: 'Start a new part (asks before discarding unsaved changes)',
     run: ({ state }) => newProject({ getState: state }),
@@ -84,9 +103,68 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   { id: 'edit.undo', label: 'Undo', category: 'Edit', shortcuts: ['Ctrl+Z'], run: ({ state }) => state().undo() },
   { id: 'edit.redo', label: 'Redo', category: 'Edit', shortcuts: ['Ctrl+Y', 'Ctrl+Shift+Z'], run: ({ state }) => state().redo() },
-  { id: 'edit.cancel', label: 'Cancel tool', category: 'Edit', shortcuts: ['Escape'], run: ({ state }) => state().cancelTool() },
+  {
+    id: 'document.new', label: 'New part (no questions)', category: 'File',
+    description: 'Start a new, empty part, discarding the current one (for scripts and macros)',
+    run: ({ state }) => state().newProject(),
+  },
+  { id: 'edit.cancel', label: 'Cancel tool', category: 'Edit', shortcuts: ['Escape'], record: false, run: ({ state }) => state().cancelTool() },
   { id: 'model.rebuild', label: 'Rebuild', category: 'Model', shortcuts: ['F5'], run: ({ state }) => state().rebuild() },
   { id: 'model.material', label: 'Material…', category: 'Model', requiresUI: true, run: ({ ui }) => ui().openDialog('material') },
+  {
+    id: 'model.setMaterial', label: 'Set material', category: 'Model', description: 'args: { key } — e.g. Aluminum_6061',
+    run: ({ state }, args: { key: string }) => {
+      if (!args || !MATERIALS[args.key]) throw new CommandError('INVALID_ARGUMENT', `Unknown material ${JSON.stringify(args?.key)} (known: ${Object.keys(MATERIALS).join(', ')})`);
+      state().setMaterial(args.key);
+    },
+  },
+  {
+    id: 'model.rollbackTo', label: 'Roll back to', category: 'Model', description: 'args: { index } — features after index are inactive; -1 = end of tree',
+    run: ({ state }, args: { index: number }) => {
+      const n = state().features.length;
+      if (!args || !Number.isInteger(args.index) || args.index < -1 || args.index >= n) throw new CommandError('INVALID_ARGUMENT', `index must be an integer from -1 to ${n - 1}`);
+      state().setRollbackIndex(args.index === n - 1 ? -1 : args.index);
+    },
+  },
+
+  // ------------------------------------------------------------------ feature data (what the panel and tree do)
+  {
+    id: 'feature.create', label: 'Create feature', category: 'Features',
+    description: "args: { type, name?, …parameters } e.g. { type: 'extrude_boss', sketchId, depth: 25 }; returns { featureId }",
+    run: ({ state }, args: { type: string; name?: string } & Record<string, unknown>) => {
+      if (!args || !FEATURE_TYPE_VALUES.has(args.type) || args.type === FEATURE_TYPES.SKETCH) {
+        throw new CommandError('INVALID_ARGUMENT', `type must be a feature type other than sketch (got ${JSON.stringify(args?.type)})`);
+      }
+      const featureId = generateId('feat');
+      const name = args.name || args.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      state().addFeature({ ...args, name, id: featureId } as unknown as FeatureData);
+      if (!state().features.some(f => f.id === featureId)) throw new CommandError('FAILED', 'The feature was not added');
+      return { featureId };
+    },
+  },
+  {
+    id: 'feature.update', label: 'Edit feature', category: 'Features', description: 'args: { id, changes }',
+    run: ({ state }, args: { id: string; changes: Record<string, unknown> }) => {
+      requireFeature(state(), args?.id);
+      if (!args.changes || typeof args.changes !== 'object') throw new CommandError('INVALID_ARGUMENT', 'changes must be an object');
+      state().updateFeature(args.id, args.changes);
+    },
+  },
+  {
+    id: 'feature.remove', label: 'Delete feature', category: 'Features', description: 'args: { id }',
+    run: ({ state }, args: { id: string }) => {
+      requireFeature(state(), args?.id);
+      state().removeFeature(args.id);
+    },
+  },
+  {
+    id: 'feature.setSuppressed', label: 'Suppress / unsuppress', category: 'Features', description: 'args: { id, suppressed }',
+    run: ({ state }, args: { id: string; suppressed: boolean }) => {
+      const f = requireFeature(state(), args?.id);
+      if (typeof args.suppressed !== 'boolean') throw new CommandError('INVALID_ARGUMENT', 'suppressed must be true or false');
+      if (Boolean(f.suppressed) !== args.suppressed) state().toggleFeatureSuppressed(args.id);
+    },
+  },
 
   // ------------------------------------------------------------------ features
   featureTool('feature.extrude', 'Extruded boss', TOOLS.EXTRUDE, FEATURE_TYPES.EXTRUDE_BOSS, ['E']),
@@ -112,15 +190,58 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       if (state().isSketchActive) throw new CommandError('NOT_AVAILABLE', 'Finish the current sketch first');
       state().startSketch(plane);
     },
+    record: false, // the confirmed sketch is recorded by sketch.exit
   },
-  { id: 'sketch.exit', label: 'Confirm sketch', category: 'Sketch', run: ({ state }) => state().endSketch(true) },
-  { id: 'sketch.discard', label: 'Discard sketch', category: 'Sketch', run: ({ state }) => state().endSketch(false) },
+  {
+    id: 'sketch.exit', label: 'Confirm sketch', category: 'Sketch',
+    description: 'returns { sketchId, featureId } of the confirmed sketch',
+    run: ({ state }) => {
+      const sketchId = state().activeSketchId;
+      const existed = state().features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId);
+      state().endSketch(true);
+      const feature = state().features.find(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId);
+      return sketchId && feature ? { sketchId, featureId: feature.id, created: !existed } : undefined;
+    },
+    // Recorded as the finished geometry, not the clicks that drew it
+    record: (_args, result, state): MacroStep | null => {
+      const r = result as { sketchId: string; featureId: string; created: boolean } | undefined;
+      if (!r) return null;
+      const entities = state.sketchEntities[r.sketchId] ?? [];
+      if (!r.created) return { command: 'sketch.setEntities', args: { sketchId: r.sketchId, entities } };
+      const feature = state.features.find(f => f.id === r.featureId);
+      const plane = feature?.type === FEATURE_TYPES.SKETCH ? feature.plane : 'Front';
+      return { command: 'sketch.create', args: { plane, name: feature?.name, entities }, returns: { sketchId: r.sketchId, featureId: r.featureId } };
+    },
+  },
+  { id: 'sketch.discard', label: 'Discard sketch', category: 'Sketch', record: false, run: ({ state }) => state().endSketch(false) },
+  {
+    id: 'sketch.create', label: 'Create sketch', category: 'Sketch',
+    description: "args: { plane?, name?, entities } in the store's entity format; returns { sketchId, featureId }",
+    run: ({ state }, args: { plane?: SketchPlane; name?: string; entities: SketchEntity[] }) => {
+      const plane = args?.plane ?? 'Front';
+      if (!PLANES.includes(plane)) throw new CommandError('INVALID_ARGUMENT', `plane must be one of ${PLANES.join(', ')}`);
+      const entities = requireEntities(args?.entities);
+      const sketchId = generateId('sketch');
+      const featureId = generateId('feat_sketch');
+      state().createSketchFeature({ id: featureId, sketchId, plane, name: args.name, entities: JSON.parse(JSON.stringify(entities)) });
+      return { sketchId, featureId };
+    },
+  },
+  {
+    id: 'sketch.setEntities', label: 'Replace sketch geometry', category: 'Sketch', description: 'args: { sketchId, entities }',
+    run: ({ state }, args: { sketchId: string; entities: SketchEntity[] }) => {
+      if (!state().features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === args?.sketchId)) {
+        throw new CommandError('INVALID_ARGUMENT', `No sketch with id ${JSON.stringify(args?.sketchId)}`);
+      }
+      state().setSketchEntities(args.sketchId, requireEntities(args.entities));
+    },
+  },
   sketchTool('sketch.line', 'Line', TOOLS.SKETCH_LINE, ['L']),
   sketchTool('sketch.rectangle', 'Corner rectangle', TOOLS.SKETCH_RECT, ['R']),
   sketchTool('sketch.circle', 'Center circle', TOOLS.SKETCH_CIRCLE, ['C']),
   sketchTool('sketch.point', 'Point', TOOLS.SKETCH_POINT),
   sketchTool('sketch.dimension', 'Smart dimension', TOOLS.SKETCH_DIMENSION, ['D']),
-  { id: 'sketch.toggleConstruction', label: 'Construction geometry', category: 'Sketch', run: ({ state }) => state().toggleConstructionMode() },
+  { id: 'sketch.toggleConstruction', label: 'Construction geometry', category: 'Sketch', record: false, run: ({ state }) => state().toggleConstructionMode() },
 
   // ------------------------------------------------------------------ view
   view('front', 'Front view', ['Ctrl+1']),
@@ -141,13 +262,13 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   { id: 'evaluate.massProperties', label: 'Mass properties…', category: 'Evaluate', requiresUI: true, run: ({ ui }) => ui().openDialog('massProperties') },
   { id: 'drawing.open', label: '2D drawing sheet…', category: 'Drawing', requiresUI: true, description: 'Standard 3-view sheet with SVG / DXF export', run: ({ ui }) => ui().openDialog('drawing') },
   {
-    id: 'drawing.view', label: 'Drawing view', category: 'Drawing',
+    id: 'drawing.view', label: 'Drawing view', category: 'Drawing', record: false,
     description: "args: { viewType: 'standard_3_view' | 'projected' | 'section' | 'isometric' }",
     run: ({ state }, args: { viewType?: string } | undefined) => state().openPropertyPanel({ type: 'drawing_view', viewType: args?.viewType ?? 'standard_3_view' }),
   },
-  { id: 'drawing.dimension', label: 'Drawing dimension', category: 'Drawing', run: ({ state }) => state().openPropertyPanel({ type: 'drawing_dimension', dimType: 'smart' }) },
+  { id: 'drawing.dimension', label: 'Drawing dimension', category: 'Drawing', record: false, run: ({ state }) => state().openPropertyPanel({ type: 'drawing_dimension', dimType: 'smart' }) },
   {
-    id: 'drawing.gdt', label: 'GD&T symbol', category: 'Drawing', description: "args: { gdtType: 'fcf' | 'datum' }",
+    id: 'drawing.gdt', label: 'GD&T symbol', category: 'Drawing', record: false, description: "args: { gdtType: 'fcf' | 'datum' }",
     run: ({ state }, args: { gdtType?: string } | undefined) => state().openPropertyPanel({ type: 'drawing_gdt', gdtType: args?.gdtType ?? 'fcf' }),
   },
 
@@ -158,6 +279,8 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     run: ({ state }, args: { name: string; shape: PrimitiveShape; dims?: PrimitiveDims }) => {
       if (!args?.name || !args.shape) throw new CommandError('INVALID_ARGUMENT', 'name and shape are required');
       state().insertAssemblyPart(args.name, args.shape, args.dims);
+      const inserted = state().assemblyComponents.at(-1);
+      return inserted ? { componentId: inserted.id } : undefined;
     },
   },
   {
@@ -175,7 +298,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   { id: 'assembly.solve', label: 'Solve mates', category: 'Assembly', run: ({ state }) => state().solveAssembly() },
-  { id: 'assembly.explodedView', label: 'Exploded view', category: 'Assembly', run: ({ state }) => state().openPropertyPanel({ type: 'exploded_view' }) },
+  { id: 'assembly.explodedView', label: 'Exploded view', category: 'Assembly', record: false, run: ({ state }) => state().openPropertyPanel({ type: 'exploded_view' }) },
   { id: 'assembly.clear', label: 'Clear assembly', category: 'Assembly', run: ({ state }) => state().clearAssembly() },
 ] as Array<Def<never>>;
 

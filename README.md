@@ -21,7 +21,8 @@ casiworks/
 │   │   └── index.ts              # API entry: window.casiworks, casiworks-pro/api module
 │   ├── commands/                 # Command registry: ribbon, shortcuts and API run named commands
 │   │   ├── CommandRegistry.ts    # Registry, key bindings, execution listeners
-│   │   └── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
+│   │   ├── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
+│   │   └── macros.ts             # Macro recorder, replay with id mapping, script export
 │   │
 │   ├── types/
 │   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
@@ -86,7 +87,8 @@ casiworks/
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
     ├── api.test.ts               # Public API (headless)
     ├── commands.test.ts          # Command registry, keymap, built-in commands
-    └── events.test.ts            # API events
+    ├── events.test.ts            # API events
+    └── macros.test.ts            # Macro recording, replay, script export
 ```
 
 ---
@@ -213,7 +215,7 @@ viewport, and can be undone like any other edit.
 **In the running app** it is `window.casiworks` — try it in the browser console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.2.0'
+const api = window.casiworks;          // api.version === '1.3.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -265,6 +267,24 @@ Events: `rebuild`, `featureAdded`, `featureChanged`, `featureRemoved`,
 `selectionChanged`, `documentChanged` (new / open / example — sent instead of
 per-feature events), `commandExecuted`. Payloads are plain data.
 
+**Macros** (since 1.3): **Tools ▸ Record** records the model changes you make
+(sketches as their finished geometry, features with their parameters, edits,
+suppression, material, assembly mates) and **Stop** saves them as a
+`.casimacro.json` file; **Run Macro** replays one, **Save as Script** writes it
+as a JavaScript module. Ids are remapped on replay, so a macro can run any
+number of times. From code:
+
+```js
+api.macros.startRecording('Bracket');
+// … work in the UI or call api.commands …
+const macro = api.macros.stopRecording();   // plain JSON
+api.macros.run(macro);                      // replay
+api.macros.toScript(macro);                 // const r1 = run('sketch.create', …); run('feature.create', { sketchId: r1.sketchId, … })
+```
+
+Running a macro file never evaluates code: it is data. Scripts (`.mjs`) run
+where you choose to run them (browser console, `node`).
+
 Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
 Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`
 with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, `INVALID_DOCUMENT`).
@@ -278,6 +298,9 @@ runtime for plain JavaScript callers.
 ---
 
 ## 🧪 Verification & Test Suite
+
+
+Browser end-to-end smoke test (needs Chrome; set `CHROME_PATH` if it is not found): `npm run build && npm run e2e`. It drives the real app — sketching with the mouse, property-panel features, drawings, FEA, commands and events, export, macro record and replay — and saves screenshots to `e2e-output/`.
 
 CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.ts` and the other `tests/*.test.ts` files) executed with Node.js test runner:
 

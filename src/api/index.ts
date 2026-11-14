@@ -26,7 +26,7 @@
 import { createCasiWorksAPI } from './CasiWorksAPI.ts';
 import type { ApiStore, CasiWorksAPI, CasiWorksAPIOptions } from './CasiWorksAPI.ts';
 import { useCADStore } from '../store/cadStore.ts';
-import { commands } from '../commands/index.ts';
+import { commands, macroRecorder } from '../commands/index.ts';
 
 export * from './CasiWorksAPI.ts';
 
@@ -55,7 +55,7 @@ declare global {
  * every call returns an API over the same document.
  */
 export function createHeadlessAPI(): CasiWorksAPI {
-  return createCasiWorksAPI(useCADStore, { commands });
+  return createCasiWorksAPI(useCADStore, { commands, macros: macroRecorder });
 }
 
 /** Where the API is installed: `window` in the app, any object in tests. */

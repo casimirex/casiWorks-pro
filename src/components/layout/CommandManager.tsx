@@ -1,5 +1,5 @@
 // CasiWorks Pro - CommandManager Ribbon Toolbar (Professional Engineering UI)
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import {
   FilePlus, FolderOpen, Save, Undo2, Redo2, RefreshCw,
   Box, Maximize2, RotateCw, Spline, Shield, CircleDot,
@@ -12,7 +12,7 @@ import {
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
-import { runCommand } from '../../commands/index.ts';
+import { macroRecorder, runCommand } from '../../commands/index.ts';
 
 /** Same colours as the reference planes in the viewport and tree. */
 const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
@@ -28,6 +28,12 @@ export default function CommandManager() {
   const isModified = useCADStore(s => s.isModified);
 
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
+  // Recording state lives in the macro recorder; re-render when it changes
+  const macroState = useSyncExternalStore(
+    (onChange) => macroRecorder.subscribe(onChange),
+    () => (macroRecorder.isRecording ? macroRecorder.stepCount : -1),
+  );
+  const recording = macroState >= 0;
   const [examplesOpen, setExamplesOpen] = useState(false);
 
   const tabList = [
@@ -38,6 +44,7 @@ export default function CommandManager() {
     { id: 'Assembly', label: 'Assembly', icon: <Cpu size={14} /> },
     { id: 'Evaluate', label: 'Evaluate', icon: <Scale size={14} /> },
     { id: 'Drawing', label: 'Drawing', icon: <FileText size={14} /> },
+    { id: 'Tools', label: 'Tools', icon: <Play size={14} /> },
   ];
 
   return (
@@ -658,6 +665,34 @@ export default function CommandManager() {
                 <div className="tool-group-label">EXPORT</div>
               </div>
             </>
+          )}
+
+          {/* TOOLS TAB: macros */}
+          {activeTab === 'Tools' && (
+            <div className="tool-group">
+              <div className="tool-group-buttons">
+                {recording ? (
+                  <button className="ribbon-btn active" onClick={() => runCommand('macro.stop')} title="Stop recording and save the macro file">
+                    <Square size={19} color="#f87171" />
+                    <span>Stop ({macroState} step{macroState === 1 ? '' : 's'})</span>
+                  </button>
+                ) : (
+                  <button className="ribbon-btn" onClick={() => runCommand('macro.record')} title="Record a macro of model changes">
+                    <Circle size={19} color="#f87171" fill="#f87171" />
+                    <span>Record</span>
+                  </button>
+                )}
+                <button className="ribbon-btn" onClick={() => runCommand('macro.runFile')} title="Run a macro file (.casimacro.json)">
+                  <Play size={19} color="#4ade80" />
+                  <span>Run Macro</span>
+                </button>
+                <button className="ribbon-btn" onClick={() => runCommand('macro.saveScript')} title="Save the last recorded macro as a JavaScript file for the console or Node">
+                  <FileText size={19} color="#38bdf8" />
+                  <span>Save as Script</span>
+                </button>
+              </div>
+              <div className="tool-group-label">MACROS</div>
+            </div>
           )}
 
           {/* SURFACES, SHEET METAL tabs */}

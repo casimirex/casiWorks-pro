@@ -27,9 +27,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   const rollbackIndex = useCADStore(s => s.rollbackIndex);
   const rebuildErrors = useCADStore(s => s.rebuildErrors);
   const setActiveFeature = useCADStore(s => s.setActiveFeature);
-  const setRollbackIndex = useCADStore(s => s.setRollbackIndex);
-  const toggleFeatureSuppressed = useCADStore(s => s.toggleFeatureSuppressed);
-  const removeFeature = useCADStore(s => s.removeFeature);
+  // Model changes go through commands (recorded in macros); 'end' = -1
+  const setRollbackIndex = (index: number) => runCommand('model.rollbackTo', { index: index >= features.length - 1 ? -1 : index });
   const editSketch = useCADStore(s => s.editSketch);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const openPropertyPanel = useCADStore(s => s.openPropertyPanel);
@@ -260,7 +259,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                     className="icon-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleFeatureSuppressed(feat.id);
+                      runCommand('feature.setSuppressed', { id: feat.id, suppressed: !feat.suppressed });
                     }}
                     title={feat.suppressed ? 'Unsuppress Feature' : 'Suppress Feature'}
                   >
@@ -272,7 +271,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                     className="icon-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeFeature(feat.id);
+                      runCommand('feature.remove', { id: feat.id });
                     }}
                     title="Delete Feature"
                   >

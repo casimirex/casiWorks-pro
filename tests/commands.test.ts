@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { CommandError, CommandRegistry, normalizeShortcut, shortcutFromEvent } from '../src/commands/CommandRegistry.ts';
 import type { CommandExecution, UIHost } from '../src/commands/CommandRegistry.ts';
 import { createCommandRegistry } from '../src/commands/builtinCommands.ts';
+import { attachMacros } from '../src/commands/macros.ts';
 import { useCADStore } from '../src/store/cadStore.ts';
 import { createCasiWorksAPI, CasiWorksAPIError } from '../src/api/CasiWorksAPI.ts';
 
@@ -37,7 +38,7 @@ test('Registry: ids, duplicates, unknown commands, UI-only commands, listeners s
   const seen: CommandExecution[] = [];
   r.onExecute(e => seen.push(e));
   assert.equal(r.execute('demo.outer', { x: 7 }), 'inner:7');
-  assert.deepEqual(seen, [{ id: 'demo.outer', args: { x: 7 }, ok: true }], 'nested run is part of its caller');
+  assert.deepEqual(seen, [{ id: 'demo.outer', args: { x: 7 }, ok: true, result: 'inner:7' }], 'nested run is part of its caller; listeners get the result');
 
   throwsCode(() => r.execute('demo.missing'), 'UNKNOWN_COMMAND');
   throwsCode(() => r.execute('demo.dialog'), 'NOT_AVAILABLE');
@@ -69,6 +70,7 @@ test('Built-in keymap: every former shortcut runs the same action, and no key is
 
 test('Every command the UI runs is registered', () => {
   const r = createCommandRegistry(useCADStore);
+  attachMacros(r);
   const files: string[] = [];
   const walk = (dir: string) => readdirSync(dir).forEach(f => {
     const p = join(dir, f);

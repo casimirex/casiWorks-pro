@@ -13,6 +13,8 @@
 //  - Units: millimetres, degrees, kilograms, kg/m³.
 
 import type { CommandExecution, CommandInfo } from '../commands/CommandRegistry.ts';
+import type { Macro } from '../commands/macros.ts';
+import { macroToScript, parseMacro } from '../commands/macros.ts';
 import type { BufferGeometry } from 'three';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
@@ -33,7 +35,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.2.0';
+export const API_VERSION = '1.3.0';
 
 // =====================================================================
 // Public types
@@ -240,9 +242,36 @@ export type CasiWorksEventName = keyof CasiWorksEventMap;
 export type CasiWorksEventHandler<K extends CasiWorksEventName> = (event: CasiWorksEventMap[K]) => void;
 export type { CommandExecution };
 
+/**
+ * Macros: record the model-changing commands run from the UI or scripts,
+ * replay them, or turn them into a script. Since 1.3.
+ */
+export interface MacrosAPI {
+  /** Start recording (OPERATION_FAILED if already recording or unavailable). */
+  startRecording(name?: string): void;
+  /** Stop recording and return the macro (plain JSON data). */
+  stopRecording(): Macro;
+  isRecording(): boolean;
+  /** Replay a macro object or its JSON text; ids it creates are mapped to new ones. */
+  run(macro: Macro | string): { steps: number; ids: Record<string, string> };
+  /** The macro as a JavaScript module that replays it through this API. */
+  toScript(macro: Macro | string): string;
+}
+export type { Macro };
+
+/** The part of a macro recorder the API uses. */
+export interface ApiMacroRecorder {
+  readonly isRecording: boolean;
+  start(name?: string): void;
+  stop(): Macro;
+  run(macro: unknown): { steps: number; ids: Record<string, string> };
+}
+
 export interface CasiWorksAPIOptions {
   /** Registry behind `api.commands` (without one, the namespace is empty). */
   commands?: ApiCommandRegistry;
+  /** Recorder behind `api.macros` (without one, recording is unavailable). */
+  macros?: ApiMacroRecorder;
 }
 
 /** The CasiWorks public API. */
@@ -263,6 +292,8 @@ export interface CasiWorksAPI {
    */
   on<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): () => void;
   off<K extends CasiWorksEventName>(event: K, handler: CasiWorksEventHandler<K>): void;
+  /** Since 1.3. */
+  readonly macros: MacrosAPI;
 }
 
 /** Error thrown by every API call that rejects its input or cannot complete. */
@@ -750,9 +781,30 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     return () => off(event, handler);
   };
 
+  // ---------------------------------------------------------------- macros
+  const recorder = options.macros;
+  const macroCall = <T>(fn: () => T): T => {
+    try {
+      return fn();
+    } catch (err) {
+      if (err instanceof CasiWorksAPIError) throw err;
+      const code = (err as { code?: string } | null)?.code;
+      return fail(code === 'INVALID_ARGUMENT' ? 'INVALID_ARGUMENT' : 'OPERATION_FAILED', err instanceof Error ? err.message : String(err));
+    }
+  };
+  const needRecorder = (): ApiMacroRecorder => recorder ?? fail('OPERATION_FAILED', 'Macros need a command registry (use createHeadlessAPI or the app)');
+  const macros: MacrosAPI = Object.freeze({
+    startRecording: (name?: string) => macroCall(() => needRecorder().start(name)),
+    stopRecording: () => macroCall(() => clone(needRecorder().stop())),
+    isRecording: () => recorder?.isRecording ?? false,
+    run: (macro: Macro | string) => macroCall(() => needRecorder().run(macro)),
+    toScript: (macro: Macro | string) => macroCall(() => macroToScript(parseMacro(macro))),
+  });
+
   return Object.freeze({
     on,
     off,
+    macros,
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),
     document,

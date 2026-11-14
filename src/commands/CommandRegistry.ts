@@ -53,7 +53,28 @@ export interface CommandDefinition<S, A = unknown> {
   shortcuts?: string[];
   /** Commands that need the UI (dialogs) cannot run headless. */
   requiresUI?: boolean;
+  /**
+   * How a run appears in a recorded macro: false = not recorded (tools, views,
+   * dialogs); a function may rewrite it into a replayable step (or skip it with
+   * null). Default: recorded as run, with the ids it returned.
+   */
+  record?: false | ((args: A, result: unknown, state: S) => MacroStep | null);
   run(ctx: CommandContext<S>, args: A): unknown;
+}
+
+/** One replayable step of a macro. */
+export interface MacroStep {
+  command: string;
+  args?: unknown;
+  /** Ids the step created when recorded (e.g. { featureId }); replay maps them to the new ones. */
+  returns?: Record<string, string>;
+}
+
+/** Ids in a command result (`featureId`, `sketchId`, `componentId`…), for macro id mapping. */
+export function idsOf(result: unknown): Record<string, string> | undefined {
+  if (!result || typeof result !== 'object') return undefined;
+  const ids = Object.entries(result).filter(([k, v]) => /Id$/.test(k) && typeof v === 'string');
+  return ids.length ? Object.fromEntries(ids) as Record<string, string> : undefined;
 }
 
 /** A registered command as listed to callers (no functions). */
@@ -71,6 +92,8 @@ export interface CommandExecution {
   id: string;
   args: unknown;
   ok: boolean;
+  /** What the command returned (successful runs). */
+  result?: unknown;
   error?: string;
 }
 
@@ -180,7 +203,7 @@ export class CommandRegistry<S> {
     this.depth++;
     try {
       const result = def.run(ctx, args as never);
-      if (topLevel) this.emit({ id, args, ok: true });
+      if (topLevel) this.emit(result === undefined ? { id, args, ok: true } : { id, args, ok: true, result });
       return result;
     } catch (err) {
       if (topLevel) this.emit({ id, args, ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -188,6 +211,21 @@ export class CommandRegistry<S> {
     } finally {
       this.depth--;
     }
+  }
+
+  /** The macro step a successful run is recorded as, or null when it is not recorded. */
+  macroStepFor(execution: CommandExecution): MacroStep | null {
+    const def = this.commands.get(execution.id);
+    if (!def || !execution.ok || def.record === false) return null;
+    // Dialog and file-picker commands cannot be replayed unless they say how
+    if (def.requiresUI && typeof def.record !== 'function') return null;
+    if (typeof def.record === 'function') return def.record(execution.args as never, execution.result, this.getState());
+    const returns = idsOf(execution.result);
+    return {
+      command: execution.id,
+      ...(execution.args === undefined ? {} : { args: execution.args }),
+      ...(returns ? { returns } : {}),
+    };
   }
 
   private emit(execution: CommandExecution): void {
