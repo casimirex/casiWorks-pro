@@ -103,6 +103,8 @@ export interface CADState {
   // Sketching
   isSketchActive: boolean;
   activeSketchId: string | null;
+  /** Sides of the sketch polygon tool. */
+  sketchPolygonSides: number;
   /** The document as it was when the current sketch session began (for discard and undo). */
   sketchSession: DocumentSnapshot | null;
   activeSketchPlane: SketchPlane;
@@ -193,6 +195,7 @@ export interface CADActions {
   // Model, material, view
   setBodies(bodies: Body[]): void;
   setFeaPlot(plot: ResultPlot | null): void;
+  setSketchPolygonSides(sides: number): void;
   setMaterial(materialKey: string): void;
   setViewOrientation(orientation: ViewOrientation): void;
   toggleGrid(): void;
@@ -352,6 +355,7 @@ function initialState(): CADState {
     rollbackIndex: -1,
     isSketchActive: false,
     activeSketchId: null,
+    sketchPolygonSides: 6,
     sketchSession: null,
     activeSketchPlane: 'Front',
     sketchEntities: {},
@@ -680,6 +684,10 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== MODEL, MATERIAL, VIEW ====================
+    setSketchPolygonSides: (sides) => set(state => {
+      state.sketchPolygonSides = Math.min(64, Math.max(3, Math.round(sides) || 6));
+    }),
+
     setFeaPlot: (plot) => set(state => {
       state.feaPlot = plot as Draft<ResultPlot> | null;
     }),

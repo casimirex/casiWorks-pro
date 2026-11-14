@@ -240,6 +240,19 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   sketchTool('sketch.rectangle', 'Corner rectangle', TOOLS.SKETCH_RECT, ['R']),
   sketchTool('sketch.circle', 'Center circle', TOOLS.SKETCH_CIRCLE, ['C']),
   sketchTool('sketch.point', 'Point', TOOLS.SKETCH_POINT),
+  sketchTool('sketch.arc', 'Centre arc', TOOLS.SKETCH_ARC, ['A']),
+  sketchTool('sketch.slot', 'Straight slot', TOOLS.SKETCH_SLOT),
+  {
+    id: 'sketch.polygon', label: 'Polygon', category: 'Sketch', record: false,
+    description: 'args: { sides? } (3–64, default: the last used, initially 6)',
+    run: ({ state }, args: { sides?: number } | undefined) => {
+      if (args?.sides !== undefined) {
+        if (!Number.isInteger(args.sides) || args.sides < 3 || args.sides > 64) throw new CommandError('INVALID_ARGUMENT', 'sides must be an integer from 3 to 64');
+        state().setSketchPolygonSides(args.sides);
+      }
+      state().setActiveTool(TOOLS.SKETCH_POLYGON);
+    },
+  },
   sketchTool('sketch.dimension', 'Smart dimension', TOOLS.SKETCH_DIMENSION, ['D']),
   { id: 'sketch.toggleConstruction', label: 'Construction geometry', category: 'Sketch', record: false, run: ({ state }) => state().toggleConstructionMode() },
 

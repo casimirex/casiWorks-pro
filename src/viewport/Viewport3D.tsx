@@ -13,6 +13,7 @@ import { sketchToWorld } from '../utils/math.ts';
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
+import { TOOL_CLICKS, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
 import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
@@ -182,8 +183,8 @@ function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, ed
 const SKETCH_ON_TOP = 10;
 
 /** One sketch entity drawn in the viewport: a polyline, or a dot for points. */
-function SketchEntityLine({ entity, toWorld }: { entity: SketchEntity; toWorld(p: Point2): [number, number, number] }) {
-  const color = entity.construction ? '#888888' : '#00e5ff';
+function SketchEntityLine({ entity, toWorld, color: override }: { entity: SketchEntity; toWorld(p: Point2): [number, number, number]; color?: string }) {
+  const color = override ?? (entity.construction ? '#888888' : '#00e5ff');
   const geometry = useMemo(() => {
     const poly = entityPolyline(entity as ProfileEntity);
     if (!poly) return null;
@@ -253,10 +254,12 @@ interface ActiveSketchOverlayProps {
   activeSketchPlane: string;
   sketchEntities: SketchEntityMap;
   currentPoints: Point2[];
+  /** Geometry the next click would create (drawn in the preview colour). */
+  previewEntities: SketchEntity[];
   activeTool: ToolId;
 }
 
-function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints }: ActiveSketchOverlayProps) {
+function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities }: ActiveSketchOverlayProps) {
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
   // Sketch point → world point, exactly as the kernel maps the sketch plane
@@ -269,6 +272,9 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
     <group name="ActiveSketchOverlay">
       {/* Existing entities, sampled the same way the kernel samples profiles */}
       {entities.map((ent) => <SketchEntityLine key={ent.id} entity={ent} toWorld={transformPoint} />)}
+
+      {/* What the next click creates */}
+      {previewEntities.map((ent) => <SketchEntityLine key={`preview-${ent.id}`} entity={ent} toWorld={transformPoint} color="#ff9800" />)}
 
       {/* Rubber-band preview line/points during drawing */}
       {currentPoints.length > 0 && (
@@ -487,45 +493,38 @@ export default function Viewport3D() {
   }, [viewOrientation, viewRequest]);
 
   // Sketch drawing logic
-  const handleSketchClick = useCallback((pt: Point2) => {
-    if (activeTool === TOOLS.SKETCH_LINE) {
-      if (sketchClickPts.length === 0) {
-        setSketchClickPts([pt]);
-      } else {
-        const p1 = sketchClickPts[0];
-        const p2 = pt;
-        addSketchEntity(sketchEngine.createLine(p1, p2));
-        setSketchClickPts([p2]); // Continue chain
-      }
-    } else if (activeTool === TOOLS.SKETCH_RECT) {
-      if (sketchClickPts.length === 0) {
-        setSketchClickPts([pt]);
-      } else {
-        const p1 = sketchClickPts[0];
-        const lines = sketchEngine.createRectangle(p1, pt);
-        lines.forEach(l => addSketchEntity(l));
-        setSketchClickPts([]);
-      }
-    } else if (activeTool === TOOLS.SKETCH_CIRCLE) {
-      if (sketchClickPts.length === 0) {
-        setSketchClickPts([pt]);
-      } else {
-        const center = sketchClickPts[0];
-        const radius = Math.hypot(pt.x - center.x, pt.y - center.y);
-        addSketchEntity(sketchEngine.createCircle(center, radius));
-        setSketchClickPts([]);
-      }
-    } else if (activeTool === TOOLS.SKETCH_POINT) {
-      addSketchEntity(sketchEngine.createPoint(pt));
-    }
-  }, [activeTool, sketchClickPts, addSketchEntity]);
+  const polygonSides = useCADStore(s => s.sketchPolygonSides);
+  const setStatus = useCADStore(s => s.setStatus);
 
-  const currentPreviewPoints = useMemo(() => {
-    if (sketchClickPts.length > 0 && mouseSketchPt) {
-      return [...sketchClickPts, mouseSketchPt];
+  // A new tool starts with no clicks
+  useEffect(() => { setSketchClickPts([]); }, [activeTool, activeSketchId]);
+
+  // Tell the user what the next click does
+  useEffect(() => {
+    if (!isSketchActive) return;
+    const hint = toolHint(activeTool, sketchClickPts.length);
+    if (hint) setStatus(hint);
+  }, [isSketchActive, activeTool, sketchClickPts.length, setStatus]);
+
+  // Each drawing tool collects its clicks, then creates its geometry (sketchTools.ts)
+  const handleSketchClick = useCallback((pt: Point2) => {
+    const need = TOOL_CLICKS[activeTool];
+    if (!need) return;
+    const pts = [...sketchClickPts, pt];
+    if (pts.length < need) {
+      setSketchClickPts(pts);
+      return;
     }
-    return sketchClickPts;
-  }, [sketchClickPts, mouseSketchPt]);
+    const created = entitiesFor(activeTool, pts, { polygonSides });
+    created?.forEach(e => addSketchEntity(e));
+    // Lines chain from the last point; other tools start over
+    setSketchClickPts(activeTool === TOOLS.SKETCH_LINE && created ? [pt] : []);
+  }, [activeTool, sketchClickPts, addSketchEntity, polygonSides]);
+
+  const preview = useMemo(
+    () => previewFor(activeTool, sketchClickPts, mouseSketchPt, { polygonSides }),
+    [activeTool, sketchClickPts, mouseSketchPt, polygonSides],
+  );
 
   return (
     <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
@@ -605,7 +604,8 @@ export default function Viewport3D() {
             activeSketchId={activeSketchId}
             activeSketchPlane={activeSketchPlane}
             sketchEntities={sketchEntities}
-            currentPoints={currentPreviewPoints}
+            currentPoints={preview.band.length ? preview.band : sketchClickPts}
+            previewEntities={preview.entities}
             activeTool={activeTool}
           />
         )}

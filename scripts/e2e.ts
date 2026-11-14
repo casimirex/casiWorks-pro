@@ -159,6 +159,39 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'sketch a slot and an 8-sided polygon with the mouse',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane');
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const at = (fx: number, fy: number) => p.mouseClick(r.left + r.width * fx, r.top + r.height * fy);
+      await p.click('Straight Slot: first centre, second centre, side');
+      const hints = [await status(p)];
+      await at(0.35, 0.5); hints.push(await status(p));
+      await at(0.6, 0.5); hints.push(await status(p));
+      await at(0.5, 0.42);
+      assert(hints[0].startsWith('Slot: click the first') && hints[2].startsWith('Slot: click a point on the side'), `hints: ${hints}`);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.polygon-sides');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, '8');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(200);
+      await at(0.5, 0.75);
+      await at(0.55, 0.75);
+      await p.screenshot('02b-slot-polygon');
+      await p.click('Confirm & Exit Sketch', 800);
+      const kinds = await p.eval<string>(`(() => {
+        const s = window.casiworks.features.list().find(f => f.type === 'sketch');
+        return window.casiworks.sketches.getEntities(s.sketchId).map(e => e.type).join(',');
+      })()`);
+      const counts = kinds.split(',').reduce((m: Record<string, number>, k) => ({ ...m, [k]: (m[k] ?? 0) + 1 }), {});
+      assert(counts.arc === 2 && counts.line === 2 + 8, `entities: ${kinds}`);
+      return `slot (2 arcs + 2 lines) and octagon (8 lines); hints: ${hints[0]} → ${hints[2]}`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

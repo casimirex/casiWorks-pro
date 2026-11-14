@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Layers3, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, Move, Crosshair, Puzzle
+  ArrowDownToLine, Move, Crosshair, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
@@ -22,6 +22,7 @@ export default function CommandManager() {
   const activeTab = useCADStore(s => s.activeCommandTab);
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
+  const polygonSides = useCADStore(s => s.sketchPolygonSides);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const constructionMode = useCADStore(s => s.constructionMode);
   const sectionActive = useCADStore(s => s.sectionViewActive);
@@ -377,6 +378,43 @@ export default function CommandManager() {
                   >
                     <Circle size={19} color="#f1f5f9" />
                     <span>Circle</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_ARC ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.arc')}
+                    title="Centre Arc (A): centre, start, end"
+                  >
+                    <Spline size={19} color="#f1f5f9" />
+                    <span>Arc</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_POLYGON ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.polygon')}
+                    title={`Polygon (${polygonSides} sides): centre, vertex`}
+                  >
+                    <Hexagon size={19} color="#f1f5f9" />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      Polygon
+                      <select
+                        className="polygon-sides"
+                        value={polygonSides}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => runCommand('sketch.polygon', { sides: Number(e.target.value) })}
+                        aria-label="Polygon sides"
+                        title="Number of sides"
+                        style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0 }}
+                      >
+                        {[3, 4, 5, 6, 8, 10, 12].map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_SLOT ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.slot')}
+                    title="Straight Slot: first centre, second centre, side"
+                  >
+                    <RectangleHorizontal size={19} color="#f1f5f9" />
+                    <span>Slot</span>
                   </button>
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_POINT ? 'active' : ''}`}

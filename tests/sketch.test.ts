@@ -157,3 +157,54 @@ test('Sketch sessions: discarding edits keeps the sketch; undo reverts an edit o
   assert.equal(s().features.length, count, 'undo removes the new sketch');
   assert.equal(s().sketchSession, null);
 });
+
+test('Sketch tools: arcs, polygons and slots from clicks, with previews and hints', async () => {
+  const { entitiesFor, previewFor, toolHint, TOOL_CLICKS } = await import('../src/viewport/sketchTools.ts');
+  const { TOOLS } = await import('../src/utils/constants.ts');
+  const { geometryEngine: G } = await import('../src/kernel/GeometryEngine.ts');
+  const vol = (ents: unknown[]) => {
+    const g = G.extrudeProfile(G.shapesFromSketchEntities(ents as never), 1, 'Front', {});
+    const p = g.attributes.position.array;
+    let v = 0;
+    for (let i = 0; i < p.length; i += 9) v += (p[i] * (p[i + 4] * p[i + 8] - p[i + 5] * p[i + 7]) - p[i + 1] * (p[i + 3] * p[i + 8] - p[i + 5] * p[i + 6]) + p[i + 2] * (p[i + 3] * p[i + 7] - p[i + 4] * p[i + 6])) / 6;
+    return v;
+  };
+
+  // Arc: centre, start, end — counter-clockwise; closing it with a line gives a half disc
+  const [arc] = entitiesFor(TOOLS.SKETCH_ARC, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: -10, y: 0 }])! as Array<{ radius: number; startAngle: number; endAngle: number }>;
+  close(arc.radius, 10);
+  close(arc.startAngle, 0);
+  close(arc.endAngle, Math.PI);
+  const line = entitiesFor(TOOLS.SKETCH_LINE, [{ x: -10, y: 0 }, { x: 10, y: 0 }])!;
+  close(vol([arc, ...line]), (Math.PI * 100) / 2, 0.01 * Math.PI * 50, 'half disc (arc + line)');
+  // End before start (clockwise in angle) wraps around: 270° arc
+  const [wrap] = entitiesFor(TOOLS.SKETCH_ARC, [{ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 0 }])! as Array<{ startAngle: number; endAngle: number }>;
+  close(wrap.endAngle - wrap.startAngle, 1.5 * Math.PI);
+
+  // Polygon passes through the clicked vertex
+  const hex = entitiesFor(TOOLS.SKETCH_POLYGON, [{ x: 0, y: 0 }, { x: 0, y: 10 }], { polygonSides: 6 })! as Array<{ p1: { x: number; y: number } }>;
+  assert.equal(hex.length, 6);
+  close(hex[0].p1.x, 0, 1e-9);
+  close(hex[0].p1.y, 10, 1e-9);
+  close(vol(hex), (3 * Math.sqrt(3) / 2) * 100, 1e-4, 'hexagon area (float32 positions)');
+  assert.equal(entitiesFor(TOOLS.SKETCH_POLYGON, [{ x: 0, y: 0 }, { x: 5, y: 0 }], { polygonSides: 99 })!.length, 64, 'sides clamped');
+
+  // Slot: the third click sets the half-width (distance to the centre line)
+  const slot = entitiesFor(TOOLS.SKETCH_SLOT, [{ x: -10, y: 0 }, { x: 10, y: 0 }, { x: 3, y: 5 }])!;
+  assert.equal(slot.length, 4);
+  close(vol(slot), 20 * 10 + Math.PI * 25, 0.01 * 278, 'slot area');
+
+  // Degenerate clicks create nothing
+  assert.equal(entitiesFor(TOOLS.SKETCH_CIRCLE, [{ x: 1, y: 1 }, { x: 1, y: 1 }]), null);
+  assert.equal(entitiesFor(TOOLS.SKETCH_SLOT, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 }]), null);
+
+  // Preview: the shape when the next click is the last one, a rubber band before
+  const half = previewFor(TOOLS.SKETCH_ARC, [{ x: 0, y: 0 }], { x: 10, y: 0 });
+  assert.deepEqual([half.entities.length, half.band.length], [0, 2]);
+  const full = previewFor(TOOLS.SKETCH_ARC, [{ x: 0, y: 0 }, { x: 10, y: 0 }], { x: 0, y: 10 });
+  assert.deepEqual([full.entities.length, full.band.length], [1, 0]);
+
+  for (const [tool, clicks] of Object.entries(TOOL_CLICKS)) {
+    for (let i = 0; i < clicks!; i++) assert.ok(toolHint(tool as never, i), `${tool} hint ${i}`);
+  }
+});

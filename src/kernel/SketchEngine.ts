@@ -103,12 +103,13 @@ export class SketchEngine {
   }
 
   /** Regular polygon inscribed in a circle of `radius`, as lines. */
-  createPolygon(center: Point2, radius: number, sides = 6, isConstruction = false): LineEntity[] {
+  /** Regular polygon inscribed in a circle; the first vertex is at `rotation` (radians from +X). */
+  createPolygon(center: Point2, radius: number, sides = 6, isConstruction = false, rotation = 0): LineEntity[] {
     const n = Math.max(3, Math.floor(sides));
     const step = (Math.PI * 2) / n;
     const pts: Point2[] = [];
     for (let i = 0; i < n; i++) {
-      pts.push({ x: center.x + radius * Math.cos(i * step), y: center.y + radius * Math.sin(i * step) });
+      pts.push({ x: center.x + radius * Math.cos(rotation + i * step), y: center.y + radius * Math.sin(rotation + i * step) });
     }
     return pts.map((pt, i) => this.createLine(pt, pts[(i + 1) % n], isConstruction));
   }

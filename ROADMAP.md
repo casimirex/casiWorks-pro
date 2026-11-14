@@ -107,7 +107,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 - [ ] **3.1** Sketch on any planar face, not only the three default planes
 - [ ] **3.2** Constraint UI: add/show/delete geometric relations; fully-defined coloring
 - [ ] **3.3** Driving dimensions editable in the viewport
-- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (factories exist in SketchEngine; the old mirror/offset helpers were removed as incorrect)
+- [ ] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (arc, polygon and slot tools done, with previews and click hints; splines, trim, extend, offset, mirror to do — the old mirror/offset helpers were removed as incorrect)
 - [ ] **3.5** Reference geometry: planes, axes, points, coordinate systems
 - [ ] **3.6** Hole wizard (counterbore, countersink, tapped) with standards tables
 - [ ] **3.7** Global variables and equations
