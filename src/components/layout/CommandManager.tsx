@@ -23,6 +23,7 @@ export default function CommandManager() {
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
+  const exploded = useCADStore(s => s.explodedView !== null);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const constructionMode = useCADStore(s => s.constructionMode);
   const sectionActive = useCADStore(s => s.sectionViewActive);
@@ -598,9 +599,9 @@ export default function CommandManager() {
                     <span>Solve</span>
                   </button>
                   <button
-                    className="ribbon-btn"
+                    className={`ribbon-btn ${exploded ? 'active' : ''}`}
                     onClick={() => runCommand('assembly.explodedView')}
-                    title="Configure Exploded View"
+                    title={exploded ? 'Exploded view is on: change it or collapse it' : 'Configure Exploded View'}
                   >
                     <Move size={19} color="#38bdf8" />
                     <span>Explode</span>

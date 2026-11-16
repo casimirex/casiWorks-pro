@@ -75,6 +75,7 @@ export default function PropertyPanel() {
   const cancelTool = useCADStore(s => s.cancelTool);
   const features = useCADStore(s => s.features);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
+  const explodedView = useCADStore(s => s.explodedView);
 
   // Form State
   const [depth, setDepth] = useState(25);
@@ -105,7 +106,8 @@ export default function PropertyPanel() {
   const [mateOffset, setMateOffset] = useState(0);
 
   // Exploded View State
-  const [explodeDist, setExplodeDist] = useState(40);
+  const [explodeDist, setExplodeDist] = useState(() => useCADStore.getState().explodedView?.distance ?? 40);
+  const [explodeLeaders, setExplodeLeaders] = useState(() => useCADStore.getState().explodedView?.leaderLines ?? true);
 
   // Drawing View State
   const [drawingViewType, setDrawingViewType] = useState('standard_3_view');
@@ -244,7 +246,11 @@ export default function PropertyPanel() {
         runCommand('assembly.mate', { type: mateType, component1: comp1Id, ref1, component2: comp2Id, ref2, offset: mateOffset });
       }
     } else if (featureType === 'exploded_view') {
-      runCommand('assembly.solve');
+      // Close first: closing resets the status bar, which should report the explode
+      closePropertyPanel();
+      cancelTool();
+      runCommand('assembly.explode', { distance: explodeDist, leaderLines: explodeLeaders });
+      return;
     } else if (featureType.startsWith('drawing_')) {
       // Drawing annotation / view committed
     } else {
@@ -369,17 +375,36 @@ export default function PropertyPanel() {
               </div>
               <input
                 type="range"
-                min="0"
+                className="explode-distance"
+                min="2"
                 max="200"
                 step="2"
                 value={explodeDist}
                 onChange={(e) => debouncedSetExplodeDist(parseFloat(e.target.value))}
                 style={{ width: '100%', margin: '8px 0', accentColor: '#38bdf8' }}
               />
-              <div className="property-row">
-                <span className="property-label">Leader Lines:</span>
-                <span style={{ fontSize: 11, color: '#4ade80' }}>Enabled (3D Dash)</span>
+              <div className="property-row switch-row">
+                <span className="property-label">Leader Lines</span>
+                <label className="custom-switch">
+                  <input type="checkbox" className="explode-leaders" checked={explodeLeaders} onChange={(e) => setExplodeLeaders(e.target.checked)} />
+                  <span className="slider round" />
+                </label>
               </div>
+              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>
+                Moves the components apart on screen only. Their real positions and mates are kept.
+              </div>
+              {assemblyComponents.length < 2 && (
+                <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 6 }}>Insert at least two components to explode.</div>
+              )}
+              {explodedView && (
+                <button
+                  className="segment-btn explode-collapse"
+                  style={{ marginTop: 8, width: '100%' }}
+                  onClick={() => { closePropertyPanel(); cancelTool(); runCommand('assembly.collapse'); }}
+                >
+                  Collapse
+                </button>
+              )}
             </div>
           </div>
         )}

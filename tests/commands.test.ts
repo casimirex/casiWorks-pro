@@ -120,6 +120,33 @@ test('Built-in commands drive the store: sketch planes, views, feature tools, ex
   throwsCode(() => r.execute('assembly.mate', { type: 'glue' }), 'INVALID_ARGUMENT');
 });
 
+test('Exploded view: display-only settings, checked arguments, cleared with the assembly', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = () => useCADStore.getState();
+  s().newProject();
+  r.execute('assembly.insertPart', { name: 'Plate', shape: 'box', dims: { width: 50, height: 12, depth: 50 } });
+  throwsCode(() => r.execute('assembly.explode'), 'NOT_AVAILABLE');
+  r.execute('assembly.insertPart', { name: 'Pin', shape: 'pin' });
+  r.execute('assembly.mate', { type: 'concentric' });
+  const before = s().assemblyComponents.map(c => c.position.toArray());
+
+  for (const distance of [0, -5, 1001, Number.NaN, '40']) throwsCode(() => r.execute('assembly.explode', { distance }), 'INVALID_ARGUMENT');
+  assert.equal(s().explodedView, null);
+  r.execute('assembly.explode');
+  assert.deepEqual(s().explodedView, { distance: 40, leaderLines: true }, 'defaults');
+  r.execute('assembly.explode', { distance: 25, leaderLines: false });
+  assert.deepEqual(s().explodedView, { distance: 25, leaderLines: false });
+  assert.deepEqual(s().assemblyComponents.map(c => c.position.toArray()), before, 'real positions are kept');
+  assert.equal(/xplode/.test(s().undoStack.at(-1)?.actionName ?? ''), false, 'not an undo step');
+
+  r.execute('assembly.collapse');
+  assert.equal(s().explodedView, null);
+  r.execute('assembly.explode');
+  r.execute('assembly.clear');
+  assert.equal(s().explodedView, null, 'clearing the assembly collapses it');
+  for (const id of ['assembly.explode', 'assembly.collapse']) assert.equal(r.macroStepFor({ id, args: undefined, ok: true, result: undefined } as CommandExecution), null, `${id} is not recorded in macros`);
+});
+
 test('API: commands namespace lists and runs commands with API error codes', () => {
   const r = createCommandRegistry(useCADStore);
   const api = createCasiWorksAPI(useCADStore, { commands: r });

@@ -20,6 +20,8 @@ import { DIRECTION_VECTORS, arrowAnchors, faceRect } from '../simulation/studySe
 import type { StudySetup } from '../simulation/studySetup.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
+import { assemblyManager } from '../assembly/AssemblyManager.ts';
+import type { LeaderLine } from '../assembly/AssemblyManager.ts';
 
 // <line> is the SVG element in JSX typings; register three's Line under its own tag
 extend({ ThreeLine: THREE.Line });
@@ -487,6 +489,25 @@ function OrientationCubeHUD() {
 
 const FOV = 45;
 
+const ORIGIN = new THREE.Vector3();
+
+/** Dashed lines from each exploded component's real position to where it is drawn. */
+function ExplodeLeaderLines({ lines }: { lines: LeaderLine[] }) {
+  const geometry = useMemo(() => {
+    const g = new THREE.BufferGeometry().setFromPoints(lines.flatMap(l => [l.start, l.end]));
+    return g;
+  }, [lines]);
+  const segments = useRef<THREE.LineSegments>(null);
+  // Dashes need per-vertex distances along each segment
+  useLayoutEffect(() => { segments.current?.computeLineDistances(); }, [geometry]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <lineSegments ref={segments} geometry={geometry} renderOrder={2} userData={{ explodeLeaderLines: lines.length }}>
+      <lineDashedMaterial color="#fbbf24" dashSize={3} gapSize={2} depthTest={false} transparent opacity={0.9} />
+    </lineSegments>
+  );
+}
+
 /**
  * Main 3D Viewport Component
  */
@@ -495,6 +516,8 @@ export default function Viewport3D() {
   const feaPlot = useCADStore(s => s.feaPlot);
   const feaSetupMarkers = useCADStore(s => s.feaSetupMarkers);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
+  const mates = useCADStore(s => s.mates);
+  const explodedView = useCADStore(s => s.explodedView);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const setSelection = useCADStore(s => s.setSelection);
   const activeMaterial = useCADStore(s => s.activeMaterial);
@@ -570,6 +593,20 @@ export default function Viewport3D() {
     [activeTool, sketchClickPts, mouseSketchPt, polygonSides],
   );
 
+  // Exploded view: where each component is drawn, recomputed when the assembly changes
+  const exploded = useMemo(
+    () => (explodedView && assemblyComponents.length > 1
+      ? assemblyManager.createExplodedView({ distance: explodedView.distance, leaderLines: explodedView.leaderLines })
+      : null),
+    // The layout reads the assembly manager, which the store mirrors: its component
+    // and mate arrays are replaced whenever the manager changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [explodedView, assemblyComponents, mates],
+  );
+  const explodeOffsets = useMemo(() => new Map(
+    (exploded?.components ?? []).map(c => [c.id, c.position.clone().sub(c.originalPosition)] as const),
+  ), [exploded]);
+
   return (
     <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
@@ -629,20 +666,22 @@ export default function Viewport3D() {
           />
         ))}
 
-        {/* Assembly Components */}
+        {/* Assembly Components (drawn moved apart while the exploded view is on) */}
         {assemblyComponents && assemblyComponents.map((comp) => (
-          <CADBodyMesh
-            key={comp.id}
-            body={comp}
-            isSelected={selectedEntities.some(e => e.id === comp.id)}
-            selectable={!isSketchActive}
-            onSelect={(b) => setSelection({ id: b.id })}
-            shadedMode={shadedMode}
-            wireframeMode={wireframeMode}
-            edgeDisplay={edgeDisplay}
-            materialKey={activeMaterial}
-          />
+          <group key={comp.id} position={explodeOffsets.get(comp.id) ?? ORIGIN}>
+            <CADBodyMesh
+              body={comp}
+              isSelected={selectedEntities.some(e => e.id === comp.id)}
+              selectable={!isSketchActive}
+              onSelect={(b) => setSelection({ id: b.id })}
+              shadedMode={shadedMode}
+              wireframeMode={wireframeMode}
+              edgeDisplay={edgeDisplay}
+              materialKey={activeMaterial}
+            />
+          </group>
         ))}
+        {exploded && exploded.leaderLines.length > 0 && <ExplodeLeaderLines lines={exploded.leaderLines} />}
 
         {/* Active Sketch Overlay */}
         {isSketchActive && (

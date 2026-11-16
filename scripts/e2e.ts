@@ -287,6 +287,39 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'exploded view moves mated components apart and collapses',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Assembly');
+      await p.click('Insert Base Mounting Plate', 400);
+      await p.click('Insert Cylindrical Alignment Pin', 400);
+      await p.click('Concentric Mate (Align cylindrical axes)', 400);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await p.click('Configure Exploded View', 400);
+      await p.eval(`(() => {
+        const el = document.querySelector('.explode-distance');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '30');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await sleep(300);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(600);
+      const exploded = await status(p);
+      const active = await p.eval<boolean>(`[...document.querySelectorAll('button')].find(b => b.title.startsWith('Exploded view is on'))?.classList.contains('active')`);
+      assert(exploded === 'Exploded view: 30 mm step, with leader lines' && active, `after OK: "${exploded}", button active: ${active}`);
+      await p.screenshot('08-exploded');
+      await p.click('Exploded view is on: change it or collapse it', 400);
+      await p.eval(`document.querySelector('.explode-collapse').click()`);
+      await sleep(400);
+      const collapsed = await status(p);
+      assert(collapsed === 'Exploded view collapsed', `after Collapse: ${collapsed}`);
+      // Later checks start from the L-bracket on the Features tab
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await p.click('Features', 1500);
+      return `${exploded}; then ${collapsed.toLowerCase()}`;
+    },
+  },
+  {
     name: 'commands, keyboard and events',
     async run(p) {
       await p.eval(`window.__events = []; ['featureAdded', 'featureRemoved', 'commandExecuted'].forEach(n => window.casiworks.on(n, e => window.__events.push(n + ':' + (e.feature?.type ?? e.id))));`);

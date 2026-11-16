@@ -567,13 +567,15 @@ npm run dev</pre></div>
         <li>Under <b>Components</b>, click <b>Plate</b> and then <b>Pin</b>. Both are inserted at their default positions, so the pin stands beside the plate.</li>
         <li>Under <b>Mates</b>, click <b>Concentric</b>. The pin's axis is lined up with the plate's centre, and the pin moves onto the plate.</li>
         <li>Click <b>Solve</b> (Actions) to solve all the mates together. The status bar shows the leftover error, for example <i>residual 0.00000</i>.</li>
-        <li>Click <b>Explode</b> to open the Exploded View settings: <b>Explode Distance</b> and <b>Leader Lines</b>. See the warning below before you rely on it.</li>
+        <li>Click <b>Explode</b>. Set <b>Explode Distance</b> to 40 mm, leave <b>Leader Lines</b> on, and click <b>OK</b>. The pin slides up its shared axis, away from the plate, and a dashed yellow line joins it to where it really sits.</li>
+        <li>To put it back, click <b>Explode</b> again (it stays highlighted while the view is exploded) and click <b>Collapse</b>.</li>
       </ol>
       <div class="gallery">
         <figure class="shot"><img loading="lazy" src="img/22-assembly-insert.webp" alt="Plate and pin inserted"><figcaption>Step 2: two components, not yet mated.</figcaption></figure>
         <figure class="shot"><img loading="lazy" src="img/23-assembly-mate.webp" alt="Pin mated concentric"><figcaption>Step 3: after the concentric mate.</figcaption></figure>
         <figure class="shot"><img loading="lazy" src="img/24-assembly-solved.webp" alt="Assembly solved"><figcaption>Step 4: solved, with a residual of zero.</figcaption></figure>
-        <figure class="shot"><img loading="lazy" src="img/25-exploded.webp" alt="Exploded view settings"><figcaption>Step 5: the Exploded View settings.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/25-exploded-panel.webp" alt="Exploded view settings"><figcaption>Step 5: the Exploded View settings.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/25-exploded.webp" alt="Exploded assembly with a leader line"><figcaption>Step 5: exploded 40 mm, with a leader line.</figcaption></figure>
       </div>
     </div>
   </div>
@@ -587,7 +589,7 @@ npm run dev</pre></div>
     <tr><td>Width</td><td>A component is centred between two boundary faces.</td></tr>
     <tr><td>Path</td><td>A component is held on a guide curve.</td></tr>
   </table></div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>In the Exploded View panel, <b>OK</b> only solves the mates again. The parts are not moved apart yet, and the distance you set is not used.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Display only</b><p>The exploded view only changes what you see. Components keep their real positions and mates, so saving, solving and exporting all use the assembled positions. Each mated part moves away from its partner; parts later in the list move further.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Add the fewest mates that fix the position. Extra mates that fight each other leave a residual above zero after <b>Solve</b>, and that number tells you something is over-constrained. <b>Clear</b> removes all components and mates.</p></div></div>
   <div class="exercise"><b>Exercise 10.</b> Insert a Flange and a Cylinder rod. Make them concentric, then add a Distance mate so the rod sits 15 mm above the flange.<label><input type="checkbox" data-done="ch10"> I've done this</label></div>
 </section>
@@ -859,7 +861,6 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
     <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs, and hollow parts with Extrude Cut.</td></tr>
     <tr><td>Surfaces and Sheet Metal tabs</td><td>Each has one button, which opens Extrude.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
-    <tr><td>Exploded view</td><td><b>OK</b> solves the mates again. Parts are not moved apart.</td><td>Move components with a Distance mate to show them apart.</td></tr>
     <tr><td>Drawing tab forms</td><td>Do not change the generated sheet.</td><td>Use the toggles on the drawing sheet.</td></tr>
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>

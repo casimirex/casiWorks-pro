@@ -52,6 +52,14 @@ export type StoreAssemblyComponent = AssemblyComponent & {
 
 export type AssemblyMate = ReturnType<typeof assemblyManager.addMate>;
 
+/** Exploded-view display settings. Display only: components keep their real positions. */
+export interface ExplodedViewSettings {
+  /** Base explosion step (mm); later components move further. */
+  distance: number;
+  /** Draw a dashed line from each component's real position to its exploded one. */
+  leaderLines: boolean;
+}
+
 /** A component as written to a project file. */
 interface SerializedComponent {
   id: string;
@@ -151,6 +159,8 @@ export interface CADState {
   // Assembly
   assemblyComponents: StoreAssemblyComponent[];
   mates: AssemblyMate[];
+  /** Set while the assembly is shown exploded; null when collapsed. */
+  explodedView: ExplodedViewSettings | null;
 
   // Rebuild
   needsRebuild: boolean;
@@ -230,6 +240,7 @@ export interface CADActions {
   removeAssemblyMate(mateId: string): void;
   solveAssembly(): void;
   clearAssembly(): void;
+  setExplodedView(settings: ExplodedViewSettings | null): void;
 
   // Documents
   saveProject(): string;
@@ -391,6 +402,7 @@ function initialState(): CADState {
     redoStack: [],
     assemblyComponents: [],
     mates: [],
+    explodedView: null,
     needsRebuild: false,
     rebuildCount: 0,
     documentRevision: 0,
@@ -822,7 +834,15 @@ export const useCADStore = create<CADStore>()(
       assemblyManager.mates = [];
       state.assemblyComponents = [];
       state.mates = [];
+      state.explodedView = null;
       state.statusMessage = 'Cleared assembly';
+    }),
+
+    setExplodedView: (settings) => set(state => {
+      state.explodedView = settings ? { ...settings } : null;
+      state.statusMessage = settings
+        ? `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`
+        : 'Exploded view collapsed';
     }),
 
     // ==================== DOCUMENTS ====================
@@ -898,6 +918,8 @@ export const useCADStore = create<CADStore>()(
           }
           state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
         }
+
+        state.explodedView = null;
 
         // Restore assembly mates
         if (Array.isArray(project.mates)) {

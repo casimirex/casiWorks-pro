@@ -323,6 +323,19 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   { id: 'assembly.solve', label: 'Solve mates', category: 'Assembly', run: ({ state }) => state().solveAssembly() },
   { id: 'assembly.explodedView', label: 'Exploded view', category: 'Assembly', record: false, run: ({ state }) => state().openPropertyPanel({ type: 'exploded_view' }) },
+  {
+    id: 'assembly.explode', label: 'Explode assembly', category: 'Assembly', record: false,
+    description: 'args: { distance? (mm, default 40), leaderLines? (default true) } — display only, positions are kept',
+    run: ({ state }, args: { distance?: number; leaderLines?: boolean } | undefined) => {
+      const distance = args?.distance ?? 40;
+      if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0 || distance > 1000) {
+        throw new CommandError('INVALID_ARGUMENT', 'distance must be a number of mm above 0 and at most 1000');
+      }
+      if (state().assemblyComponents.length < 2) throw new CommandError('NOT_AVAILABLE', 'Insert at least two components to explode');
+      state().setExplodedView({ distance, leaderLines: args?.leaderLines ?? true });
+    },
+  },
+  { id: 'assembly.collapse', label: 'Collapse exploded view', category: 'Assembly', record: false, run: ({ state }) => state().setExplodedView(null) },
   { id: 'assembly.clear', label: 'Clear assembly', category: 'Assembly', run: ({ state }) => state().clearAssembly() },
 ] as Array<Def<never>>;
 

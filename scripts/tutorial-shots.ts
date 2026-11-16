@@ -284,6 +284,7 @@ const SHOTS: Shot[] = [
   {
     name: '22-assembly', async run(p) {
       await fresh(p);
+      await feaPanel(p, false);
       await p.click('Assembly');
       await p.click('Insert Base Mounting Plate', 600);
       await p.click('Insert Cylindrical Alignment Pin', 600);
@@ -294,11 +295,17 @@ const SHOTS: Shot[] = [
       await p.click('Re-solve all assembly mates numerically', 800);
       await p.screenshot('24-assembly-solved');
       await p.click('Configure Exploded View', 600);
-      await setField(p, 'Explode Distance', 40).catch(() => {});
-      await sleep(600);
-      await p.screenshot('25-exploded');
-      await p.eval(`document.querySelector('.action-btn-red')?.click()`);
+      await p.eval(`(() => {
+        const el = document.querySelector('.explode-distance');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '40');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
       await sleep(300);
+      await p.screenshot('25-exploded-panel');
+      await apply(p, 800);
+      await zoom(p, 4);
+      await p.screenshot('25-exploded');
+      await run(p, 'assembly.collapse');
     },
   },
   {
