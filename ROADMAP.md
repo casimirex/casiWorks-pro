@@ -126,7 +126,7 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 ## Phase 5 — Drawings
 
 - [ ] **5.1** Views generated from exact geometry (crisp edges, true arcs)
-- [ ] **5.2** Associative dimensions that update with the model (known: the property panel's drawing view, dimension and GD&T cards collect settings that nothing uses yet; the drawing sheet is generated with fixed views)
+- [ ] **5.2** Associative dimensions that update with the model (today the sheet has fixed views and overall dimensions; the Drawing tab switches hidden lines, dimensions and GD&T, picks the sheet size and exports SVG / DXF)
 - [ ] **5.3** BOM tables and balloons from assemblies
 - [ ] **5.4** Sheet formats and title block editor (layout done: reserved bands per view, title block kept clear, standard ISO 5455 scales, overlap checker `layoutProblems` tested on every example and sheet size; editor still to do)
 - [ ] **5.5** PDF and DWG/DXF export

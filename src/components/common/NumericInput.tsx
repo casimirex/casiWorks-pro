@@ -160,9 +160,10 @@ const NumericInput = ({
   }, [stopHold]);
 
   return (
-    <div className={`numeric-input ${disabled ? 'disabled' : ''} ${className}`}>
+    <div className={`numeric-input-wrapper ${disabled ? 'disabled' : ''} ${className}`}>
       <input
         ref={inputRef}
+        className="numeric-input-field"
         type="text"
         value={editValue}
         onChange={handleInputChange}
@@ -172,7 +173,7 @@ const NumericInput = ({
         disabled={disabled}
         aria-label={label || 'Numeric input'}
       />
-      {unit && <span className="unit-suffix">{unit}</span>}
+      {unit && <span className="numeric-unit-tag">{unit}</span>}
       <div className="spin-buttons">
         <button
           className="spin-btn"
