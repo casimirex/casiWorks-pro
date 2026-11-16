@@ -3,6 +3,10 @@ import { drawingEngine, SHEET_SIZES } from './DrawingEngine.ts';
 import type { SheetData } from './DrawingEngine.ts';
 import type { Body } from '../features/rebuildModel.ts';
 import type { DrawingOptions } from '../store/cadStore.ts';
+import { createAssemblySheet } from './assemblyDrawing.ts';
+import type { DrawingComponent } from './assemblyDrawing.ts';
+import { buildBom } from '../assembly/bom.ts';
+import type { BomComponent } from '../assembly/bom.ts';
 
 export type DrawingFormat = 'svg' | 'dxf';
 
@@ -12,13 +16,25 @@ export interface DrawingSource {
   documentName: string;
   activeMaterial: string;
   drawingOptions: DrawingOptions;
+  /** Used when the subject is the assembly. */
+  assemblyComponents?: Array<DrawingComponent & BomComponent>;
 }
 
-/** The full sheet (all annotations), or null when there is no solid body to draw. */
+/** The full sheet (all annotations), or null when there is nothing to draw. */
 export function buildDrawingSheet(src: DrawingSource): SheetData | null {
+  const name = src.documentName || 'Part1';
+  if (src.drawingOptions.subject === 'assembly') {
+    const components = src.assemblyComponents ?? [];
+    return createAssemblySheet(components, buildBom(components, src.activeMaterial), {
+      sheetSize: SHEET_SIZES[src.drawingOptions.sheetSize] ?? SHEET_SIZES.A4_LANDSCAPE,
+      enableHLR: src.drawingOptions.hiddenLines,
+      title: `${name.toUpperCase()} ASSEMBLY`,
+      partNumber: 'ASM-' + (name.slice(0, 4).toUpperCase() || 'ASSY'),
+      material: 'SEE PARTS LIST',
+    });
+  }
   const geometry = src.bodies[0]?.geometry;
   if (!geometry) return null;
-  const name = src.documentName || 'Part1';
   return drawingEngine.createStandardSheet(geometry, {
     sheetSize: SHEET_SIZES[src.drawingOptions.sheetSize] ?? SHEET_SIZES.A4_LANDSCAPE,
     enableHLR: src.drawingOptions.hiddenLines,
@@ -42,7 +58,7 @@ export function drawingFile(src: DrawingSource, format: DrawingFormat): { filena
   const sheet = buildDrawingSheet(src);
   if (!sheet) return null;
   const shown = visibleSheet(sheet, src.drawingOptions);
-  const base = `${(src.documentName || 'Part1').replace(/\s+/g, '_')}_drawing`;
+  const base = `${(src.documentName || 'Part1').replace(/\s+/g, '_')}_${src.drawingOptions.subject === 'assembly' ? 'assembly_' : ''}drawing`;
   return format === 'svg'
     ? { filename: `${base}.svg`, text: drawingEngine.exportSVG(shown), mimeType: 'image/svg+xml;charset=utf-8' }
     : { filename: `${base}.dxf`, text: drawingEngine.exportDXF(shown), mimeType: 'application/dxf;charset=utf-8' };

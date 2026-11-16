@@ -72,9 +72,32 @@ export interface SheetView {
   centerX: number;
   centerY: number;
   scale: number;
+  /** Sheet position of view coordinate (u, v): (u·scale + offsetX, offsetY − v·scale). */
+  offsetX?: number;
+  offsetY?: number;
   visible: DrawingLine[];
   hidden: DrawingLine[];
   bounds: ViewBounds;
+}
+
+/** A parts list on the sheet (assembly drawings), drawn above the title block. */
+export interface BomTable {
+  x: number;
+  y: number;
+  rowHeight: number;
+  columns: Array<{ title: string; width: number; align: 'left' | 'right' | 'center' }>;
+  /** Body rows, top to bottom (the header row is drawn from `columns`). */
+  rows: string[][];
+}
+
+/** An item balloon: a numbered circle with a leader to the part it marks. */
+export interface Balloon {
+  x: number;
+  y: number;
+  radius: number;
+  label: string;
+  /** Where the leader ends, on the part. */
+  target: Point2D;
 }
 
 export interface LinearDimension {
@@ -121,9 +144,19 @@ export interface SheetData {
   gdtFrames: Array<FeatureControlFrame | DatumSymbol>;
   border?: { x: number; y: number; width: number; height: number; innerMargin: number };
   titleBlock?: TitleBlock;
+  bomTable?: BomTable;
+  balloons?: Balloon[];
 }
 
-export interface SheetOptions { sheetSize?: SheetSize; enableHLR?: boolean; title?: string; partNumber?: string; material?: string }
+export interface SheetOptions {
+  sheetSize?: SheetSize;
+  enableHLR?: boolean;
+  title?: string;
+  partNumber?: string;
+  material?: string;
+  /** Room kept free directly above the title block, right-aligned with it (e.g. for a parts list). */
+  reserveAboveTitle?: { width: number; height: number };
+}
 export interface ProjectOptions { enableHLR?: boolean; creaseAngleDeg?: number }
 
 interface CamTriangle { p1: THREE.Vector3; p2: THREE.Vector3; p3: THREE.Vector3; minX: number; maxX: number; minY: number; maxY: number }
@@ -618,6 +651,13 @@ export class DrawingEngine {
     return { projMat: mat, viewDir };
   }
 
+  /** Where a model point appears in a placed view, in sheet millimetres. */
+  sheetPoint(view: SheetView, p: { x: number; y: number; z: number }): Point2D {
+    const { projMat } = this._getProjectionMatrix(view.view);
+    const q = new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(projMat);
+    return { x: q.x * view.scale + (view.offsetX ?? 0), y: (view.offsetY ?? 0) - q.y * view.scale };
+  }
+
   /**
    * Generates standard 4-view orthographic drawing (Top, Front, Right, Isometric)
    * arranged neatly on an engineering sheet.
@@ -661,8 +701,10 @@ export class DrawingEngine {
     const [F, T, R, I] = [size(frontView), size(topView), size(rightView), size(isoView)];
     const col1 = Math.max(F.w, T.w); // top and front share x (model width)
     const col2 = Math.max(R.w, I.w);
-    const titleTop = sheetSize.height - margin - titleBlockHeight - 4;
-    const titleLeft = sheetSize.width - margin - titleBlockWidth - 4;
+    // Views keep clear of the title block and of anything reserved above it
+    const reserve = sheetOptions.reserveAboveTitle;
+    const titleTop = sheetSize.height - margin - titleBlockHeight - (reserve?.height ?? 0) - 4;
+    const titleLeft = sheetSize.width - margin - Math.max(titleBlockWidth, reserve?.width ?? 0) - 4;
     const bottom = sheetSize.height - margin - inner - 4;
 
     /** Positions at scale k, and how much room is left (negative = does not fit). */
@@ -717,6 +759,8 @@ export class DrawingEngine {
         centerX: (bounds.minX + bounds.maxX) / 2,
         centerY: (bounds.minY + bounds.maxY) / 2,
         scale,
+        offsetX,
+        offsetY,
         visible: viewData.visible.map(transformLine),
         hidden: viewData.hidden.map(transformLine),
         bounds,
@@ -940,6 +984,12 @@ export class DrawingEngine {
     svg += `    .tb-text-sm { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.5px; fill: #333; }\n`;
     svg += `    .gdt-rect { stroke: #000000; stroke-width: 0.35; fill: #ffffff; }\n`;
     svg += `    .gdt-text { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3px; font-weight: bold; fill: #000; text-anchor: middle; }\n`;
+    svg += `    .bom-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.6px; font-weight: bold; fill: #000; }\n`;
+    svg += `    .bom-cell { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.6px; fill: #222; }\n`;
+    svg += `    .balloon { stroke: #000; stroke-width: 0.35; fill: #fff; }\n`;
+    svg += `    .balloon-leader { stroke: #000; stroke-width: 0.25; }\n`;
+    svg += `    .balloon-dot { fill: #000; }\n`;
+    svg += `    .balloon-text { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3.4px; font-weight: bold; fill: #000; text-anchor: middle; }\n`;
     svg += `  </style>\n\n`;
 
     // 1. Background & Sheet Borders
@@ -1025,6 +1075,41 @@ export class DrawingEngine {
       svg += `  </g>\n`;
     }
 
+    // 6. Parts list and item balloons (assembly drawings)
+    if (sheetData.bomTable) {
+      const t = sheetData.bomTable;
+      const width = t.columns.reduce((a, c) => a + c.width, 0);
+      const all = [t.columns.map(c => c.title), ...t.rows];
+      svg += `  <!-- Parts list -->\n  <g id="bom-table">\n`;
+      svg += `    <rect class="gdt-rect" x="${t.x.toFixed(2)}" y="${t.y.toFixed(2)}" width="${width.toFixed(2)}" height="${(all.length * t.rowHeight).toFixed(2)}" />\n`;
+      all.forEach((row, r) => {
+        const y = t.y + r * t.rowHeight;
+        if (r > 0) svg += `    <line class="tb-line" x1="${t.x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${(t.x + width).toFixed(2)}" y2="${y.toFixed(2)}" />\n`;
+        let x = t.x;
+        t.columns.forEach((c, i) => {
+          if (r === 0 && i > 0) svg += `    <line class="tb-line" x1="${x.toFixed(2)}" y1="${t.y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${(t.y + all.length * t.rowHeight).toFixed(2)}" />\n`;
+          const tx = c.align === 'right' ? x + c.width - 1.5 : c.align === 'center' ? x + c.width / 2 : x + 1.5;
+          const anchor = c.align === 'right' ? 'end' : c.align === 'center' ? 'middle' : 'start';
+          svg += `    <text class="${r === 0 ? 'bom-head' : 'bom-cell'}" text-anchor="${anchor}" x="${tx.toFixed(2)}" y="${(y + t.rowHeight * 0.68).toFixed(2)}">${escapeXml(row[i] ?? '')}</text>\n`;
+          x += c.width;
+        });
+      });
+      svg += `  </g>\n`;
+    }
+    if (sheetData.balloons?.length) {
+      svg += `  <!-- Item balloons -->\n  <g id="balloons">\n`;
+      for (const b of sheetData.balloons) {
+        const dx = b.target.x - b.x, dy = b.target.y - b.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const sx = b.x + (dx / d) * b.radius, sy = b.y + (dy / d) * b.radius;
+        svg += `    <line class="balloon-leader" x1="${sx.toFixed(2)}" y1="${sy.toFixed(2)}" x2="${b.target.x.toFixed(2)}" y2="${b.target.y.toFixed(2)}" />\n`;
+        svg += `    <circle class="balloon-dot" cx="${b.target.x.toFixed(2)}" cy="${b.target.y.toFixed(2)}" r="0.6" />\n`;
+        svg += `    <circle class="balloon" cx="${b.x.toFixed(2)}" cy="${b.y.toFixed(2)}" r="${b.radius.toFixed(2)}" />\n`;
+        svg += `    <text class="balloon-text" x="${b.x.toFixed(2)}" y="${(b.y + 1.2).toFixed(2)}">${escapeXml(b.label)}</text>\n`;
+      }
+      svg += `  </g>\n`;
+    }
+
     svg += `</svg>\n`;
     return svg;
   }
@@ -1072,6 +1157,30 @@ export class DrawingEngine {
       dxf += line('DIMENSION', d.extLine2.p1, d.extLine2.p2);
       dxf += `0\nTEXT\n8\nDIMENSION\n10\n${f(d.textPos.x)}\n20\n${f(H - d.textPos.y)}\n30\n0.0\n40\n3.0\n1\n${d.text}\n`;
     }
+    const text = (layer: string, x: number, y: number, h: number, s: string) =>
+      `0\nTEXT\n8\n${layer}\n10\n${f(x)}\n20\n${f(H - y)}\n30\n0.0\n40\n${f(h)}\n1\n${s.replace(/[\r\n]+/g, ' ')}\n`;
+    const t = sheetData.bomTable;
+    if (t) {
+      const width = t.columns.reduce((a, c) => a + c.width, 0);
+      const all = [t.columns.map(c => c.title), ...t.rows];
+      const bottom = t.y + all.length * t.rowHeight;
+      for (let r = 0; r <= all.length; r++) dxf += line('BORDER', { x: t.x, y: t.y + r * t.rowHeight }, { x: t.x + width, y: t.y + r * t.rowHeight });
+      let x = t.x;
+      for (const c of [...t.columns, null]) {
+        dxf += line('BORDER', { x, y: t.y }, { x, y: bottom });
+        if (c) x += c.width;
+      }
+      all.forEach((row, r) => {
+        let cx = t.x;
+        t.columns.forEach((c, i) => { dxf += text('BORDER', cx + 1.5, t.y + (r + 0.7) * t.rowHeight, 2.2, row[i] ?? ''); cx += c.width; });
+      });
+    }
+    for (const b of sheetData.balloons ?? []) {
+      dxf += `0\nCIRCLE\n8\nDIMENSION\n10\n${f(b.x)}\n20\n${f(H - b.y)}\n30\n0.0\n40\n${f(b.radius)}\n`;
+      const dx = b.target.x - b.x, dy = b.target.y - b.y, d = Math.hypot(dx, dy) || 1;
+      dxf += line('DIMENSION', { x: b.x + (dx / d) * b.radius, y: b.y + (dy / d) * b.radius }, b.target);
+      dxf += text('DIMENSION', b.x - 1, b.y + 1.2, 3.0, b.label);
+    }
     dxf += '0\nENDSEC\n0\nEOF\n';
     return dxf;
   }
@@ -1085,7 +1194,7 @@ export default DrawingEngine;
 // =====================================================================
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
-export interface SheetElementBox { kind: 'view' | 'label' | 'dimension' | 'gdt' | 'datum' | 'titleBlock'; name: string; box: Box }
+export interface SheetElementBox { kind: 'view' | 'label' | 'dimension' | 'gdt' | 'datum' | 'titleBlock' | 'bom' | 'balloon'; name: string; box: Box }
 
 /** Approximate extent of a line of text (Helvetica-like proportions). */
 function textBox(x: number, baseline: number, text: string, size: number, anchor: 'middle' | 'start' = 'middle'): Box {
@@ -1116,6 +1225,12 @@ export function sheetElementBoxes(sheet: SheetData): SheetElementBox[] {
     if (f.type === 'gdt_fcf') out.push({ kind: 'gdt', name: 'feature control frame', box: { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height } });
     else out.push({ kind: 'datum', name: `datum ${f.letter}`, box: { minX: f.x - 4, minY: f.y, maxX: f.x + 4, maxY: f.y + 9 + f.boxHeight } });
   }
+  if (sheet.bomTable) {
+    const t = sheet.bomTable;
+    const width = t.columns.reduce((a, c) => a + c.width, 0);
+    out.push({ kind: 'bom', name: 'parts list', box: { minX: t.x, minY: t.y, maxX: t.x + width, maxY: t.y + (t.rows.length + 1) * t.rowHeight } });
+  }
+  (sheet.balloons ?? []).forEach(b => out.push({ kind: 'balloon', name: `balloon ${b.label}`, box: { minX: b.x - b.radius, minY: b.y - b.radius, maxX: b.x + b.radius, maxY: b.y + b.radius } }));
   const tb = sheet.titleBlock;
   if (tb) out.push({ kind: 'titleBlock', name: 'title block', box: { minX: tb.x, minY: tb.y, maxX: tb.x + tb.width, maxY: tb.y + tb.height } });
   return out;
@@ -1133,7 +1248,8 @@ export function layoutProblems(sheet: SheetData, gap = 0.5): string[] {
     ? { minX: b.x + b.innerMargin, minY: b.y + b.innerMargin, maxX: b.x + b.width - b.innerMargin, maxY: b.y + b.height - b.innerMargin }
     : { minX: 0, minY: 0, maxX: sheet.sheetSize.width, maxY: sheet.sheetSize.height };
   for (const e of boxes) {
-    if (e.kind === 'titleBlock') continue;
+    // The title block and the parts list on it run out to the border line
+    if (e.kind === 'titleBlock' || e.kind === 'bom') continue;
     if (e.box.minX < inner.minX - 1e-6 || e.box.minY < inner.minY - 1e-6 || e.box.maxX > inner.maxX + 1e-6 || e.box.maxY > inner.maxY + 1e-6) {
       problems.push(`${e.name} is outside the border`);
     }

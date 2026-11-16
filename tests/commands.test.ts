@@ -154,12 +154,12 @@ test('Drawing commands: sheet options are validated and shared; exports follow t
   const s = () => useCADStore.getState();
   s().newProject();
   for (const id of ['drawing.view', 'drawing.dimension', 'drawing.gdt']) assert.equal(r.has(id), false, `${id} removed`);
-  assert.deepEqual(s().drawingOptions, { sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true });
+  assert.deepEqual(s().drawingOptions, { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true });
 
   throwsCode(() => r.execute('drawing.options', { sheetSize: 'A0' }), 'INVALID_ARGUMENT');
   throwsCode(() => r.execute('drawing.options', { dimensions: 'no' }), 'INVALID_ARGUMENT');
   const after = r.execute('drawing.options', { sheetSize: 'A3_LANDSCAPE', dimensions: false });
-  assert.deepEqual(after, { sheetSize: 'A3_LANDSCAPE', hiddenLines: true, dimensions: false, gdt: true }, 'only the given options change');
+  assert.deepEqual(after, { subject: 'part', sheetSize: 'A3_LANDSCAPE', hiddenLines: true, dimensions: false, gdt: true }, 'only the given options change');
   s().newProject();
   assert.equal(s().drawingOptions.sheetSize, 'A3_LANDSCAPE', 'a preference: New keeps it');
 

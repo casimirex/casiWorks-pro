@@ -628,7 +628,7 @@ npm run dev</pre></div>
 <section class="chapter" id="ch11" data-title="2D engineering drawings" data-part="advanced" data-n="11">
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 11 · about 10 min</span></div>
   <h2 class="title">2D engineering drawings</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as SVG or DXF</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as SVG or DXF</li><li>Make an assembly drawing with a parts list and item balloons</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 11.1</span><h4>A drawing sheet for the L-bracket</h4><div class="specs"><span>A4 landscape</span><span>Front · Top · Right · Iso</span><span>Title block</span></div></div>
     <div class="example-body">
@@ -648,6 +648,19 @@ npm run dev</pre></div>
   <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// The same from the scripting console (chapter 15)</span>
 casiworks.commands.execute(<span class="tok-s">'drawing.options'</span>, { sheetSize: <span class="tok-s">'A3_LANDSCAPE'</span>, dimensions: <span class="tok-k">true</span>, gdt: <span class="tok-k">false</span> });
 casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format: <span class="tok-s">'dxf'</span> });</pre></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 11.2</span><h4>An assembly drawing with a parts list</h4><div class="specs"><span>Plate + 2 brass pins</span><span>Parts list</span><span>Item balloons</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Build the assembly from Example 10.1, with a second pin. Make the pins brass in the <b>BOM</b> window (chapter 10).</li>
+        <li>On the <b>Drawing</b> tab, change the first picker in the <b>SHEET</b> group from <b>Part</b> to <b>Assembly</b>.</li>
+        <li>Click <b>Open Sheet</b>. The four views show the assembled components. A parts list sits on the title block, with the same rows as the BOM: item, part number, description, material and quantity. Each item has a numbered balloon with a leader to its part in the isometric view.</li>
+        <li>Export it as <b>SVG</b> or <b>DXF</b>, just like a part drawing. The DXF has the parts list and balloons too.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/26c-assembly-drawing.webp" alt="Assembly drawing with parts list and balloons"><figcaption>The assembly drawing: balloons 1 and 2 match the parts list rows.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Placed for you</b><p>The balloons are placed outside the isometric view and kept clear of the other views, the dimensions and the tables. An assembly drawing has no GD&amp;T symbols, because tolerances belong on the part drawings. Switch back to <b>Part</b> to draw the part again.</p></div></div>
   <div class="exercise"><b>Exercise 11.</b> Make drawing sheets for the Hex Bolt and the Spur Gear Blank, and export both as SVG.<label><input type="checkbox" data-done="ch11"> I've done this</label></div>
 </section>
 

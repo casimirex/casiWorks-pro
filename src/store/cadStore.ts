@@ -59,6 +59,8 @@ export type DrawingSheetSize = 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' |
 
 /** What the 2D drawing sheet shows and exports. Shared by the Drawing tab and the sheet window. */
 export interface DrawingOptions {
+  /** What the sheet shows: the part (first body), or the assembly with its parts list and balloons. */
+  subject: 'part' | 'assembly';
   sheetSize: DrawingSheetSize;
   /** Hidden line removal: drop edges that are behind faces. */
   hiddenLines: boolean;
@@ -432,7 +434,7 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     explodedView: null,
-    drawingOptions: { sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
+    drawingOptions: { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
     needsRebuild: false,
     rebuildCount: 0,
     documentRevision: 0,

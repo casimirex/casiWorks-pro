@@ -350,6 +350,14 @@ const SHOTS: Shot[] = [
       await sleep(400);
       await p.screenshot('25b-bom');
       await p.click('Close', 300);
+      await run(p, 'drawing.options', { subject: 'assembly' });
+      await run(p, 'drawing.open');
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.drawing-sheet-view .balloon').length`), 'assembly sheet');
+      await sleep(400);
+      await p.screenshot('26c-assembly-drawing');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(300);
+      await run(p, 'drawing.options', { subject: 'part' });
     },
   },
   {

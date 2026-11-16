@@ -698,6 +698,19 @@ export default function CommandManager() {
                     <FileText size={19} color="#38bdf8" />
                     <span>Open Sheet</span>
                   </button>
+                  <label className="ribbon-btn" title="What the sheet shows: the part, or the assembly with a parts list and balloons" style={{ cursor: 'default' }}>
+                    <Cpu size={19} color="#a78bfa" />
+                    <select
+                      className="drawing-subject"
+                      value={drawingOptions.subject}
+                      onChange={(e) => runCommand('drawing.options', { subject: e.target.value })}
+                      aria-label="Drawing of"
+                      style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0 }}
+                    >
+                      <option value="part">Part</option>
+                      <option value="assembly">Assembly</option>
+                    </select>
+                  </label>
                   <label className="ribbon-btn" title="Sheet size" style={{ cursor: 'default' }}>
                     <Grid size={19} color="#94a3b8" />
                     <select

@@ -309,9 +309,13 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   { id: 'drawing.open', label: '2D drawing sheet…', category: 'Drawing', requiresUI: true, description: 'Standard 3-view sheet with SVG / DXF export', run: ({ ui }) => ui().openDialog('drawing') },
   {
     id: 'drawing.options', label: 'Drawing sheet options', category: 'Drawing', record: false,
-    description: "args: { sheetSize?: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B', hiddenLines?, dimensions?, gdt? } — only the given ones change",
+    description: "args: { subject?: 'part' | 'assembly', sheetSize?: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B', hiddenLines?, dimensions?, gdt? } — only the given ones change",
     run: ({ state }, args: Partial<DrawingOptions> | undefined) => {
       const next: Partial<DrawingOptions> = {};
+      if (args?.subject !== undefined) {
+        if (args.subject !== 'part' && args.subject !== 'assembly') throw new CommandError('INVALID_ARGUMENT', "subject must be 'part' or 'assembly'");
+        next.subject = args.subject;
+      }
       if (args?.sheetSize !== undefined) {
         if (!(DRAWING_SHEET_SIZES as readonly string[]).includes(args.sheetSize)) {
           throw new CommandError('INVALID_ARGUMENT', `sheetSize must be one of ${DRAWING_SHEET_SIZES.join(', ')}`);
@@ -335,7 +339,11 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       const format = args?.format ?? 'svg';
       if (format !== 'svg' && format !== 'dxf') throw new CommandError('INVALID_ARGUMENT', "format must be 'svg' or 'dxf'");
       const file = drawingFile(state(), format);
-      if (!file) throw new CommandError('NOT_AVAILABLE', 'Create a solid body first: the drawing is made from it');
+      if (!file) {
+        throw new CommandError('NOT_AVAILABLE', state().drawingOptions.subject === 'assembly'
+          ? 'Insert components first: the assembly drawing is made from them'
+          : 'Create a solid body first: the drawing is made from it');
+      }
       downloadBlob(file.text, file.filename, file.mimeType);
       state().setStatus(`Drawing exported: ${file.filename}`);
       return { filename: file.filename };

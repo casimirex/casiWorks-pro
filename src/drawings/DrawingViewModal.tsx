@@ -15,12 +15,13 @@ interface DrawingViewModalProps {
 
 export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalProps) {
   const bodies = useCADStore(s => s.bodies);
+  const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const documentName = useCADStore(s => s.documentName);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   // Shared with the Drawing tab, so the ribbon and this window always agree
   const options = useCADStore(s => s.drawingOptions);
   const setOptions = useCADStore(s => s.setDrawingOptions);
-  const { hiddenLines: enableHLR, dimensions: showDimensions, gdt: showGDT, sheetSize: sheetSizeKey } = options;
+  const { hiddenLines: enableHLR, dimensions: showDimensions, gdt: showGDT, sheetSize: sheetSizeKey, subject } = options;
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
   const downloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,12 +47,12 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const sheetData = useMemo(() => {
     if (!isOpen) return null;
     try {
-      return buildDrawingSheet({ bodies, documentName, activeMaterial, drawingOptions: { sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
+      return buildDrawingSheet({ bodies, assemblyComponents, documentName, activeMaterial, drawingOptions: { subject, sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
     } catch (err) {
       console.error('Failed to generate drawing sheet:', err);
       return null;
     }
-  }, [isOpen, bodies, documentName, activeMaterial, enableHLR, sheetSizeKey]);
+  }, [isOpen, bodies, assemblyComponents, documentName, activeMaterial, enableHLR, sheetSizeKey, subject]);
 
   if (!isOpen) return null;
 
@@ -268,7 +269,9 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
           />
         ) : (
           <div style={{ color: '#aaa', fontSize: 14 }}>
-            No 3D solid body found. Create a solid body first to generate drawings.
+            {subject === 'assembly'
+              ? 'The assembly is empty. Insert components on the Assembly tab first, or switch the Drawing tab to Part.'
+              : 'No 3D solid body found. Create a solid body first to generate drawings.'}
           </div>
         )}
       </div>

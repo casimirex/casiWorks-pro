@@ -378,7 +378,7 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'bill of materials: grouped rows, totals and CSV export',
+    name: 'bill of materials: grouped rows, totals, CSV export and the assembly drawing',
     async run(p) {
       await p.eval(`window.casiworks.commands.execute('document.new')`);
       await p.click('Assembly');
@@ -406,9 +406,29 @@ const CHECKS: Check[] = [
       const csv = await p.eval<string>(`window.__blobs.at(-1).text()`);
       assert(csv.startsWith('Item,Part number,Description,Qty') && csv.includes('2,Pin_Shaft,Pin Ø12 × 40 mm,2,Brass C36000,38.45,76.91'), `CSV: ${csv.slice(0, 300)}`);
       await p.click('Close', 300);
+      // The assembly drawing: parts list and a balloon per item
+      await p.click('Drawing');
+      await p.eval(`(() => {
+        const sel = document.querySelector('.drawing-subject');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'assembly');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(200);
+      await p.click('Open Sheet');
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.drawing-sheet-view line.visible-line').length`), 'assembly sheet');
+      const sheet = await p.eval<{ rows: number; balloons: string[]; title: string }>(`({
+        rows: document.querySelectorAll('.drawing-sheet-view #bom-table .bom-cell').length / 5,
+        balloons: [...document.querySelectorAll('.drawing-sheet-view .balloon-text')].map(t => t.textContent),
+        title: [...document.querySelectorAll('.drawing-sheet-view .tb-text-title')].map(t => t.textContent).join(),
+      })`);
+      assert(sheet.rows === 2 && sheet.balloons.join() === '1,2' && sheet.title === 'UNTITLED PART ASSEMBLY', `assembly sheet ${JSON.stringify(sheet)}`);
+      await p.screenshot('08c-assembly-drawing');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(300);
+      await p.eval(`window.casiworks.commands.execute('drawing.options', { subject: 'part' })`);
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
       await p.click('Features', 1500);
-      return `${rows.map(r => `${r[3]} × ${r[1]}`).join(', ')}; ${total.replace(/\s+/g, ' ')}; CSV ${csv.split('\r\n').length - 1} lines`;
+      return `${rows.map(r => `${r[3]} × ${r[1]}`).join(', ')}; ${total.replace(/\s+/g, ' ')}; CSV ${csv.split('\r\n').length - 1} lines; assembly sheet: ${sheet.rows} rows, balloons ${sheet.balloons}`;
     },
   },
   {
