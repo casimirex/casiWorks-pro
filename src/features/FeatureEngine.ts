@@ -280,17 +280,17 @@ export class FeatureEngine {
   // the model unchanged until the exact kernel lands (ROADMAP Phase 2).
   _processFillet(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
-    throw new Error('Fillet not applied: rounding edges needs the exact geometry kernel (roadmap 2.6)');
+    throw new Error('Fillet not applied: the mesh kernel cannot round edges; round the corner in the sketch with an arc instead');
   }
 
   _processChamfer(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
-    throw new Error('Chamfer not applied: bevelling edges needs the exact geometry kernel (roadmap 2.6)');
+    throw new Error('Chamfer not applied: the mesh kernel cannot bevel edges; draw the bevel in the sketch instead');
   }
 
   _processShell(_feature: AnyFeature, currentBody: Body): Body {
     if (!currentBody) return currentBody;
-    throw new Error('Shell not applied: hollowing a solid needs the exact geometry kernel (roadmap Phase 2)');
+    throw new Error('Shell not applied: the mesh kernel cannot hollow a solid; sketch the inner outline and use Extrude Cut instead');
   }
 
   _processHole(feature: HoleFeature, currentBody: Body): Body {

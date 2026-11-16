@@ -175,7 +175,7 @@ test('Features: loft and sweep report missing input instead of inventing geometr
   assert.match(sweep.errors[0].error, /Sweep needs a path/);
 });
 
-const NOT_APPLIED = /not applied: .* needs the exact geometry kernel/;
+const NOT_APPLIED = /not applied: the mesh kernel cannot .*; .* instead/;
 
 test('Fillet, chamfer and shell report a warning and leave the model unchanged', () => {
   const base: FeatureData[] = [

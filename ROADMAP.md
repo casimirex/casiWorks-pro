@@ -20,8 +20,8 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 |------|-------|
 | UI shell | Ribbon, feature tree with rollback, property panel, 3D viewport, dialogs |
 | Geometry | **Triangle-mesh kernel** (BSP CSG on polygons), verified by measured tests. No exact B-Rep yet (an earlier unused, incorrect B-Rep module was removed) |
-| Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); needs Phase 2 |
-| STEP / IGES export | Standards-compliant faceted solids (every face, shared vertices); not exact surfaces — needs Phase 2 |
+| Fillet / chamfer / shell | Not applied: the feature reports a rebuild warning and the model is unchanged (the mesh kernel cannot round, bevel or hollow correctly); stays so — Phase 2 is not planned |
+| STEP / IGES export | Standards-compliant faceted solids (every face, shared vertices); not exact surfaces — stays so, Phase 2 is not planned |
 | Sketcher | Lines, rectangles, circles, points; constraint solver exists but has little UI |
 | Assemblies | Primitive shapes only (box, cylinder…), not real part documents |
 | Drawings / FEA | Work on the mesh; run on the UI thread |
@@ -30,8 +30,8 @@ Status: `[x]` done · `[~]` in progress · `[ ]` not started
 | Engineering | 31 Node tests, no linter, no CI, no type checking |
 
 The single biggest gap to a SOLIDWORKS-class product is the **exact geometric
-kernel** (Phase 2). Everything users judge as "real CAD" — clean cylinders,
-selectable edges, true fillets, exact STEP — depends on it.
+kernel**. Clean cylinders, selectable edges, true fillets and exact STEP depend on it.
+On 2026-11-16 it was decided not to build one (see Phase 2): CasiWorks stays on its mesh kernel.
 
 ---
 
@@ -88,19 +88,17 @@ the foundation of "API support": the UI becomes just one client of the API.
 - [x] **1.7** API reference docs generated from JSDoc, published with the app (`/api/`, `npm run docs:api`; undocumented public members fail a test)
 - [x] **1.8** Plugin manifest: load third-party add-ins that register commands and ribbon buttons (Add-ins tab and dialog, `api.plugins` in API 1.4, example `public/plugins/washer.js`; persisting installed add-ins across sessions is not done yet)
 
-## Phase 2 — Exact B-Rep kernel
+## Phase 2 — Exact B-Rep kernel (not planned)
 
-Replace the mesh kernel with an exact one, behind the same feature engine.
+**Decision (2026-11-16): CasiWorks keeps its own triangle-mesh kernel; OpenCascade is not adopted.**
+The 2.1 spike measured the OpenCascade WebAssembly build used by replicad (1.2.1): 22.9 MB raw,
+7.2 MB gzip, 5.0 MB brotli, against 0.48 MB gzip for the whole app today; licence LGPL-2.1
+(replicad itself MIT). The rest of the phase is dropped. Fillet, chamfer and shell stay
+"not applied" with a sketch workaround; STEP/IGES stay faceted; faces cannot be picked one by one.
+Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limited to what the mesh kernel can do.
 
-- [ ] **2.1** Spike: evaluate OpenCascade via WebAssembly (opencascade.js / replicad): bundle size, load time, license (LGPL-2.1 — check obligations for commercial distribution)
-- [ ] **2.2** Kernel interface (`KernelAdapter`): extrude, revolve, boolean, fillet, tessellate — implemented by the current mesh kernel first
-- [ ] **2.3** Run the kernel in a Web Worker; UI stays responsive during rebuilds
-- [ ] **2.4** OCCT adapter: extrude + boolean; feature flag to switch kernels
-- [ ] **2.5** Face / edge / vertex picking mapped to real topology
-- [ ] **2.6** Edge-selective fillet and chamfer
-- [ ] **2.7** Exact STEP AP214/AP242 import and export via OCCT
-- [ ] **2.8** Persistent topological naming (features keep referring to the right face after upstream edits)
-- [ ] **2.9** Make OCCT the default; keep the mesh kernel as fallback
+- [x] **2.1** Spike: evaluate OpenCascade via WebAssembly: size and licence measured (above); not adopted
+- ~~**2.2–2.9**~~ Kernel interface, OCCT adapter, topology picking, edge fillet/chamfer, exact STEP, topological naming — not planned
 
 ## Phase 3 — Part modeling parity
 
@@ -134,8 +132,8 @@ Replace the mesh kernel with an exact one, behind the same feature engine.
 ## Phase 6 — Simulation
 
 - [x] **6.1** Solver in a Web Worker with progress and cancel (phases: meshing / solving; inline fallback where workers are unavailable)
-- [ ] **6.2** Meshing from exact geometry with local refinement (voxel mesh now sized from an element budget — Coarse / Medium / Fine — choosing the grid whose volume best matches the part, with the coverage reported and a warning beyond ±5%; thin-walled parts such as the sheet-metal enclosure still mesh far too thick until the exact kernel)
-- [ ] **6.3** Fixtures and loads picked on faces (the FEA panel chooses the fixed face, loaded face and load direction among the six bounding-box faces, shown on the model; picking real faces needs the exact kernel)
+- [ ] **6.2** Meshing from exact geometry with local refinement (voxel mesh now sized from an element budget — Coarse / Medium / Fine — choosing the grid whose volume best matches the part, with the coverage reported and a warning beyond ±5%; thin-walled parts such as the sheet-metal enclosure still mesh far too thick; local refinement on the mesh kernel only, exact geometry is not planned)
+- [ ] **6.3** Fixtures and loads picked on faces (the FEA panel chooses the fixed face, loaded face and load direction among the six bounding-box faces, shown on the model; picking single faces would need an exact kernel, which is not planned)
 - [ ] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement on the model and exaggerated deformed shape done; probes and report to do)
 - [ ] **6.5** Modal (frequency) analysis
 

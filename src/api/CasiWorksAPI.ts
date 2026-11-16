@@ -155,13 +155,13 @@ export interface FeaturesAPI {
   /** Revolve a sketch. Returns the new feature id. */
   revolve(spec: RevolveSpec): string;
   /**
-   * Add a fillet feature. Not applied yet: the rebuild reports a warning and the
-   * model is unchanged until the exact geometry kernel lands (roadmap 2.6).
+   * Add a fillet feature. Not applied: the mesh kernel cannot round edges, so the
+   * rebuild reports a warning and the model is unchanged.
    */
   fillet(spec: FilletSpec): string;
-  /** Add a chamfer feature. Not applied yet (see fillet). */
+  /** Add a chamfer feature. Not applied (see fillet). */
   chamfer(spec: ChamferSpec): string;
-  /** Add a shell feature. Not applied yet: needs the exact geometry kernel (roadmap Phase 2). */
+  /** Add a shell feature. Not applied: the mesh kernel cannot hollow a solid (see fillet). */
   shell(spec: ShellSpec): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;

@@ -244,7 +244,7 @@ tr:last-child td { border-bottom: 0; }
     <li><b>Tips, warnings and checks</b>: blue boxes are shortcuts, amber boxes are limits you should know about, and green boxes tell you how to confirm your result.</li>
     <li><b>Exercise</b>: a short task to try on your own. Tick it off, and the contents list marks the chapter done. Your ticks are saved in this browser.</li>
   </ul>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Know the limits</b><p>CasiWorks Pro builds solids from triangle meshes. Some commands that need exact edges and faces (fillet, chamfer, shell) are in the ribbon but are not applied yet. Each chapter says plainly where these limits are, and <a href="#limits">Appendix B</a> lists them all.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Know the limits</b><p>CasiWorks Pro builds solids from triangle meshes. Some commands that need exact edges and faces (fillet, chamfer, shell) are in the ribbon but are not applied. Each chapter says plainly where these limits are, and <a href="#limits">Appendix B</a> lists them all.</p></div></div>
 </section>
 
 <!-- ======================================================= PART I -->
@@ -539,7 +539,7 @@ npm run dev</pre></div>
     <div class="example-body split">
       <ol class="steps">
         <li>Click <b>Fillet</b>, set <b>Radius</b> to <code>4</code> and click <b>OK</b>.</li>
-        <li>The tree gets a <i>Fillet</i> entry with ⚠. Hover it to read the message: <i>Fillet not applied: rounding edges needs the exact geometry kernel</i>.</li>
+        <li>The tree gets a <i>Fillet</i> entry with ⚠. Hover it to read the message: <i>Fillet not applied: the mesh kernel cannot round edges; round the corner in the sketch with an arc instead</i>.</li>
         <li>The part is built without the fillet. Your setting is kept, so it will take effect once the kernel supports it.</li>
       </ol>
       <div>
@@ -548,7 +548,7 @@ npm run dev</pre></div>
       </div>
     </div>
   </div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>Fillet, chamfer and shell need real edges and faces, and the triangle-mesh kernel does not have them yet. Until it does, round corners in the sketch with a <b>Centre Arc</b>, and hollow a part by sketching the inner outline and using <b>Extrude Cut</b>.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>Fillet, chamfer and shell need real edges and faces, and the triangle-mesh kernel does not have them. Round corners in the sketch with a <b>Centre Arc</b>, and hollow a part by sketching the inner outline and using <b>Extrude Cut</b>.</p></div></div>
   <div class="exercise"><b>Exercise 9.</b> Draw a 60 × 40 rectangle with 5 mm rounded corners using four lines and four centre arcs, then extrude it. This is the sketch-level fillet that works today.<label><input type="checkbox" data-done="ch9"> I've done this</label></div>
 </section>
 
@@ -863,7 +863,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
 
 <section class="chapter" id="limits" data-title="B · Current limits" data-part="ref" data-n="B">
   <h2 class="title">Appendix B · Current limits</h2>
-  <p>CasiWorks Pro is under active development. These are the parts of the app that do not yet do what their buttons suggest, so they do not catch you out on a real job:</p>
+  <p>These are the parts of the app that do not do what their buttons might suggest, so they do not catch you out on a real job:</p>
   <div class="table-wrap"><table>
     <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
     <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs, and hollow parts with Extrude Cut.</td></tr>
@@ -872,7 +872,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
   </table></div>
-  <p>All of these depend on the exact geometry kernel on the project roadmap (<code>ROADMAP.md</code>).</p>
+  <p>All of these come from the triangle-mesh kernel: it has triangles, not exact edges and faces. An exact geometry kernel is not planned, so treat these as lasting limits and use the workarounds.</p>
 </section>
 
 <section class="chapter" id="glossary" data-title="C · Glossary" data-part="ref" data-n="C">

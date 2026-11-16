@@ -131,7 +131,7 @@ bounds, and a closed-mesh check) in `tests/geometry.test.ts`.
 - **Booleans** (`csg.ts`): BSP-tree union, subtract and intersect.
 - **Mass properties**: exact for the mesh — volume, area, center of mass and inertia tensor (at the center of mass and at the origin) in SI units.
 
-**Not available yet** (needs the exact B-Rep kernel, roadmap Phase 2): fillet, chamfer
+**Not available** (CasiWorks uses its own mesh kernel; an exact B-Rep kernel is not planned): fillet, chamfer
 and shell are kept in the feature tree but report a "not applied" warning and leave
 the model unchanged; faces and edges cannot be selected individually; STEP/IGES
 export writes faceted (triangulated) geometry.
@@ -190,8 +190,8 @@ export writes faceted (triangulated) geometry.
   - AutoCAD **DXF** export structured into `VISIBLE`, `HIDDEN`, and `DIMENSION` layers.
 
 ### 7. CAD Data Exchange (STEP, IGES, STL, OBJ, DXF)
-All solid exports are triangulated meshes (exact curved surfaces need the exact
-kernel, roadmap 2.7). Every face is written; `tests/exchange.test.ts` checks each
+All solid exports are triangulated meshes (exact curved surfaces would need an
+exact B-Rep kernel, which is not planned). Every face is written; `tests/exchange.test.ts` checks each
 file against its standard's structure with parsers independent of the importer,
 then round-trips all examples with exact volume.
 - **STEP (ISO 10303-21, AP214; AP242 optional)**: faceted B-rep — `FACETED_BREP` /
