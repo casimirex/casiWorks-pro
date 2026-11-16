@@ -4,6 +4,7 @@
 // it says how many clicks the tool needs, what to create when the last click
 // lands, what to preview while the mouse moves, and what to tell the user.
 import { sketchEngine } from '../kernel/SketchEngine.ts';
+import { extendLine, mirrorEntities, offsetEntity, pickEntity, trimEntity } from '../kernel/sketchEdit.ts';
 import { TOOLS } from '../utils/constants.ts';
 import type { ToolId } from '../utils/constants.ts';
 import type { Point2, SketchEntity } from '../types/cad.ts';
@@ -32,6 +33,11 @@ const HINTS: Partial<Record<ToolId, string[]>> = {
   [TOOLS.SKETCH_POLYGON]: ['Polygon: click the centre', 'Polygon: click a vertex'],
   [TOOLS.SKETCH_ARC]: ['Arc: click the centre', 'Arc: click the start point', 'Arc: click the end point (counter-clockwise from the start)'],
   [TOOLS.SKETCH_SLOT]: ['Slot: click the first end centre', 'Slot: click the second end centre', 'Slot: click a point on the side (sets the width)'],
+  [TOOLS.SKETCH_SPLINE]: ['Spline: click the first point', 'Spline: click more points; click the last point again to finish, or the first to close'],
+  [TOOLS.SKETCH_TRIM]: ['Trim: click the part of a line, arc or circle to remove (up to the nearest crossings)'],
+  [TOOLS.SKETCH_EXTEND]: ['Extend: click a line near the end to lengthen'],
+  [TOOLS.SKETCH_OFFSET]: ['Offset: click a line, arc or circle (a connected chain offsets together)', 'Offset: click the side to offset towards'],
+  [TOOLS.SKETCH_MIRROR]: ['Mirror: click the mirror line', 'Mirror: click entities to mirror (Esc to finish)'],
 };
 
 /** Status-bar guidance for the next click. */
@@ -97,4 +103,105 @@ export function previewFor(tool: ToolId, clicked: Point2[], mouse: Point2 | null
   const pts = [...clicked, mouse];
   if (pts.length === need) return { entities: entitiesFor(tool, pts, options) ?? [], band: [] };
   return { entities: [], band: pts };
+}
+
+// ------------------------------------------------------------------ editing tools and the spline
+
+/** Tools that work click by click on existing geometry (or, for the spline, any number of clicks). */
+export const EDIT_TOOLS: readonly ToolId[] = [TOOLS.SKETCH_SPLINE, TOOLS.SKETCH_TRIM, TOOLS.SKETCH_EXTEND, TOOLS.SKETCH_OFFSET, TOOLS.SKETCH_MIRROR];
+
+/** A click in the sketch: the (grid-snapped) point, the exact point, and how far (mm) counts as "on" an entity. */
+export interface SketchClick { pt: Point2; raw: Point2; tol: number }
+
+/** What an editing tool remembers between clicks. */
+export interface EditSession {
+  /** Offset: the entity to offset; Mirror: the mirror line. */
+  pickedId: string | null;
+  /** Spline: the points so far. */
+  points: Point2[];
+}
+export const NEW_EDIT_SESSION: EditSession = { pickedId: null, points: [] };
+
+export interface EditOptions {
+  offsetDistance: number;
+  /** New splines are construction geometry. */
+  construction?: boolean;
+}
+
+/** Stage of an editing tool, for its hint. */
+export const editStage = (tool: ToolId, s: EditSession) => (tool === TOOLS.SKETCH_SPLINE ? s.points.length : s.pickedId ? 1 : 0);
+
+/**
+ * One click of an editing tool. Returns the next session and, when the click
+ * changed the sketch, the new entity list; `status` explains what happened.
+ */
+export function editClick(tool: ToolId, session: EditSession, click: SketchClick, entities: SketchEntity[], options: EditOptions):
+  { session: EditSession; entities?: SketchEntity[]; status?: string } {
+  const hit = () => pickEntity(entities, click.raw, click.tol);
+  const apply = (r: { entities: SketchEntity[]; message: string } | { error: string }, next: EditSession) =>
+    'error' in r ? { session: next, status: r.error } : { session: next, entities: r.entities, status: r.message };
+
+  switch (tool) {
+    case TOOLS.SKETCH_SPLINE: {
+      const pts = session.points;
+      if (pts.length >= 2 && dist(click.pt, pts[pts.length - 1]) <= click.tol) {
+        return { session: NEW_EDIT_SESSION, entities: [...entities, sketchEngine.createSpline(pts, options.construction)], status: `Spline through ${pts.length} points` };
+      }
+      if (pts.length >= 3 && dist(click.pt, pts[0]) <= click.tol) {
+        return { session: NEW_EDIT_SESSION, entities: [...entities, sketchEngine.createSpline([...pts, { ...pts[0] }], options.construction)], status: `Closed spline through ${pts.length} points` };
+      }
+      return { session: { ...session, points: [...pts, click.pt] } };
+    }
+    case TOOLS.SKETCH_TRIM: {
+      const e = hit();
+      return e ? apply(trimEntity(entities, e.id, click.raw), session) : { session, status: 'Trim: no line, arc or circle there' };
+    }
+    case TOOLS.SKETCH_EXTEND: {
+      const e = hit();
+      return e ? apply(extendLine(entities, e.id, click.raw), session) : { session, status: 'Extend: no line there' };
+    }
+    case TOOLS.SKETCH_OFFSET: {
+      if (!session.pickedId || !entities.some(e => e.id === session.pickedId)) {
+        const e = hit();
+        if (!e) return { session, status: 'Offset: no line, arc or circle there' };
+        if (e.type !== 'line' && e.type !== 'arc' && e.type !== 'circle') return { session, status: 'Offset works on lines, arcs and circles' };
+        return { session: { ...session, pickedId: e.id } };
+      }
+      return apply(offsetEntity(entities, session.pickedId, options.offsetDistance, click.raw), NEW_EDIT_SESSION);
+    }
+    case TOOLS.SKETCH_MIRROR: {
+      const e = hit();
+      if (!session.pickedId || !entities.some(x => x.id === session.pickedId)) {
+        if (!e || e.type !== 'line') return { session, status: 'Mirror: click a line to mirror about' };
+        return { session: { ...session, pickedId: e.id } };
+      }
+      if (!e) return { session, status: 'Mirror: no entity there' };
+      if (e.id === session.pickedId) return { session, status: 'Mirror: that is the mirror line; click another entity' };
+      return apply(mirrorEntities(entities, session.pickedId, [e.id]), session);
+    }
+    default:
+      return { session };
+  }
+}
+
+/** What editing tools show under the mouse: entities to highlight and geometry the click would add. */
+export function editPreview(tool: ToolId, session: EditSession, mouse: SketchClick | null, entities: SketchEntity[], options: EditOptions):
+  { highlight: string[]; entities: SketchEntity[]; band: Point2[] } {
+  const none = { highlight: session.pickedId ? [session.pickedId] : [], entities: [] as SketchEntity[], band: [] as Point2[] };
+  if (tool === TOOLS.SKETCH_SPLINE) {
+    if (!mouse || session.points.length === 0) return { ...none, band: session.points };
+    const pts = [...session.points, mouse.pt];
+    return { ...none, entities: pts.length >= 2 ? [sketchEngine.createSpline(pts)] : [], band: session.points };
+  }
+  if (!mouse) return none;
+  const hovered = pickEntity(entities, mouse.raw, mouse.tol);
+  if (tool === TOOLS.SKETCH_OFFSET && session.pickedId) {
+    const r = offsetEntity(entities, session.pickedId, options.offsetDistance, mouse.raw);
+    return { ...none, entities: 'error' in r ? [] : r.entities.slice(entities.length) };
+  }
+  if (tool === TOOLS.SKETCH_MIRROR && session.pickedId && hovered && hovered.id !== session.pickedId) {
+    const r = mirrorEntities(entities, session.pickedId, [hovered.id]);
+    return { highlight: [session.pickedId, hovered.id], entities: 'error' in r ? [] : r.entities.slice(entities.length), band: [] };
+  }
+  return { ...none, highlight: hovered ? [...none.highlight, hovered.id] : none.highlight };
 }

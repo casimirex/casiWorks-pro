@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
@@ -23,6 +23,7 @@ export default function CommandManager() {
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
+  const offsetDistance = useCADStore(s => s.sketchOffsetDistance);
   const exploded = useCADStore(s => s.explodedView !== null);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const constructionMode = useCADStore(s => s.constructionMode);
@@ -417,6 +418,14 @@ export default function CommandManager() {
                     <span>Slot</span>
                   </button>
                   <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_SPLINE ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.spline')}
+                    title="Spline: click points; click the last again to finish, or the first to close (S)"
+                  >
+                    <Spline size={19} color="#f1f5f9" />
+                    <span>Spline</span>
+                  </button>
+                  <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_POINT ? 'active' : ''}`}
                     onClick={() => runCommand('sketch.point')}
                     title="Sketch Point"
@@ -426,6 +435,59 @@ export default function CommandManager() {
                   </button>
                 </div>
                 <div className="tool-group-label">DRAW</div>
+              </div>
+
+              <div className="tool-group">
+                <div className="tool-group-buttons">
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_TRIM ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.trim')}
+                    title="Trim: click the part to remove, up to the nearest crossings (T)"
+                  >
+                    <Scissors size={19} color="#f87171" />
+                    <span>Trim</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_EXTEND ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.extend')}
+                    title="Extend: click a line near the end to lengthen to the next entity"
+                  >
+                    <ArrowRightToLine size={19} color="#4ade80" />
+                    <span>Extend</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_OFFSET ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.offset')}
+                    title="Offset: click an entity (its connected chain offsets too), then the side"
+                  >
+                    <CopyPlus size={19} color="#38bdf8" />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      Offset
+                      <input
+                        className="offset-distance"
+                        type="number"
+                        min={0.1}
+                        step={0.5}
+                        value={offsetDistance}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onChange={(e) => { const d = Number(e.target.value); if (d > 0) runCommand('sketch.offset', { distance: d }); }}
+                        aria-label="Offset distance (mm)"
+                        title="Offset distance (mm)"
+                        style={{ width: 34, background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0 }}
+                      />
+                    </span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_MIRROR ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.mirror')}
+                    title="Mirror: click the mirror line, then the entities to mirror"
+                  >
+                    <FlipHorizontal2 size={19} color="#c084fc" />
+                    <span>Mirror</span>
+                  </button>
+                </div>
+                <div className="tool-group-label">EDIT</div>
               </div>
 
               <div className="tool-group">

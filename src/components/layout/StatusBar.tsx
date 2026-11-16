@@ -1,13 +1,14 @@
 // CasiWorks Pro - Bottom Status Bar (Modern Engineering Pill Layout)
 import { useCADStore } from '../../store/cadStore.ts';
 import { runCommand } from '../../commands/index.ts';
-import { Grid, Layers, Box, Compass } from 'lucide-react';
+import { Grid, Layers, Box, Compass, Magnet } from 'lucide-react';
 
 export default function StatusBar() {
   const statusMessage = useCADStore(s => s.statusMessage);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const showGrid = useCADStore(s => s.showGrid);
+  const snapEnabled = useCADStore(s => s.snapEnabled);
   const wireframeMode = useCADStore(s => s.wireframeMode);
   const edgeDisplay = useCADStore(s => s.edgeDisplay);
   const perspectiveView = useCADStore(s => s.perspectiveView);
@@ -37,6 +38,15 @@ export default function StatusBar() {
         >
           <Grid size={12} />
           <span>Grid</span>
+        </button>
+
+        <button
+          className={`status-btn-pill snap-toggle ${snapEnabled ? 'active' : ''}`}
+          onClick={() => runCommand('view.toggleSnap')}
+          title="Snap sketch points to the 5 mm grid"
+        >
+          <Magnet size={12} />
+          <span>Snap</span>
         </button>
 
         <button

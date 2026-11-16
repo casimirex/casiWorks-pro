@@ -128,6 +128,8 @@ export interface CADState {
   activeSketchId: string | null;
   /** Sides of the sketch polygon tool. */
   sketchPolygonSides: number;
+  /** Distance (mm) the sketch Offset tool uses. */
+  sketchOffsetDistance: number;
   /** The document as it was when the current sketch session began (for discard and undo). */
   sketchSession: DocumentSnapshot | null;
   activeSketchPlane: SketchPlane;
@@ -226,9 +228,13 @@ export interface CADActions {
   setFeaPlot(plot: ResultPlot | null): void;
   setFeaSetupMarkers(setup: StudySetup | null): void;
   setSketchPolygonSides(sides: number): void;
+  setSketchOffsetDistance(distance: number): void;
+  /** Replace the geometry of the sketch being edited (trim, extend, offset, mirror); part of the sketch session. */
+  replaceActiveSketchEntities(entities: SketchEntity[], message?: string): void;
   setMaterial(materialKey: string): void;
   setViewOrientation(orientation: ViewOrientation): void;
   toggleGrid(): void;
+  toggleSnap(): void;
   toggleOrigin(): void;
   togglePlanes(): void;
   toggleAxes(): void;
@@ -388,6 +394,7 @@ function initialState(): CADState {
     isSketchActive: false,
     activeSketchId: null,
     sketchPolygonSides: 6,
+    sketchOffsetDistance: 5,
     sketchSession: null,
     activeSketchPlane: 'Front',
     sketchEntities: {},
@@ -719,6 +726,18 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== MODEL, MATERIAL, VIEW ====================
+    setSketchOffsetDistance: (distance) => set(state => {
+      state.sketchOffsetDistance = distance;
+    }),
+
+    replaceActiveSketchEntities: (entities, message) => set(state => {
+      const sketchId = state.activeSketchId;
+      if (!sketchId) return;
+      state.sketchEntities[sketchId] = safeDeepClone(entities) as Draft<SketchEntity>[];
+      state.isModified = true;
+      if (message) state.statusMessage = message;
+    }),
+
     setSketchPolygonSides: (sides) => set(state => {
       state.sketchPolygonSides = Math.min(64, Math.max(3, Math.round(sides) || 6));
     }),
@@ -746,6 +765,10 @@ export const useCADStore = create<CADStore>()(
     }),
 
     toggleGrid: () => set(state => { state.showGrid = !state.showGrid; }),
+    toggleSnap: () => set(state => {
+      state.snapEnabled = !state.snapEnabled;
+      state.statusMessage = state.snapEnabled ? 'Sketch points snap to the 5 mm grid' : 'Grid snap off: sketch points go exactly where you click';
+    }),
     toggleOrigin: () => set(state => { state.showOrigin = !state.showOrigin; }),
     togglePlanes: () => set(state => { state.showPlanes = !state.showPlanes; }),
     toggleAxes: () => set(state => { state.showAxes = !state.showAxes; }),

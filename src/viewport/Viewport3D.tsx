@@ -13,7 +13,8 @@ import { sketchToWorld } from '../utils/math.ts';
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
-import { TOOL_CLICKS, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
+import { EDIT_TOOLS, NEW_EDIT_SESSION, TOOL_CLICKS, editClick, editPreview, editStage, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
+import type { EditSession, SketchClick } from './sketchTools.ts';
 import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
 import { DIRECTION_VECTORS, arrowAnchors, faceRect } from '../simulation/studySetup.ts';
@@ -224,6 +225,9 @@ function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup; geometry: THR
   );
 }
 
+/** How close (screen pixels) a click must be to a sketch entity to pick it. */
+const PICK_PIXELS = 8;
+
 /** The sketch being edited is drawn over the model, like other CAD systems do. */
 const SKETCH_ON_TOP = 10;
 
@@ -301,10 +305,12 @@ interface ActiveSketchOverlayProps {
   currentPoints: Point2[];
   /** Geometry the next click would create (drawn in the preview colour). */
   previewEntities: SketchEntity[];
+  /** Entities an editing tool points at (drawn highlighted). */
+  highlightIds: string[];
   activeTool: ToolId;
 }
 
-function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities }: ActiveSketchOverlayProps) {
+function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities, highlightIds }: ActiveSketchOverlayProps) {
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
   // Sketch point → world point, exactly as the kernel maps the sketch plane
@@ -316,7 +322,7 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
   return (
     <group name="ActiveSketchOverlay">
       {/* Existing entities, sampled the same way the kernel samples profiles */}
-      {entities.map((ent) => <SketchEntityLine key={ent.id} entity={ent} toWorld={transformPoint} />)}
+      {entities.map((ent) => <SketchEntityLine key={ent.id} entity={ent} toWorld={transformPoint} color={highlightIds.includes(ent.id) ? '#ffd54f' : undefined} />)}
 
       {/* What the next click creates */}
       {previewEntities.map((ent) => <SketchEntityLine key={`preview-${ent.id}`} entity={ent} toWorld={transformPoint} color="#ff9800" />)}
@@ -351,8 +357,8 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
  * Prevents two-finger pinch/pan from conflicting with single-touch rotate or falsely placing sketch entities
  */
 interface ViewportControllerProps {
-  onPointerMoveInSketch(pt: Point2): void;
-  onSketchClick(pt: Point2): void;
+  onPointerMoveInSketch(click: SketchClick): void;
+  onSketchClick(click: SketchClick): void;
 }
 
 function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportControllerProps) {
@@ -366,6 +372,16 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportCo
     const activePointers = new Set<number>();
     let isMultiTouch = false;
     let lastMultiTouchTime = 0;
+
+    // The sketch point under the pointer: snapped for drawing, exact for picking,
+    // with the pick tolerance as the sketch distance of PICK_PIXELS on screen
+    const toSketchClick = (px: number, py: number, rect: DOMRect): SketchClick | null => {
+      const raw = viewportPicker.screenToSketchPlane(px, py, camera, activeSketchPlane);
+      if (!raw) return null;
+      const aside = viewportPicker.screenToSketchPlane(px + (2 * PICK_PIXELS) / rect.width, py, camera, activeSketchPlane);
+      const tol = aside ? Math.hypot(aside.x - raw.x, aside.y - raw.y) : 1;
+      return { pt: snapEnabled ? sketchEngine.snapToGrid(raw, 5) : raw, raw, tol };
+    };
 
     // Pointer events always carry client coordinates
     const getCoords = (e: PointerEvent) => ({ clientX: e.clientX, clientY: e.clientY });
@@ -388,11 +404,8 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportCo
       const py = -(((clientY - rect.top) / rect.height) * 2 - 1);
 
       if (isSketchActive) {
-        const pt = viewportPicker.screenToSketchPlane(px, py, camera, activeSketchPlane);
-        if (pt) {
-          const finalPt = snapEnabled ? sketchEngine.snapToGrid(pt, 5) : pt;
-          onPointerMoveInSketch(finalPt);
-        }
+        const click = toSketchClick(px, py, rect);
+        if (click) onPointerMoveInSketch(click);
       }
     };
 
@@ -414,11 +427,8 @@ function ViewportController({ onPointerMoveInSketch, onSketchClick }: ViewportCo
       const px = ((clientX - rect.left) / rect.width) * 2 - 1;
       const py = -(((clientY - rect.top) / rect.height) * 2 - 1);
 
-      const pt = viewportPicker.screenToSketchPlane(px, py, camera, activeSketchPlane);
-      if (pt) {
-        const finalPt = snapEnabled ? sketchEngine.snapToGrid(pt, 5) : pt;
-        onSketchClick(finalPt);
-      }
+      const click = toSketchClick(px, py, rect);
+      if (click) onSketchClick(click);
     };
 
     const handlePointerCancel = (e: PointerEvent) => {
@@ -540,8 +550,17 @@ export default function Viewport3D() {
   const activeTool = useCADStore(s => s.activeTool);
   const addSketchEntity = useCADStore(s => s.addSketchEntity);
 
-  const [mouseSketchPt, setMouseSketchPt] = useState<Point2 | null>(null);
+  const [mouse, setMouse] = useState<SketchClick | null>(null);
+  const mouseSketchPt = mouse?.pt ?? null;
   const [sketchClickPts, setSketchClickPts] = useState<Point2[]>([]);
+  const [editSession, setEditSession] = useState<EditSession>(NEW_EDIT_SESSION);
+  const replaceActiveSketchEntities = useCADStore(s => s.replaceActiveSketchEntities);
+  const offsetDistance = useCADStore(s => s.sketchOffsetDistance);
+  const constructionMode = useCADStore(s => s.constructionMode);
+  const isEditTool = EDIT_TOOLS.includes(activeTool);
+  const activeEntities = useMemo(() => (activeSketchId && sketchEntities[activeSketchId]) || [], [activeSketchId, sketchEntities]);
+  // Set when a click reported its result, so the next-step hint does not hide it
+  const keepStatusRef = useRef(false);
 
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
 
@@ -564,17 +583,27 @@ export default function Viewport3D() {
   const setStatus = useCADStore(s => s.setStatus);
 
   // A new tool starts with no clicks
-  useEffect(() => { setSketchClickPts([]); }, [activeTool, activeSketchId]);
+  useEffect(() => { setSketchClickPts([]); setEditSession(NEW_EDIT_SESSION); }, [activeTool, activeSketchId]);
 
   // Tell the user what the next click does
+  const stage = isEditTool ? editStage(activeTool, editSession) : sketchClickPts.length;
   useEffect(() => {
     if (!isSketchActive) return;
-    const hint = toolHint(activeTool, sketchClickPts.length);
+    if (keepStatusRef.current) { keepStatusRef.current = false; return; }
+    const hint = toolHint(activeTool, stage);
     if (hint) setStatus(hint);
-  }, [isSketchActive, activeTool, sketchClickPts.length, setStatus]);
+  }, [isSketchActive, activeTool, stage, setStatus]);
 
   // Each drawing tool collects its clicks, then creates its geometry (sketchTools.ts)
-  const handleSketchClick = useCallback((pt: Point2) => {
+  const handleSketchClick = useCallback(({ pt, raw, tol }: SketchClick) => {
+    if (isEditTool) {
+      const r = editClick(activeTool, editSession, { pt, raw, tol }, activeEntities, { offsetDistance, construction: constructionMode });
+      if (r.status) keepStatusRef.current = editStage(activeTool, r.session) !== editStage(activeTool, editSession);
+      if (r.entities) replaceActiveSketchEntities(r.entities, r.status);
+      else if (r.status) setStatus(r.status);
+      setEditSession(r.session);
+      return;
+    }
     const need = TOOL_CLICKS[activeTool];
     if (!need) return;
     const pts = [...sketchClickPts, pt];
@@ -586,11 +615,13 @@ export default function Viewport3D() {
     created?.forEach(e => addSketchEntity(e));
     // Lines chain from the last point; other tools start over
     setSketchClickPts(activeTool === TOOLS.SKETCH_LINE && created ? [pt] : []);
-  }, [activeTool, sketchClickPts, addSketchEntity, polygonSides]);
+  }, [activeTool, sketchClickPts, addSketchEntity, polygonSides, isEditTool, editSession, activeEntities, offsetDistance, constructionMode, replaceActiveSketchEntities, setStatus]);
 
   const preview = useMemo(
-    () => previewFor(activeTool, sketchClickPts, mouseSketchPt, { polygonSides }),
-    [activeTool, sketchClickPts, mouseSketchPt, polygonSides],
+    () => (isEditTool
+      ? editPreview(activeTool, editSession, mouse, activeEntities, { offsetDistance })
+      : { ...previewFor(activeTool, sketchClickPts, mouseSketchPt, { polygonSides }), highlight: [] as string[] }),
+    [activeTool, sketchClickPts, mouseSketchPt, polygonSides, isEditTool, editSession, mouse, activeEntities, offsetDistance],
   );
 
   // Exploded view: where each component is drawn, recomputed when the assembly changes
@@ -689,14 +720,15 @@ export default function Viewport3D() {
             activeSketchId={activeSketchId}
             activeSketchPlane={activeSketchPlane}
             sketchEntities={sketchEntities}
-            currentPoints={preview.band.length ? preview.band : sketchClickPts}
+            currentPoints={preview.band.length || isEditTool ? preview.band : sketchClickPts}
             previewEntities={preview.entities}
+            highlightIds={preview.highlight}
             activeTool={activeTool}
           />
         )}
 
         <ViewportController
-          onPointerMoveInSketch={setMouseSketchPt}
+          onPointerMoveInSketch={setMouse}
           onSketchClick={handleSketchClick}
         />
       </Canvas>

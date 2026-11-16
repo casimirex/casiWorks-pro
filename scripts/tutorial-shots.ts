@@ -199,6 +199,40 @@ const SHOTS: Shot[] = [
       await p.screenshot('10-first-part');
     },
   },
+  {
+    name: '10b-keyhole', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane', 800);
+      await p.click('Snap', 100); // exact points, so the clicks below land on the lines
+      const r = await canvasRect(p);
+      const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.36, R = 80, w = 40;
+      await p.click('Center Circle (C)');
+      await p.mouseClick(cx, cy); await p.mouseClick(cx + R, cy);
+      await p.click('Corner Rectangle (R)');
+      await p.mouseClick(cx - w, cy); await p.mouseClick(cx + w, cy + 200);
+      await p.click('Trim: click the part to remove, up to the nearest crossings (T)');
+      await p.mouseClick(cx, cy);                 // top of the slot, inside the circle
+      await p.mouseClick(cx - w, cy + 20);        // left side, inside the circle
+      await p.mouseClick(cx + w, cy + 20);        // right side, inside the circle
+      await p.mouseMove(cx, cy + R);              // hover the circle's bottom: highlighted
+      await sleep(300);
+      await p.screenshot('10b-keyhole-trim');
+      await p.mouseClick(cx, cy + R);             // the circle between the slot sides
+      await p.mouseMove(r.left + 20, r.top + 20);
+      await sleep(300);
+      await p.screenshot('10c-keyhole-sketch');
+      await p.click('Snap', 100);
+      await p.click('Confirm & Exit Sketch', 1000);
+      await p.click('Features');
+      await p.click('Extruded Boss/Base', 600);
+      await setField(p, 'Extrude Depth', 8);
+      await apply(p);
+      await iso(p);
+      await p.screenshot('10d-keyhole-part');
+    },
+  },
   // -------------------------------------------------------- Part 2: intermediate
   {
     name: '11-hole', async run(p) {

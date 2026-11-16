@@ -197,3 +197,19 @@ test('API: commands namespace lists and runs commands with API error codes', () 
   assert.deepEqual(bare.commands.list(), []);
   assert.equal(code(() => bare.commands.execute('view.top')), 'NOT_FOUND');
 });
+
+test('Sketch edit tools: commands pick the tool; offset distance is validated and kept', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = () => useCADStore.getState();
+  for (const [id, tool] of [['sketch.spline', 'sketch_spline'], ['sketch.trim', 'sketch_trim'], ['sketch.extend', 'sketch_extend'], ['sketch.mirror', 'sketch_mirror']]) {
+    r.execute(id);
+    assert.equal(s().activeTool, tool);
+  }
+  for (const distance of [0, -1, 1001, '5']) throwsCode(() => r.execute('sketch.offset', { distance }), 'INVALID_ARGUMENT');
+  r.execute('sketch.offset', { distance: 2.5 });
+  assert.equal(s().activeTool, 'sketch_offset');
+  assert.equal(s().sketchOffsetDistance, 2.5);
+  r.execute('sketch.offset');
+  assert.equal(s().sketchOffsetDistance, 2.5, 'kept');
+  s().cancelTool();
+});

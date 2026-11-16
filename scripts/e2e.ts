@@ -192,6 +192,55 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'sketch editing with the mouse: extend, trim, offset, mirror, spline',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane');
+      // Snap off: points land exactly where clicked, so a click between two
+      // click positions lands on the line drawn through them
+      await p.click('Snap', 100);
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const at = (fx: number, fy: number) => p.mouseClick(r.left + r.width * fx, r.top + r.height * fy);
+      const esc = () => p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      const said: string[] = [];
+      const note = async () => { said.push(await status(p)); };
+
+      await p.click('Corner Rectangle (R)'); await at(0.3, 0.3); await at(0.6, 0.7);
+      await p.click('Line Tool (L)'); await at(0.45, 0.2); await at(0.45, 0.8); await esc();
+      await p.click('Line Tool (L)'); await at(0.35, 0.75); await at(0.42, 0.75); await esc();
+      await p.click('Extend: click a line near the end to lengthen to the next entity'); await at(0.415, 0.75); await note();
+      await p.click('Trim: click the part to remove, up to the nearest crossings (T)'); await at(0.45, 0.25); await note(); await at(0.45, 0.78); await note();
+      await p.eval(`(() => {
+        const el = document.querySelector('.offset-distance');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '3');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await sleep(100);
+      await at(0.3, 0.5); await at(0.25, 0.5); await note();
+      await p.click('Mirror: click the mirror line, then the entities to mirror'); await at(0.45, 0.5); await at(0.38, 0.75); await note();
+      await p.click('Spline: click points; click the last again to finish, or the first to close (S)');
+      await at(0.7, 0.3); await at(0.8, 0.4); await at(0.75, 0.6); await at(0.75, 0.6); await note();
+      await esc();
+      await p.screenshot('02c-sketch-edit');
+      const expected = [/^Line extended by /, /^Line trimmed$/, /^Line trimmed$/, /^Closed chain of 4 offset 3 mm$/, /^Mirrored 1 entity$/, /^Spline through 3 points$/];
+      expected.forEach((re, i) => assert(re.test(said[i] ?? ''), `step ${i + 1}: "${said[i]}" (all: ${said.join(' | ')})`));
+
+      await p.click('Confirm & Exit Sketch', 800);
+      const ents = await p.eval<Array<{ type: string; p1?: { x: number; y: number }; p2?: { x: number; y: number } }>>(`(() => {
+        const s = window.casiworks.features.list().find(f => f.type === 'sketch');
+        return window.casiworks.sketches.getEntities(s.sketchId);
+      })()`);
+      const lines = ents.filter(e => e.type === 'line');
+      assert(lines.length === 11 && ents.filter(e => e.type === 'spline').length === 1, `entities: ${ents.map(e => e.type)}`);
+      // The trimmed vertical line now runs from the rectangle's top edge down to the extended line
+      const v = lines.find(l => Math.abs(l.p1!.x - l.p2!.x) < 1e-6 && Math.abs(l.p1!.y - l.p2!.y) < 200 && lines.some(h => Math.abs(h.p2!.x - l.p1!.x) < 1e-6 && Math.abs(h.p1!.y - h.p2!.y) < 1e-6));
+      assert(v, 'vertical line meeting the extended horizontal line');
+      await p.click('Snap', 100);
+      return said.join(' → ');
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

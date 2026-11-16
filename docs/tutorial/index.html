@@ -342,7 +342,7 @@ npm run dev</pre></div>
   <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 3 · about 15 min</span></div>
   <h2 class="title">Your first part: sketch and extrude</h2>
   <p class="lead">Almost every CAD part starts the same way. You draw a flat 2D profile (a <b>sketch</b>) on a plane, then give it thickness (an <b>extrude</b>).</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li><li>Edit a sketch with Trim, Extend, Offset and Mirror</li></ul></div>
 
   <div class="example">
     <div class="example-head"><span class="tag">Example 3.1</span><h4>A spacer block with a through hole</h4><div class="specs"><span>Front plane</span><span>Depth 20 mm</span><span>1 sketch · 1 extrude</span></div></div>
@@ -379,10 +379,37 @@ npm run dev</pre></div>
     <tr><td>Centre Arc</td><td><kbd>A</kbd></td><td>Click the centre, the start point and the end point.</td></tr>
     <tr><td>Polygon</td><td>—</td><td>Choose 3–64 sides in the drop-down, then click the centre and one vertex.</td></tr>
     <tr><td>Straight Slot</td><td>—</td><td>Click the first centre, the second centre, then a point on the side to set the width.</td></tr>
+    <tr><td>Spline</td><td><kbd>S</kbd></td><td>Click points the curve passes through. Click the last point again to finish, or the first point to close the curve.</td></tr>
     <tr><td>Point</td><td>—</td><td>Click to place a reference point.</td></tr>
     <tr><td>Construct</td><td>—</td><td>Toggles construction mode. Construction lines are guides and do not become solid.</td></tr>
     <tr><td>Dimension</td><td><kbd>D</kbd></td><td>Smart dimension: click geometry to add a driving size.</td></tr>
   </table></div>
+  <h3>Editing a sketch</h3>
+  <p>The <b>Edit</b> group changes geometry you have already drawn. Each tool stays on until you press <kbd>Esc</kbd>, and the line, arc or circle under the mouse turns yellow before you click.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Tool</th><th>Key</th><th>What it does</th></tr>
+    <tr><td>Trim</td><td><kbd>T</kbd></td><td>Click the part of a line, arc or circle to remove. It is cut back to the nearest crossings on either side of the click. If it crosses nothing, the whole entity is deleted. A circle needs two crossings and becomes an arc.</td></tr>
+    <tr><td>Extend</td><td>—</td><td>Click a line near the end you want longer. That end grows until it meets the next line, arc or circle.</td></tr>
+    <tr><td>Offset</td><td>—</td><td>Type the distance next to the button. Click an entity, then click the side. A connected chain (a rectangle or a slot) offsets as a whole, with the corners joined again.</td></tr>
+    <tr><td>Mirror</td><td>—</td><td>Click the mirror line first, often a construction line. Then each entity you click gets a mirrored copy.</td></tr>
+  </table></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 3.2</span><h4>A keyhole plate with Trim</h4><div class="specs"><span>Circle + rectangle</span><span>4 trims</span><span>Depth 8 mm</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Start a new part and sketch on the <b>Front</b> plane. Turn <b>Snap</b> off in the status bar if you want points exactly where you click.</li>
+        <li>Draw a <b>Center Circle</b>. Then draw a <b>Corner Rectangle</b> whose top edge starts at the circle's centre, narrower than the circle and reaching well below it.</li>
+        <li>Press <kbd>T</kbd> for <b>Trim</b>. Click the rectangle's top edge: it crosses nothing, so it is deleted.</li>
+        <li>Click each side of the rectangle inside the circle. Each side is cut back to where it crosses the circle.</li>
+        <li>Click the bottom of the circle, between the two sides. The circle becomes an arc, and the outline is a single closed keyhole.</li>
+        <li>Exit the sketch and extrude it 8 mm.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/10b-keyhole-trim.webp" alt="Trim tool with the circle highlighted under the mouse"><figcaption>Three trims done; the circle is highlighted under the mouse.</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="img/10c-keyhole-sketch.webp" alt="Trimmed keyhole outline"><figcaption>After the last trim: one closed outline.</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="img/10d-keyhole-part.webp" alt="Extruded keyhole part"><figcaption>The extruded keyhole.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Offset instead of Shell</b><p>To make a frame or a tube, draw the outer outline and <b>Offset</b> it inwards by the wall thickness. The inner loop becomes a hole when you extrude.</p></div></div>
   <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Your tree should read <i>Sketch1</i>, <i>Extrude Boss</i>. If the extrude shows ⚠, the profile is probably not closed. Double-click the sketch in the tree, make sure the corners meet, and exit the sketch again.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p><kbd>Esc</kbd> cancels the current tool without leaving the sketch. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last entity.</p></div></div>
   <div class="exercise"><b>Exercise 3.</b> Make a 12 mm thick hexagonal nut blank. Use a 6-sided polygon with a circle inside it. Then try <b>Mid Plane</b>, which grows the extrude equally on both sides of the plane.<label><input type="checkbox" data-done="ch3"> I've done this</label></div>
@@ -548,7 +575,7 @@ npm run dev</pre></div>
       </div>
     </div>
   </div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>Fillet, chamfer and shell need real edges and faces, and the triangle-mesh kernel does not have them. Round corners in the sketch with a <b>Centre Arc</b>, and hollow a part by sketching the inner outline and using <b>Extrude Cut</b>.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>Fillet, chamfer and shell need real edges and faces, and the triangle-mesh kernel does not have them. Round corners in the sketch with a <b>Centre Arc</b> and <b>Trim</b>. To hollow a part, <b>Offset</b> its outline inwards by the wall thickness and use <b>Extrude Cut</b> (chapter 3).</p></div></div>
   <div class="exercise"><b>Exercise 9.</b> Draw a 60 × 40 rectangle with 5 mm rounded corners using four lines and four centre arcs, then extrude it. This is the sketch-level fillet that works today.<label><input type="checkbox" data-done="ch9"> I've done this</label></div>
 </section>
 
@@ -857,6 +884,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><kbd>F5</kbd></td><td>Rebuild</td><td><kbd>E</kbd></td><td>Extrude</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Cancel the current tool</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Front, Back, Left, Right, Top, Bottom</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>`</kbd></td><td>Scripting console</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> · <kbd>Space</kbd></td><td>Isometric</td></tr>
+    <tr><td><kbd>S</kbd></td><td>Spline (in a sketch)</td><td><kbd>T</kbd></td><td>Trim (in a sketch)</td></tr>
   </table></div>
   <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
 </section>
@@ -866,7 +894,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <p>These are the parts of the app that do not do what their buttons might suggest, so they do not catch you out on a real job:</p>
   <div class="table-wrap"><table>
     <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
-    <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs, and hollow parts with Extrude Cut.</td></tr>
+    <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs and Trim; hollow parts with an inward Offset and Extrude Cut.</td></tr>
     <tr><td>Surfaces and sheet metal</td><td>Not available: there are no surface or sheet-metal tools.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
     <tr><td>Drawing sheet</td><td>Views, dimensions and GD&amp;T are placed for you; no section views or your own dimensions.</td><td>Export DXF and add these in a 2D CAD program.</td></tr>
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>

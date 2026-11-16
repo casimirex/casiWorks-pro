@@ -22,6 +22,7 @@ export const TOOLS = {
   SKETCH_SLOT: 'sketch_slot',
   SKETCH_POINT: 'sketch_point',
   SKETCH_TRIM: 'sketch_trim',
+  SKETCH_EXTEND: 'sketch_extend',
   SKETCH_OFFSET: 'sketch_offset',
   SKETCH_MIRROR: 'sketch_mirror',
   SKETCH_DIMENSION: 'sketch_dimension',

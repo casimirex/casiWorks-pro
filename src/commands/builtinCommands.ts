@@ -247,6 +247,21 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   sketchTool('sketch.point', 'Point', TOOLS.SKETCH_POINT),
   sketchTool('sketch.arc', 'Centre arc', TOOLS.SKETCH_ARC, ['A']),
   sketchTool('sketch.slot', 'Straight slot', TOOLS.SKETCH_SLOT),
+  sketchTool('sketch.spline', 'Spline', TOOLS.SKETCH_SPLINE, ['S']),
+  sketchTool('sketch.trim', 'Trim', TOOLS.SKETCH_TRIM, ['T']),
+  sketchTool('sketch.extend', 'Extend', TOOLS.SKETCH_EXTEND),
+  sketchTool('sketch.mirror', 'Mirror entities', TOOLS.SKETCH_MIRROR),
+  {
+    id: 'sketch.offset', label: 'Offset entities', category: 'Sketch', record: false,
+    description: 'args: { distance? } in mm (default: the last used, initially 5)',
+    run: ({ state }, args: { distance?: number } | undefined) => {
+      if (args?.distance !== undefined) {
+        if (typeof args.distance !== 'number' || !(args.distance > 0) || args.distance > 1000) throw new CommandError('INVALID_ARGUMENT', 'distance must be a number of mm above 0 and at most 1000');
+        state().setSketchOffsetDistance(args.distance);
+      }
+      state().setActiveTool(TOOLS.SKETCH_OFFSET);
+    },
+  },
   {
     id: 'sketch.polygon', label: 'Polygon', category: 'Sketch', record: false,
     description: 'args: { sides? } (3–64, default: the last used, initially 6)',
@@ -270,6 +285,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   view('bottom', 'Bottom view', ['Ctrl+6']),
   view('isometric', 'Isometric view', ['Ctrl+7', 'Space']),
   toggle('view.toggleGrid', 'Grid', s => s.toggleGrid()),
+  toggle('view.toggleSnap', 'Snap to grid', s => s.toggleSnap()),
   toggle('view.toggleEdges', 'Edges', s => s.toggleEdges()),
   toggle('view.toggleWireframe', 'Wireframe', s => s.toggleWireframe()),
   toggle('view.togglePerspective', 'Perspective / orthographic', s => s.togglePerspective()),
