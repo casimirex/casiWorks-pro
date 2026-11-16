@@ -305,6 +305,24 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: '19b-equations', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await run(p, 'equations.set', { variables: [{ name: 'wall', expression: '4' }, { name: 'plate', expression: 'wall * 3' }] });
+      const { sketchId } = await p.eval<{ sketchId: string }>(`window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] })`);
+      await run(p, 'feature.create', { type: 'extrude_boss', sketchId, depth: 12, name: 'Plate', expressions: { depth: 'plate' } }, 1200);
+      await iso(p);
+      await p.eval(`[...document.querySelectorAll('.feature-item')].find(e => e.textContent.includes('Plate')).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+      await sleep(700);
+      await p.screenshot('19b-linked-field');
+      await p.eval(`document.querySelector('.action-btn-red')?.click()`);
+      await sleep(300);
+      await run(p, 'tools.equations', undefined, 500);
+      await p.screenshot('19c-equations');
+      await p.click('Close', 300);
+    },
+  },
+  {
     name: '20-material', async run(p) {
       await run(p, 'model.material', undefined, 500);
       await p.screenshot('20-material');

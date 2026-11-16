@@ -6,6 +6,8 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
+import { evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { GlobalVariable } from '../features/equations.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
@@ -14,6 +16,19 @@ import { CAD_EXAMPLES } from '../utils/examples.ts';
 import { downloadProject, newProject, openProject } from '../utils/projectFile.ts';
 
 const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'] as const;
+
+/** Check a feature's `expressions` against the current variables; throws INVALID_ARGUMENT naming the bad one. */
+function requireExpressions(state: CADStore, expressions: unknown): void {
+  if (expressions === undefined) return;
+  if (!expressions || typeof expressions !== 'object' || Array.isArray(expressions)) throw new CommandError('INVALID_ARGUMENT', 'expressions must be an object of parameter → expression');
+  const { values } = evaluateVariables(state.variables);
+  for (const [param, expr] of Object.entries(expressions as Record<string, unknown>)) {
+    if (typeof expr !== 'string') throw new CommandError('INVALID_ARGUMENT', `expression for ${param} must be text`);
+    try { evaluateExpression(expr, values); } catch (e) {
+      throw new CommandError('INVALID_ARGUMENT', `${param} = ${expr}: ${(e as Error).message}`);
+    }
+  }
+}
 
 type Def<A = void> = CommandDefinition<CADStore, A>;
 type Store = { getState(): CADStore };
@@ -141,6 +156,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       if (!args || !FEATURE_TYPE_VALUES.has(args.type) || args.type === FEATURE_TYPES.SKETCH) {
         throw new CommandError('INVALID_ARGUMENT', `type must be a feature type other than sketch (got ${JSON.stringify(args?.type)})`);
       }
+      requireExpressions(state(), args.expressions);
       const featureId = generateId('feat');
       const name = args.name || args.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       state().addFeature({ ...args, name, id: featureId } as unknown as FeatureData);
@@ -153,6 +169,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     run: ({ state }, args: { id: string; changes: Record<string, unknown> }) => {
       requireFeature(state(), args?.id);
       if (!args.changes || typeof args.changes !== 'object') throw new CommandError('INVALID_ARGUMENT', 'changes must be an object');
+      requireExpressions(state(), args.changes.expressions);
       state().updateFeature(args.id, args.changes);
     },
   },
@@ -409,6 +426,33 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       state().setComponentMaterial(ids, material);
     },
   },
+  {
+    id: 'equations.set', label: 'Set global variables', category: 'Tools',
+    description: "args: { variables: [{ name, expression }] } — replaces them all; e.g. [{ name: 'wall', expression: '3' }, { name: 'depth', expression: 'wall * 8' }]",
+    run: ({ state }, args: { variables?: GlobalVariable[] }) => {
+      const vars = args?.variables;
+      if (!Array.isArray(vars) || !vars.every(v => v && typeof v.name === 'string' && typeof v.expression === 'string')) {
+        throw new CommandError('INVALID_ARGUMENT', 'variables must be a list of { name, expression }');
+      }
+      const { values, errors } = evaluateVariables(vars);
+      const bad = Object.entries(errors);
+      if (bad.length) throw new CommandError('INVALID_ARGUMENT', bad.map(([n, m]) => `${n}: ${m}`).join('; '));
+      state().setVariables(vars);
+      return values;
+    },
+  },
+  {
+    id: 'equations.list', label: 'List equations', category: 'Tools', record: false,
+    description: 'Returns { variables: [{ name, expression, value, error? }], links: [{ featureId, featureName, parameter, expression, value, error? }] }',
+    run: ({ state }) => {
+      const { values, errors } = evaluateVariables(state().variables);
+      return {
+        variables: state().variables.map(v => ({ ...v, value: values[v.name] ?? null, ...(errors[v.name] ? { error: errors[v.name] } : {}) })),
+        links: evaluateLinks(state().features, values).links,
+      };
+    },
+  },
+  { id: 'tools.equations', label: 'Equations…', category: 'Tools', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('equations') },
   { id: 'assembly.billOfMaterials', label: 'Bill of materials…', category: 'Assembly', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('bom') },
   {
     id: 'assembly.exportBom', label: 'Export bill of materials (CSV)', category: 'Assembly', requiresUI: true, record: false,

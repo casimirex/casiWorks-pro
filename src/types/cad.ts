@@ -90,6 +90,8 @@ interface FeatureBase {
   /** Features that depend on this one (rebuilt by the store from parentIds). */
   childIds?: string[];
   timestamp?: number;
+  /** Parameters driven by equations: parameter name → expression (e.g. { depth: '2 * wall' }). */
+  expressions?: Record<string, string>;
 }
 
 export interface SketchFeature extends FeatureBase {
@@ -282,5 +284,7 @@ export interface ProjectFile {
   settings: AppSettings;
   assemblyComponents: unknown[];
   mates: unknown[];
+  /** Global variables (equations); absent in older files. */
+  variables?: Array<{ name: string; expression: string }>;
   timestamp: number;
 }

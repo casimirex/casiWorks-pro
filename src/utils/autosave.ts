@@ -25,6 +25,7 @@ export interface AutosaveState {
   settings: unknown;
   assemblyComponents: unknown;
   mates: unknown;
+  variables: unknown;
   saveProject(): string;
   loadProject(json: string): void;
   setStatus(message: string): void;
@@ -48,7 +49,7 @@ interface Snapshot {
 /** The parts of the state that are saved in a project: a change to any of them is a document change. */
 const DOCUMENT_KEYS = [
   'documentName', 'features', 'sketchEntities', 'sketchConstraints', 'sketchDimensions',
-  'rollbackIndex', 'activeMaterial', 'settings', 'assemblyComponents', 'mates',
+  'rollbackIndex', 'activeMaterial', 'settings', 'assemblyComponents', 'mates', 'variables',
 ] as const satisfies ReadonlyArray<keyof AutosaveState>;
 
 /** True when the store update changed the document (the store is immutable, so comparing references is enough). */

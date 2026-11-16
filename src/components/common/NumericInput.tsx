@@ -4,6 +4,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import { isPlainNumber, parseExpression } from '../../features/equations.ts';
 
 export interface NumericInputProps {
   value?: number;
@@ -20,6 +21,17 @@ export interface NumericInputProps {
   /** Accessible label. */
   label?: string;
   className?: string;
+  /**
+   * Equations: with `evaluate`, the field also takes an expression such as
+   * `wall * 2` (or `=wall * 2`). One that uses variables stays linked: it is
+   * reported through onExpressionChange, shown with ƒ, and edited as text.
+   * Typing a number or using the spin buttons unlinks it.
+   */
+  evaluate?: (text: string) => number;
+  expression?: string | null;
+  onExpressionChange?: (expression: string | null) => void;
+  /** Called with the reason when an expression cannot be evaluated. */
+  onError?: (message: string) => void;
 }
 
 /** A numeric input with spin buttons and unit display. */
@@ -34,6 +46,10 @@ const NumericInput = ({
   disabled = false,
   label,
   className = '',
+  evaluate,
+  expression = null,
+  onExpressionChange,
+  onError,
 }: NumericInputProps) => {
   // Internal string representation for editing
   const [editValue, setEditValue] = useState(String(value));
@@ -67,7 +83,24 @@ const NumericInput = ({
   /** Commit the current edit value */
   const commitValue = useCallback(() => {
     // Read the latest text: a blur can arrive before React re-renders after the last keystroke
-    const parsed = parseFloat(editValueRef.current);
+    const text = editValueRef.current;
+    if (evaluate && text.trim() && !isPlainNumber(text)) {
+      try {
+        const result = clamp(evaluate(text));
+        const expr = text.trim().replace(/^=\s*/, '');
+        // Keep the link only when it uses variables; plain arithmetic is just a number
+        onExpressionChange?.(parseExpression(expr).names.size > 0 ? expr : null);
+        setEditValue(formatValue(result));
+        if (result !== value) onChange?.(result);
+      } catch (err) {
+        setEditValue(formatValue(value));
+        onError?.(err instanceof Error ? err.message : String(err));
+      }
+      setIsEditing(false);
+      return;
+    }
+    if (expression && text.trim() !== `=${expression}`) onExpressionChange?.(null);
+    const parsed = parseFloat(text);
     if (isNaN(parsed)) {
       setEditValue(formatValue(value));
     } else {
@@ -78,7 +111,7 @@ const NumericInput = ({
       }
     }
     setIsEditing(false);
-  }, [value, clamp, onChange, formatValue]);
+  }, [value, clamp, onChange, formatValue, evaluate, expression, onExpressionChange, onError]);
 
   /** Handle text input change */
   const handleInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
@@ -89,13 +122,18 @@ const NumericInput = ({
   /** Handle focus - select all text for easy replacement */
   const handleFocus = useCallback(() => {
     setIsEditing(true);
+    // A linked field is edited as its expression
+    if (expression) {
+      editValueRef.current = `=${expression}`;
+      setEditValue(`=${expression}`);
+    }
     // Select all text after a tiny delay so the DOM has time to update
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.select();
       }
     }, 0);
-  }, []);
+  }, [expression]);
 
   /** Handle blur - commit value */
   const handleBlur = useCallback(() => {
@@ -116,26 +154,36 @@ const NumericInput = ({
       inputRef.current?.blur();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      const newVal = clamp((parseFloat(editValueRef.current) || 0) + step);
+      // Stepping sets a number: the field is no longer linked
+      const base = expression ? value : (parseFloat(editValueRef.current) || 0);
+      if (expression) onExpressionChange?.(null);
+      const newVal = clamp(base + step);
+      editValueRef.current = formatValue(newVal);
       setEditValue(formatValue(newVal));
       onChange?.(newVal);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      const newVal = clamp((parseFloat(editValueRef.current) || 0) - step);
+      // Stepping sets a number: the field is no longer linked
+      const base = expression ? value : (parseFloat(editValueRef.current) || 0);
+      if (expression) onExpressionChange?.(null);
+      const newVal = clamp(base - step);
+      editValueRef.current = formatValue(newVal);
       setEditValue(formatValue(newVal));
       onChange?.(newVal);
     }
-  }, [commitValue, value, clamp, step, onChange, formatValue]);
+  }, [commitValue, value, clamp, step, onChange, formatValue, expression, onExpressionChange]);
 
   /** Step the value up (+1) or down (−1) from the latest edit value */
   const stepBy = useCallback((sign: 1 | -1) => {
-    const current = parseFloat(editValueRef.current) || 0;
+    // Stepping sets a number: the field is no longer linked
+    if (expression) onExpressionChange?.(null);
+    const current = expression ? value : (parseFloat(editValueRef.current) || 0);
     const newVal = clamp(current + sign * step);
     const text = formatValue(newVal);
     editValueRef.current = text;
     setEditValue(text);
     onChange?.(newVal);
-  }, [step, clamp, onChange, formatValue]);
+  }, [step, clamp, onChange, formatValue, expression, onExpressionChange, value]);
 
   /** Start holding a spin button for continuous adjustment */
   const startHold = useCallback((direction: 'up' | 'down') => {
@@ -160,7 +208,8 @@ const NumericInput = ({
   }, [stopHold]);
 
   return (
-    <div className={`numeric-input-wrapper ${disabled ? 'disabled' : ''} ${className}`}>
+    <div className={`numeric-input-wrapper ${disabled ? 'disabled' : ''} ${expression ? 'linked' : ''} ${className}`} title={expression ? `= ${expression}` : undefined}>
+      {expression && !isEditing && <span className="numeric-linked-tag" aria-label={`Linked: ${expression}`}>ƒ</span>}
       <input
         ref={inputRef}
         className="numeric-input-field"

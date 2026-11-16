@@ -33,6 +33,7 @@ const HOLE_TYPES: Array<{ value: NonNullable<HoleFeature['holeType']>; label: st
 import NumericInput from '../common/NumericInput.tsx';
 import { runCommand } from '../../commands/index.ts';
 import { debounce } from '../../utils/debounce.ts';
+import { evaluateExpression, evaluateVariables } from '../../features/equations.ts';
 
 /** Fields the panel reads from what it was opened with (a feature being edited, or a tool's defaults). */
 interface PanelContentFields {
@@ -40,6 +41,8 @@ interface PanelContentFields {
   id?: string;
   name?: string;
   isEditing?: boolean;
+  /** Parameters linked to equations. */
+  expressions?: Record<string, string>;
   depth?: number;
   angle?: number;
   radius?: number;
@@ -79,6 +82,24 @@ export default function PropertyPanel() {
   const [angle, setAngle] = useState(360);
   const [radius, setRadius] = useState(5);
   const [thickness, setThickness] = useState(2);
+
+  // Equations: parameters typed as expressions that use variables stay linked
+  const variables = useCADStore(s => s.variables);
+  const setStatusMessage = useCADStore(s => s.setStatus);
+  const variableValues = useMemo(() => evaluateVariables(variables).values, [variables]);
+  const [expressions, setExpressions] = useState<Record<string, string>>({});
+  /** Props that let a NumericInput take an expression for feature parameter `key`. */
+  const linkable = (key: string) => ({
+    evaluate: (text: string) => evaluateExpression(text, variableValues),
+    expression: expressions[key] ?? null,
+    onExpressionChange: (e: string | null) => setExpressions(x => {
+      const next = { ...x };
+      if (e) next[key] = e; else delete next[key];
+      return next;
+    }),
+    onError: (message: string) => setStatusMessage(`${key}: ${message}`),
+    label: key,
+  });
   const [diameter, setDiameter] = useState(10);
   const [direction, setDirection] = useState<ExtrudeEndCondition>('blind');
   const [flipDir, setFlipDir] = useState(false);
@@ -140,6 +161,7 @@ export default function PropertyPanel() {
       if (latest?.type === FEATURE_TYPES.SKETCH) setSelectedSketchId(latest.sketchId);
     }
     if (propertyPanelContent) {
+      setExpressions({ ...(propertyPanelContent.expressions ?? {}) });
       if (propertyPanelContent.depth !== undefined) setDepth(propertyPanelContent.depth);
       if (propertyPanelContent.angle !== undefined) setAngle(propertyPanelContent.angle);
       if (propertyPanelContent.radius !== undefined) setRadius(propertyPanelContent.radius);
@@ -226,10 +248,14 @@ export default function PropertyPanel() {
       runCommand('assembly.explode', { distance: explodeDist, leaderLines: explodeLeaders });
       return;
     } else {
+      const params = featureParameters();
+      // Only links to this feature type's own parameters; an edit always sends them, so unlinking sticks
+      const links = Object.fromEntries(Object.entries(expressions).filter(([k]) => k in params));
       const featData = {
         type: featureType,
         name: propertyPanelContent.name || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-        ...featureParameters(),
+        ...params,
+        ...(isEdit || Object.keys(links).length ? { expressions: links } : {}),
       };
 
       // Through commands, so edits made in the panel are recorded in macros
@@ -441,7 +467,7 @@ export default function PropertyPanel() {
                 {direction !== 'throughall' && (
                   <div className="property-row">
                     <span className="property-label">Extrude Depth (D1):</span>
-                    <NumericInput value={depth} onChange={setDepth} min={0.5} max={5000} step={5} unit="mm" />
+                    <NumericInput value={depth} onChange={setDepth} min={0.5} max={5000} step={5} unit="mm" {...linkable('depth')} />
                   </div>
                 )}
 
@@ -468,7 +494,7 @@ export default function PropertyPanel() {
                 <div className="property-card-body">
                   <div className="property-row">
                     <span className="property-label">Wall Thickness (T1):</span>
-                    <NumericInput value={wallThickness} onChange={setWallThickness} min={0.2} max={100} step={0.5} unit="mm" />
+                    <NumericInput value={wallThickness} onChange={setWallThickness} min={0.2} max={100} step={0.5} unit="mm" {...linkable('wallThickness')} />
                   </div>
                 </div>
               )}
@@ -483,7 +509,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Angle:</span>
-                <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" />
+                <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" {...linkable('angle')} />
               </div>
             </div>
           </div>
@@ -496,7 +522,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Radius (R):</span>
-                <NumericInput value={radius} onChange={setRadius} min={0.5} max={100} step={1} unit="mm" />
+                <NumericInput value={radius} onChange={setRadius} min={0.5} max={100} step={1} unit="mm" {...linkable('radius')} />
               </div>
             </div>
           </div>
@@ -509,7 +535,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Distance (D):</span>
-                <NumericInput value={radius} onChange={setRadius} min={0.5} max={100} step={1} unit="mm" />
+                <NumericInput value={radius} onChange={setRadius} min={0.5} max={100} step={1} unit="mm" {...linkable('distance')} />
               </div>
             </div>
           </div>
@@ -522,7 +548,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Wall Thickness (T):</span>
-                <NumericInput value={thickness} onChange={setThickness} min={0.5} max={50} step={0.5} unit="mm" />
+                <NumericInput value={thickness} onChange={setThickness} min={0.5} max={50} step={0.5} unit="mm" {...linkable('thickness')} />
               </div>
             </div>
           </div>
@@ -535,11 +561,11 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Diameter (Ø):</span>
-                <NumericInput value={diameter} onChange={setDiameter} min={1} max={200} step={1} unit="mm" />
+                <NumericInput value={diameter} onChange={setDiameter} min={1} max={200} step={1} unit="mm" {...linkable('diameter')} />
               </div>
               <div className="property-row">
                 <span className="property-label">Hole Depth:</span>
-                <NumericInput value={depth} onChange={setDepth} min={1} max={500} step={5} unit="mm" />
+                <NumericInput value={depth} onChange={setDepth} min={1} max={500} step={5} unit="mm" {...linkable('depth')} />
               </div>
               <div className="property-row">
                 <span className="property-label">Hole Type:</span>
@@ -573,11 +599,11 @@ export default function PropertyPanel() {
               {axisSelect(patternDirection, setPatternDirection, 'Direction:')}
               <div className="property-row">
                 <span className="property-label">Instances:</span>
-                <NumericInput value={count} onChange={setCount} min={2} max={100} step={1} precision={0} />
+                <NumericInput value={count} onChange={setCount} min={2} max={100} step={1} precision={0} {...linkable('count')} />
               </div>
               <div className="property-row">
                 <span className="property-label">Spacing:</span>
-                <NumericInput value={spacing} onChange={setSpacing} min={0.1} max={5000} step={5} unit="mm" />
+                <NumericInput value={spacing} onChange={setSpacing} min={0.1} max={5000} step={5} unit="mm" {...linkable('spacing')} />
               </div>
             </div>
           </div>
@@ -590,11 +616,11 @@ export default function PropertyPanel() {
               {axisSelect(patternAxis, setPatternAxis, 'Axis:')}
               <div className="property-row">
                 <span className="property-label">Instances:</span>
-                <NumericInput value={count} onChange={setCount} min={2} max={360} step={1} precision={0} />
+                <NumericInput value={count} onChange={setCount} min={2} max={360} step={1} precision={0} {...linkable('count')} />
               </div>
               <div className="property-row">
                 <span className="property-label">Total Angle:</span>
-                <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" />
+                <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" {...linkable('angle')} />
               </div>
             </div>
           </div>

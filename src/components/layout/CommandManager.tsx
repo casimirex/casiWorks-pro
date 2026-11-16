@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, Sigma, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
@@ -812,6 +812,10 @@ export default function CommandManager() {
                 <button className="ribbon-btn" onClick={() => runCommand('view.toggleConsole')} title="Scripting console (Ctrl+`)">
                   <Hash size={19} color="#a78bfa" />
                   <span>Console</span>
+                </button>
+                <button className="ribbon-btn" onClick={() => runCommand('tools.equations')} title="Equations: global variables that drive feature sizes">
+                  <Sigma size={19} color="#a78bfa" />
+                  <span>Equations</span>
                 </button>
                 <button className="ribbon-btn" onClick={() => runCommand('help.apiReference')} title="API reference (opens in a new tab)">
                   <FileText size={19} color="#94a3b8" />

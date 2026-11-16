@@ -241,6 +241,55 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'equations: variables drive an extrude depth typed as an expression',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      const type = (sel: string, i: number, value: string) => p.eval(`(() => {
+        const el = document.querySelectorAll('${sel}')[${i}];
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await p.click('Tools');
+      await p.click('Equations: global variables that drive feature sizes', 300);
+      await p.click('Add variable', 100); await p.click('Add variable', 100);
+      await type('.eq-name', 0, 'wall'); await type('.eq-expression', 0, '3');
+      await type('.eq-name', 1, 'depth'); await type('.eq-expression', 1, 'wall * 8');
+      await sleep(200);
+      const shown = await p.eval<string[]>(`[...document.querySelectorAll('.eq-value')].map(e => e.textContent)`);
+      assert(shown.join() === '3,24', `values ${shown}`);
+      await p.click('Apply', 300);
+      await p.click('Close', 300);
+
+      await p.eval(`window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: 0, y: 0 }, corner2: { x: 40, y: 20 } }] })`);
+      await p.click('Features');
+      await p.click('Extruded Boss/Base', 500);
+      await setField(p, 'Extrude Depth', 'depth + 1');
+      await sleep(200);
+      const linked = await p.eval<boolean>(`[...document.querySelectorAll('.property-panel .numeric-input-wrapper')].some(w => w.classList.contains('linked') && w.title === '= depth + 1')`);
+      assert(linked, 'depth field is linked (ƒ)');
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const v1 = await volume(p);
+      assert(Math.abs(v1 - 40 * 20 * 25) < 1e-6, `volume ${v1}, expected 20000 (depth 3 × 8 + 1)`);
+
+      // Change the wall: the extrude follows
+      await p.click('Tools');
+      await p.click('Equations: global variables that drive feature sizes', 300);
+      await type('.eq-expression', 0, '5');
+      await sleep(200);
+      await p.screenshot('02d-equations');
+      await p.click('Apply', 1200);
+      const linkRow = await p.eval<string>(`document.querySelector('.equation-links')?.textContent ?? ''`);
+      await p.click('Close', 300);
+      await sleep(800);
+      const v2 = await volume(p);
+      assert(Math.abs(v2 - 40 * 20 * 41) < 1e-6, `volume ${v2}, expected 32800 (depth 5 × 8 + 1)`);
+      assert(/Boss|Extrude/.test(linkRow) && linkRow.includes('= depth + 1') && linkRow.includes('41'), `links: ${linkRow}`);
+      await p.click('Features', 200);
+      return `wall 3 → ${v1} mm³; wall 5 → ${v2} mm³; link row "${linkRow}"`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

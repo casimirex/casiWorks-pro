@@ -13,6 +13,8 @@ import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '..
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
+import { evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
   Feature,
@@ -105,6 +107,7 @@ interface DocumentSnapshot {
   sketchDimensions: Record<string, unknown[]>;
   rollbackIndex: number;
   activeMaterial: string;
+  variables: GlobalVariable[];
 }
 
 interface UndoEntry {
@@ -182,6 +185,8 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /** Global variables (equations), saved with the project. */
+  variables: GlobalVariable[];
   /** Drawing sheet display options (a session preference, not saved in the project). */
   drawingOptions: DrawingOptions;
 
@@ -271,6 +276,8 @@ export interface CADActions {
   setComponentMaterial(componentIds: string[], material: string | null): void;
   setExplodedView(settings: ExplodedViewSettings | null): void;
   setDrawingOptions(options: Partial<DrawingOptions>): void;
+  /** Replace the global variables and update every parameter linked to them (one undo step). */
+  setVariables(variables: GlobalVariable[]): void;
 
   // Documents
   saveProject(): string;
@@ -366,6 +373,7 @@ function snapshotOf(state: Draft<CADStore>): DocumentSnapshot {
     sketchDimensions: safeDeepClone(state.sketchDimensions as Record<string, unknown[]>),
     rollbackIndex: state.rollbackIndex,
     activeMaterial: state.activeMaterial,
+    variables: safeDeepClone(state.variables as GlobalVariable[]),
   };
 }
 
@@ -376,7 +384,28 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
   state.sketchDimensions = s.sketchDimensions || {};
   state.rollbackIndex = s.rollbackIndex ?? -1;
   state.activeMaterial = s.activeMaterial || 'Steel_1020';
+  state.variables = s.variables ?? [];
   state.needsRebuild = true;
+}
+
+/**
+ * Write the values of equation-driven parameters into their features.
+ * Links that do not evaluate keep the last good number (the Equations dialog shows why).
+ */
+function applyEquations(state: Draft<CADStore>): void {
+  if (state.variables.length === 0 && !state.features.some(f => f.expressions && Object.keys(f.expressions).length)) return;
+  const { values } = evaluateVariables(state.variables as GlobalVariable[]);
+  const { updates } = evaluateLinks(state.features as Feature[], values);
+  for (const f of state.features) {
+    const u = updates[f.id];
+    if (!u) continue;
+    for (const [k, v] of Object.entries(u)) {
+      if ((f as unknown as Record<string, unknown>)[k] !== v) {
+        (f as unknown as Record<string, unknown>)[k] = v;
+        state.needsRebuild = true;
+      }
+    }
+  }
 }
 
 /** Insert a feature after the rollback bar (if rolled back) or at the end. Returns its index. */
@@ -434,6 +463,7 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     explodedView: null,
+    variables: [],
     drawingOptions: { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
     needsRebuild: false,
     rebuildCount: 0,
@@ -517,6 +547,7 @@ export const useCADStore = create<CADStore>()(
       }
 
       state.activeFeatureIndex = insertFeature(state, newFeature);
+      applyEquations(state);
       state.needsRebuild = true;
       state.statusMessage = `Added ${newFeature.name}`;
     }),
@@ -526,6 +557,7 @@ export const useCADStore = create<CADStore>()(
       if (!feature) return;
       get()._captureUndoSnapshot(state, `Update ${feature.name}`);
       Object.assign(feature, updates);
+      applyEquations(state);
       state.needsRebuild = true;
       state.statusMessage = `Updated ${feature.name}`;
     }),
@@ -906,6 +938,14 @@ export const useCADStore = create<CADStore>()(
         : 'Exploded view collapsed';
     }),
 
+    setVariables: (variables) => set(state => {
+      get()._captureUndoSnapshot(state, 'Edit Equations');
+      state.variables = variables.map(v => ({ name: v.name, expression: v.expression }));
+      applyEquations(state);
+      state.isModified = true;
+      state.statusMessage = `Equations updated (${variables.length} variable${variables.length === 1 ? '' : 's'})`;
+    }),
+
     setDrawingOptions: (options) => set(state => {
       Object.assign(state.drawingOptions, options);
     }),
@@ -935,6 +975,7 @@ export const useCADStore = create<CADStore>()(
         sketchDimensions: state.sketchDimensions,
         rollbackIndex: state.rollbackIndex,
         activeMaterial: state.activeMaterial,
+        ...(state.variables.length ? { variables: state.variables } : {}),
         settings: state.settings,
         assemblyComponents,
         mates: state.mates,
@@ -965,6 +1006,10 @@ export const useCADStore = create<CADStore>()(
         state.rollbackIndex = Number.isInteger(project.rollbackIndex) ? project.rollbackIndex! : features.length - 1;
         state.activeMaterial = project.activeMaterial || 'Steel_1020';
         state.settings = { ...DEFAULT_SETTINGS, ...(project.settings || {}) };
+        state.variables = Array.isArray(project.variables)
+          ? project.variables.filter(v => v && typeof v.name === 'string' && typeof v.expression === 'string').map(v => ({ name: v.name, expression: v.expression }))
+          : [];
+        applyEquations(state);
 
         // Restore assembly components
         const components = Array.isArray(project.assemblyComponents) ? project.assemblyComponents as SerializedComponent[] : [];

@@ -500,7 +500,7 @@ npm run dev</pre></div>
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 7 · about 15 min</span></div>
   <h2 class="title">Editing history: the feature tree</h2>
   <p class="lead">This is what makes CasiWorks <i>parametric</i>. Every feature remembers its settings, so you can change one and the rest of the part rebuilds to match.</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Edit a feature's settings after it is built</li><li>Roll back history to insert or inspect features</li><li>Suppress features and read rebuild warnings</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Edit a feature's settings after it is built</li><li>Roll back history to insert or inspect features</li><li>Suppress features and read rebuild warnings</li><li>Drive sizes from named variables with equations</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 7.1</span><h4>Make the L-bracket's upright taller</h4><div class="specs"><span>Mounting L-Bracket</span><span>Aluminium 6061</span><span>7 features</span></div></div>
     <div class="example-body">
@@ -523,6 +523,32 @@ npm run dev</pre></div>
     <div class="card"><b>⚠ Warnings</b><p>A feature that cannot be built shows ⚠ and is skipped. The rest of the part still builds.</p></div>
     <div class="card"><b>Filter</b><p>Type in <i>Filter tree items…</i> to find a feature by name in a long history.</p></div>
   </div>
+  <h3>Equations: name a size once, use it everywhere</h3>
+  <p>A <b>global variable</b> is a name with a value, such as <code>wall = 4</code>. A feature size can be an expression that uses it, such as <code>wall * 3</code>. Change the variable and every size that uses it updates.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 7.2</span><h4>A plate whose thickness follows the wall</h4><div class="specs"><span>wall = 4</span><span>plate = wall * 3</span><span>Extrude depth = plate</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>On the <b>Tools</b> tab, click <b>Equations</b>. Click <b>Add variable</b> twice. Name the first <code>wall</code> with expression <code>4</code>, and the second <code>plate</code> with expression <code>wall * 3</code>. The <b>Value</b> column shows 4 and 12. Click <b>Apply</b>.</li>
+        <li>Sketch a 60 × 40 rectangle and start an <b>Extrude</b>. In <b>Extrude Depth</b>, type <code>plate</code> (or <code>=plate</code>) and press <kbd>Enter</kbd>. The field shows 12 with a purple <b>ƒ</b>: it is linked. Click <b>OK</b>.</li>
+        <li>Open <b>Equations</b> again and change <code>wall</code> to <code>5</code>. Below the table, <b>Linked feature sizes</b> lists the extrude's depth. Click <b>Apply</b>: the plate rebuilds 15 mm thick.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/19b-linked-field.webp" alt="Extrude depth linked to an expression"><figcaption>The depth is linked: ƒ, with the expression in the tooltip.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/19c-equations.webp" alt="Equations dialog"><figcaption>The Equations dialog: variables, values and the sizes they drive.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>You can use</th><th>Examples</th></tr>
+    <tr><td>Numbers and variables</td><td><code>12.5</code>, <code>wall</code>, <code>1.5e2</code></td></tr>
+    <tr><td>Operators, in the usual order</td><td><code>+ - * / ^</code> and brackets: <code>(width - 2 * wall) / 2</code></td></tr>
+    <tr><td>Functions (angles in degrees)</td><td><code>sqrt</code> <code>abs</code> <code>round</code> <code>floor</code> <code>ceil</code> <code>sin</code> <code>cos</code> <code>tan</code> <code>min</code> <code>max</code>, and the constant <code>pi</code></td></tr>
+  </table></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Linked or not</b><p>A field linked to an expression shows <b>ƒ</b>, and clicking into it shows the expression. Type a plain number, or use the arrows, to unlink it. Arithmetic without variables, such as <code>25 * 2</code>, is just worked out once. Counts are rounded to whole numbers. Variables are saved with the project, and undo covers them.</p></div></div>
+  <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// The same from the scripting console (chapter 15)</span>
+casiworks.commands.execute(<span class="tok-s">'equations.set'</span>, { variables: [{ name: <span class="tok-s">'wall'</span>, expression: <span class="tok-s">'5'</span> }, { name: <span class="tok-s">'plate'</span>, expression: <span class="tok-s">'wall * 3'</span> }] });
+casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span class="tok-c">// values and linked sizes</span></pre></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Pro habit</b><p>Rename features after what they do ("Mounting Holes", not "Cut-Extrude1"). Six months later you will be glad you did, and so will your colleagues.</p></div></div>
   <div class="exercise"><b>Exercise 7.</b> In the L-bracket, roll back to just after <i>Boss-Extrude1</i> and change the base plate thickness. Roll forward and check that the holes are still in the right place.<label><input type="checkbox" data-done="ch7"> I've done this</label></div>
 </section>
@@ -926,6 +952,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Term</th><th>Meaning</th></tr>
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
+    <tr><td>Global variable</td><td>A named value, such as <code>wall = 4</code>, that feature sizes can use in expressions (Tools ▸ Equations).</td></tr>
     <tr><td>Feature</td><td>One modelling step, such as an extrude, cut, revolve, hole or pattern.</td></tr>
     <tr><td>Parametric</td><td>Features keep their settings, so changing one rebuilds everything after it.</td></tr>
     <tr><td>Rollback</td><td>Temporarily turning off every feature after a point in the history.</td></tr>
