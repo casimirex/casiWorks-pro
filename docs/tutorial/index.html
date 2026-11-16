@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CasiWorks Pro Handbook</title>
+<meta name="description" content="A hands-on tutorial e-book for CasiWorks Pro: from your first sketch to assemblies, drawings, FEA, macros, scripting and add-ins.">
+<style>
+:root {
+  --bg: #f7f8fa; --surface: #ffffff; --surface-2: #eef1f5; --text: #1b2430; --muted: #5b6676;
+  --border: #dde2e9; --accent: #0b7bc4; --accent-soft: #e3f1fb; --code-bg: #0f172a; --code-text: #e2e8f0;
+  --novice: #15803d; --intermediate: #b45309; --advanced: #7c3aed; --pro: #be123c;
+  --tip: #0b7bc4; --warn: #b45309; --check: #15803d;
+  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+  --radius: 12px; --sidebar: 300px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --surface: #151b23; --surface-2: #1c2430; --text: #e6edf3; --muted: #9aa7b5;
+    --border: #2a3441; --accent: #4fb3f6; --accent-soft: #10273a; --code-bg: #0a0f17;
+    --novice: #4ade80; --intermediate: #fbbf24; --advanced: #a78bfa; --pro: #fb7185;
+    --tip: #4fb3f6; --warn: #fbbf24; --check: #4ade80; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1117; --surface: #151b23; --surface-2: #1c2430; --text: #e6edf3; --muted: #9aa7b5;
+  --border: #2a3441; --accent: #4fb3f6; --accent-soft: #10273a; --code-bg: #0a0f17;
+  --novice: #4ade80; --intermediate: #fbbf24; --advanced: #a78bfa; --pro: #fb7185;
+  --tip: #4fb3f6; --warn: #fbbf24; --check: #4ade80; --shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+a { color: var(--accent); }
+code, kbd, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+code { font-size: .88em; background: var(--surface-2); padding: .1em .35em; border-radius: 5px; overflow-wrap: anywhere; }
+kbd { font-size: .8em; background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: .1em .45em; white-space: nowrap; }
+img { max-width: 100%; }
+
+/* ---------- top bar ---------- */
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.topbar .brand { font-weight: 700; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .brand span { color: var(--accent); }
+.topbar .spacer { flex: 1; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 40px; height: 40px; padding: 0 10px; border-radius: 10px;
+  background: transparent; color: var(--text); border: 1px solid var(--border); cursor: pointer; font: inherit; font-size: 14px; }
+.icon-btn:hover { background: var(--surface-2); }
+.menu-btn { display: none; }
+.progress { position: absolute; left: 0; bottom: -1px; height: 3px; width: 0; background: var(--accent); transition: width .1s linear; }
+
+/* ---------- layout ---------- */
+.layout { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); }
+.sidebar { position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto; padding: 18px 14px 40px; border-right: 1px solid var(--border); background: var(--surface); }
+.search { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 14px; margin-bottom: 14px; }
+.toc-part { margin: 16px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.toc-part::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.toc-part.novice { color: var(--novice); } .toc-part.intermediate { color: var(--intermediate); } .toc-part.advanced { color: var(--advanced); } .toc-part.pro { color: var(--pro); } .toc-part.ref { color: var(--muted); }
+.toc a { display: flex; gap: 8px; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; line-height: 1.35; }
+.toc a:hover { background: var(--surface-2); }
+.toc a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.toc a .n { color: var(--muted); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.toc a.done .n::after { content: " ✓"; color: var(--check); }
+main { min-width: 0; padding: 0 16px 80px; }
+.content { max-width: 860px; margin: 0 auto; }
+
+/* ---------- cover ---------- */
+.cover { margin: 28px auto 8px; max-width: 1100px; border-radius: 20px; overflow: hidden; position: relative; background: #0b1220; color: #fff; box-shadow: var(--shadow); }
+.cover img { display: block; width: 100%; aspect-ratio: 16/8; object-fit: cover; object-position: center 40%; opacity: .55; }
+.cover .inner { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: clamp(18px, 4vw, 48px);
+  background: linear-gradient(90deg, rgba(11,18,32,.94) 0%, rgba(11,18,32,.8) 45%, rgba(11,18,32,.25) 100%), linear-gradient(180deg, rgba(11,18,32,0) 40%, rgba(11,18,32,.85) 100%); }
+.cover .eyebrow { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #7dd3fc; font-weight: 700; }
+.cover h1 { margin: 6px 0 8px; font-size: clamp(28px, 5.4vw, 56px); line-height: 1.05; letter-spacing: -.02em; }
+.cover p { margin: 0; max-width: 640px; color: #cbd5e1; font-size: clamp(14px, 1.8vw, 18px); }
+.levels { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.levels span { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); }
+
+/* ---------- chapters ---------- */
+section.chapter { padding-top: 40px; border-bottom: 1px solid var(--border); padding-bottom: 36px; }
+.part-banner { margin-top: 48px; padding: 22px 24px; border-radius: var(--radius); color: #fff; }
+.part-banner small { display: block; opacity: .85; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
+.part-banner h2 { margin: 4px 0 6px; font-size: clamp(22px, 3.4vw, 30px); }
+.part-banner p { margin: 0; opacity: .92; }
+.part-banner.novice { background: linear-gradient(135deg, #166534, #15803d); }
+.part-banner.intermediate { background: linear-gradient(135deg, #92400e, #c2680c); }
+.part-banner.advanced { background: linear-gradient(135deg, #5b21b6, #7c3aed); }
+.part-banner.pro { background: linear-gradient(135deg, #9f1239, #e11d48); }
+.part-banner.ref { background: linear-gradient(135deg, #1e293b, #334155); }
+.chapter-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 4px; }
+.badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.novice { color: var(--novice); } .badge.intermediate { color: var(--intermediate); } .badge.advanced { color: var(--advanced); } .badge.pro { color: var(--pro); }
+.meta { color: var(--muted); font-size: 14px; }
+h2.title { font-size: clamp(24px, 3.6vw, 34px); line-height: 1.15; margin: 6px 0 12px; letter-spacing: -.01em; }
+h3 { font-size: 20px; margin: 30px 0 8px; }
+.lead { font-size: 18px; color: var(--muted); }
+
+.objectives { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 18px 0; box-shadow: var(--shadow); }
+.objectives strong { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+.objectives ul { margin: 0; padding-left: 20px; }
+
+/* example card: the "project" frame each worked example sits in */
+.example { margin: 24px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+.example-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 18px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.example-head .tag { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.example-head h4 { margin: 0; font-size: 17px; flex: 1 1 220px; }
+.specs { display: flex; flex-wrap: wrap; gap: 6px; }
+.specs span { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.example-body { padding: 6px 18px 18px; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 20px; align-items: start; }
+.split.single { grid-template-columns: minmax(0, 1fr); }
+
+ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 14px 0; }
+ol.steps > li { counter-increment: step; position: relative; padding: 2px 0 12px 42px; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; }
+ol.steps > li:not(:last-child)::after { content: ""; position: absolute; left: 13.5px; top: 30px; bottom: 2px; width: 1px; background: var(--border); }
+
+figure { margin: 16px 0; }
+figure.shot { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #0b0f14; cursor: zoom-in; }
+figure.shot img { display: block; width: 100%; height: auto; aspect-ratio: 1440/900; }
+figure figcaption { padding: 8px 12px; font-size: 13px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); }
+.gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.gallery figure { margin: 0; }
+
+.callout { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 14px 16px; margin: 16px 0; border-radius: 10px; border: 1px solid var(--border); border-left: 4px solid var(--tip); background: var(--surface); }
+.callout .ic { font-size: 18px; line-height: 1.4; }
+.callout p { margin: 0; } .callout p + p { margin-top: 6px; }
+.callout.tip { border-left-color: var(--tip); } .callout.warn { border-left-color: var(--warn); } .callout.check { border-left-color: var(--check); }
+.callout b.label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 2px; }
+.callout.tip b.label { color: var(--tip); } .callout.warn b.label { color: var(--warn); } .callout.check b.label { color: var(--check); }
+
+.exercise { margin: 20px 0; padding: 16px 18px; border-radius: 10px; background: var(--accent-soft); border: 1px dashed var(--accent); }
+.exercise b { color: var(--accent); }
+.exercise label { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; cursor: pointer; user-select: none; }
+.exercise input { width: 18px; height: 18px; accent-color: var(--check); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+
+.code { position: relative; margin: 14px 0; }
+.code pre { margin: 0; padding: 16px; padding-top: 34px; border-radius: 10px; background: var(--code-bg); color: var(--code-text); overflow-x: auto; font-size: 13.5px; line-height: 1.55; }
+.code .lang { position: absolute; top: 8px; left: 14px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.code button { position: absolute; top: 6px; right: 6px; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; cursor: pointer; }
+.code button:hover { background: #334155; }
+.tok-c { color: #7c8aa0; } .tok-s { color: #a5d6a7; } .tok-k { color: #f9a8d4; } .tok-n { color: #fcd34d; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+.card { padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.card b { display: block; margin-bottom: 4px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+.pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 26px; }
+.pager a { flex: 1; max-width: 48%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); text-decoration: none; color: var(--text); font-size: 14px; }
+.pager a small { display: block; color: var(--muted); font-size: 12px; }
+.pager a.next { text-align: right; margin-left: auto; }
+.pager a:hover { border-color: var(--accent); }
+
+/* ---------- lightbox ---------- */
+.lightbox { position: fixed; inset: 0; z-index: 60; background: rgba(3,7,18,.92); display: none; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out; }
+.lightbox.open { display: flex; }
+.lightbox img { max-width: 100%; max-height: calc(100% - 50px); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.lightbox .cap { position: absolute; left: 16px; right: 16px; bottom: 14px; text-align: center; color: #cbd5e1; font-size: 14px; }
+.lightbox .x { position: absolute; top: 12px; right: 12px; color: #fff; border-color: #475569; }
+
+.scrim { display: none; }
+.hidden-by-search { display: none !important; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1020px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 880px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .menu-btn { display: inline-flex; }
+  .sidebar { position: fixed; z-index: 40; top: 56px; left: 0; width: min(86vw, 320px); transform: translateX(-102%); transition: transform .22s ease; box-shadow: var(--shadow); }
+  body.nav-open .sidebar { transform: none; }
+  body.nav-open .scrim { display: block; position: fixed; inset: 56px 0 0 0; z-index: 35; background: rgba(0,0,0,.35); }
+  .cover { margin: 16px 0 8px; border-radius: 14px; }
+  .cover img { aspect-ratio: 4/5; object-position: 30% 50%; }
+}
+@media (max-width: 560px) {
+  body { font-size: 15.5px; }
+  .gallery { grid-template-columns: minmax(0, 1fr); }
+  .example-body { padding: 4px 14px 14px; }
+  .example-head { padding: 12px 14px; }
+  .pager { flex-direction: column; } .pager a { max-width: none; }
+  .topbar .label { display: none; }
+}
+@media print {
+  .topbar, .sidebar, .pager, .lightbox, .code button, .exercise label { display: none !important; }
+  .layout { display: block; } body { background: #fff; color: #000; }
+  section.chapter, .part-banner { break-before: page; } figure { break-inside: avoid; }
+  .cover img { opacity: 1; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open contents" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <div class="brand">CasiWorks Pro <span>Handbook</span></div>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="themeBtn" aria-label="Switch light or dark theme" title="Light / dark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg><span class="label">Theme</span></button>
+  <div class="progress" id="progress"></div>
+</header>
+<div class="scrim" id="scrim"></div>
+
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="Contents">
+  <input class="search" id="search" type="search" placeholder="Search chapters…" aria-label="Search chapters">
+  <nav class="toc" id="toc"></nav>
+</aside>
+
+<main>
+<div class="cover">
+  <img src="img/29-fea-stress.webp" alt="CasiWorks Pro showing a stress plot on an aluminium L-bracket" fetchpriority="high">
+  <div class="inner">
+    <div class="eyebrow">The CasiWorks Pro Handbook</div>
+    <h1>From first sketch to<br>professional CAD workflows</h1>
+    <p>A hands-on course in 17 chapters. Every chapter is a worked example you build yourself, with screenshots taken from the real app.</p>
+    <div class="levels"><span>● Novice</span><span>● Intermediate</span><span>● Advanced</span><span>● Professional</span></div>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ======================================================= INTRO -->
+<section class="chapter" id="intro" data-title="How to use this book" data-part="ref" data-n="0">
+  <h2 class="title">How to use this book</h2>
+  <p class="lead">The book is split into four levels. Each one builds on the last, so work through them in order the first time. Later you can jump straight to the chapter you need.</p>
+  <div class="cards">
+    <div class="card"><b style="color:var(--novice)">Part I · Novice</b><p>The screen layout, moving the view, and your first sketch and extrude.</p></div>
+    <div class="card"><b style="color:var(--intermediate)">Part II · Intermediate</b><p>Holes, patterns, revolves, editing history, materials and mass.</p></div>
+    <div class="card"><b style="color:var(--advanced)">Part III · Advanced</b><p>Assemblies, 2D drawings, CAD export and stress analysis (FEA).</p></div>
+    <div class="card"><b style="color:var(--pro)">Part IV · Professional</b><p>Macros, the scripting console, the API, add-ins and headless automation.</p></div>
+  </div>
+  <p>Each chapter has the same parts:</p>
+  <ul>
+    <li><b>Objectives</b>: what you will be able to do by the end.</li>
+    <li><b>Worked example</b>: a card with the part you are building, its key numbers, numbered steps and screenshots. Click any screenshot to enlarge it.</li>
+    <li><b>Tips, warnings and checks</b>: blue boxes are shortcuts, amber boxes are limits you should know about, and green boxes tell you how to confirm your result.</li>
+    <li><b>Exercise</b>: a short task to try on your own. Tick it off, and the contents list marks the chapter done. Your ticks are saved in this browser.</li>
+  </ul>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Know the limits</b><p>CasiWorks Pro builds solids from triangle meshes. Some commands that need exact edges and faces (fillet, chamfer, shell) are in the ribbon but are not applied yet. Each chapter says plainly where these limits are, and <a href="#limits">Appendix B</a> lists them all.</p></div></div>
+</section>
+
+<!-- ======================================================= PART I -->
+<div class="part-banner novice" id="part1"><small>Part I</small><h2>Novice: find your way around</h2><p>Start the app, read the screen and build your first solid part.</p></div>
+
+<section class="chapter" id="ch1" data-title="Getting started & the interface" data-part="novice" data-n="1">
+  <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 1 · about 10 min</span></div>
+  <h2 class="title">Getting started and the interface</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Start CasiWorks Pro on your computer</li><li>Name the six areas of the screen</li><li>Open one of the built-in example parts</li></ul></div>
+
+  <h3>Start the app</h3>
+  <p>CasiWorks Pro runs in a web browser. From the project folder, install the packages once and start the development server:</p>
+  <div class="code"><span class="lang">Terminal</span><pre>npm install
+npm run dev</pre></div>
+  <p>Open <code>http://localhost:5173/</code> in Chrome, Edge or Firefox. The app opens with a starter part: a 60 × 40 × 25 mm block named <i>Boss-Extrude1</i>.</p>
+
+  <div class="example">
+    <div class="example-head"><span class="tag">Tour</span><h4>The CasiWorks Pro window</h4><div class="specs"><span>Starter block</span><span>Steel 1020</span><span>MMGS units</span></div></div>
+    <div class="example-body">
+      <figure class="shot"><img loading="lazy" src="img/01-interface.webp" alt="The CasiWorks Pro window with the starter block"><figcaption>The app as it first opens, with the starter block in the isometric view.</figcaption></figure>
+      <div class="table-wrap"><table>
+        <tr><th>Area</th><th>Where</th><th>What it does</th></tr>
+        <tr><td><b>Quick-access bar</b></td><td>Top row</td><td>New, Open, Save, Undo, Redo, Rebuild, the <b>Examples</b> menu, Material, Mass Props and Export.</td></tr>
+        <tr><td><b>Ribbon</b></td><td>Below the top bar</td><td>Tabs of commands: Features, Sketch, Surfaces, Sheet Metal, Assembly, Evaluate, Drawing, Tools and Add-ins. The ⌃ button at the far right folds it away.</td></tr>
+        <tr><td><b>Feature tree</b></td><td>Left</td><td>The history of your part: material, reference planes, and every sketch and feature in the order it was made. The <b>rollback bar</b> sits at the bottom.</td></tr>
+        <tr><td><b>Viewport</b></td><td>Centre</td><td>The 3D model with the Front, Top and Right planes. The <b>VIEW</b> box (top right) jumps to standard views.</td></tr>
+        <tr><td><b>FEA panel</b></td><td>Bottom right</td><td>Stress analysis setup and results (Chapter 13). Use the ⌄ button to shrink it to two small buttons.</td></tr>
+        <tr><td><b>Status bar</b></td><td>Bottom</td><td>Messages and hints on the left. Grid, Edges, Wireframe and Perspective toggles, the selection count and the unit system on the right.</td></tr>
+      </table></div>
+    </div>
+  </div>
+
+  <h3>Open an example part</h3>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 1.1</span><h4>Load the M12 hex bolt</h4><div class="specs"><span>8 examples built in</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Click <b>Examples</b> in the top bar. A list of eight parts opens: L-bracket, hex bolt, pillow block, piston, flange, U-channel, spur gear blank and connecting rod.</li>
+        <li>Click <b>Hex Bolt (M12 Fastener)</b>. The part replaces whatever was open.</li>
+        <li>Look at the feature tree. The bolt was built from two sketches and two extrudes, plus a chamfer.</li>
+      </ol>
+      <div>
+        <figure class="shot"><img loading="lazy" src="img/02-examples-menu.webp" alt="Examples menu open"><figcaption>The Examples menu.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/03-example-bolt.webp" alt="Hex bolt example loaded"><figcaption>The hex bolt with its history on the left.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">The warning triangle</b><p>The bolt's <i>Chamfer1</i> shows a ⚠ in the tree. Chamfers are not applied by the current geometry kernel, so the part is built without it. Hover the triangle to read the message. Nothing else is affected.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Loading an example replaces the open part without asking. Save first with <kbd>Ctrl</kbd>+<kbd>S</kbd> if you want to keep your work.</p></div></div>
+  <div class="exercise"><b>Exercise 1.</b> Open each of the eight examples in turn and count the features in each tree. Which example has the most?<label><input type="checkbox" data-done="ch1"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch2" data-title="Moving around the 3D view" data-part="novice" data-n="2">
+  <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 2 · about 10 min</span></div>
+  <h2 class="title">Moving around the 3D view</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Rotate, pan and zoom with the mouse</li><li>Jump to the standard views with the keyboard</li><li>Switch display modes and cut a section through the part</li></ul></div>
+
+  <h3>Mouse controls</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Action</th><th>Mouse</th><th>Touchpad</th></tr>
+    <tr><td>Rotate</td><td>Left-drag in the viewport</td><td>One-finger drag</td></tr>
+    <tr><td>Pan</td><td>Right-drag</td><td>Two-finger drag</td></tr>
+    <tr><td>Zoom</td><td>Scroll wheel</td><td>Pinch</td></tr>
+  </table></div>
+
+  <h3>Standard views</h3>
+  <div class="table-wrap"><table>
+    <tr><th>View</th><th>Keys</th><th>VIEW box</th></tr>
+    <tr><td>Front · Back · Left · Right</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd> · <kbd>2</kbd> · <kbd>3</kbd> · <kbd>4</kbd></td><td>Frnt · — · Left · Rght</td></tr>
+    <tr><td>Top · Bottom</td><td><kbd>Ctrl</kbd>+<kbd>5</kbd> · <kbd>6</kbd></td><td>Top · Btm</td></tr>
+    <tr><td>Isometric</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> or <kbd>Space</kbd></td><td>Iso</td></tr>
+  </table></div>
+
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 2.1</span><h4>Inspect the pillow block bearing</h4><div class="specs"><span>Wireframe</span><span>Section view</span><span>Front view</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open <b>Examples ▸ Pillow Block Bearing</b> and press <kbd>Space</kbd> for the isometric view.</li>
+        <li>Click <b>Wireframe</b> in the status bar. You now see every triangle edge, including hidden ones. Click it again to go back to shaded.</li>
+        <li>Open the <b>Evaluate</b> tab and click <b>Section</b> (Cross-Section Cut View). The model is cut open so you can see the bore inside. Click it again to close the cut.</li>
+        <li>Press <kbd>Ctrl</kbd>+<kbd>1</kbd> for the front view and check that the bore is centred.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/04-wireframe.webp" alt="Pillow block in wireframe"><figcaption>Wireframe display.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/05-section.webp" alt="Pillow block with a section cut"><figcaption>Section view through the housing.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/06-front-view.webp" alt="Pillow block from the front"><figcaption>Front view (<kbd>Ctrl</kbd>+<kbd>1</kbd>).</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p><b>Persp</b> in the status bar switches between perspective and orthographic projection. Engineers usually check dimensions in orthographic, where parallel edges stay parallel.</p></div></div>
+  <div class="exercise"><b>Exercise 2.</b> Open the Flanged Pressure Fitting. Use the section view and the six standard views to count its bolt holes without rotating by hand.<label><input type="checkbox" data-done="ch2"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch3" data-title="Your first part: sketch & extrude" data-part="novice" data-n="3">
+  <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 3 · about 15 min</span></div>
+  <h2 class="title">Your first part: sketch and extrude</h2>
+  <p class="lead">Almost every CAD part starts the same way. You draw a flat 2D profile (a <b>sketch</b>) on a plane, then give it thickness (an <b>extrude</b>).</p>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li></ul></div>
+
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 3.1</span><h4>A spacer block with a through hole</h4><div class="specs"><span>Front plane</span><span>Depth 20 mm</span><span>1 sketch · 1 extrude</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Click <b>New</b> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd>) to start an empty part.</li>
+        <li>Open the <b>Sketch</b> tab and click <b>Front</b> to sketch on the Front plane. The view turns to face the plane, and the status bar shows <i>Editing Sketch</i>.</li>
+        <li>Press <kbd>R</kbd> (Corner Rectangle). Click once for the first corner and again for the opposite corner.</li>
+        <li>Press <kbd>C</kbd> (Center Circle). Click the centre of the rectangle, then click again to set the radius. The status bar tells you what to click next.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/07-sketch-rectangle.webp" alt="Drawing a circle inside a rectangle"><figcaption>While drawing: the circle follows the mouse.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/08-sketch-circle.webp" alt="Finished sketch"><figcaption>The finished sketch: an outer rectangle and an inner circle.</figcaption></figure>
+      </div>
+      <ol class="steps" start="5" style="counter-reset: step 4">
+        <li>Click <b>Exit Sketch</b> (the green tick) to keep the sketch. <b>Discard</b> throws it away.</li>
+        <li>Press <kbd>Space</kbd> for the isometric view. On the <b>Features</b> tab click <b>Extrude</b>, or press <kbd>E</kbd>. The property panel opens on the right.</li>
+        <li>Check that <b>Selected Sketch Profile</b> is <i>Sketch1</i>, keep <b>Blind</b>, and type <code>20</code> in <b>Extrude Depth</b>.</li>
+        <li>Click the green <b>OK</b>. The block appears with a hole through it, because CasiWorks treats a closed loop inside another as a hole.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/09-extrude-panel.webp" alt="Extrude property panel"><figcaption>The Extrude property panel.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/10-first-part.webp" alt="Extruded spacer block"><figcaption>Your first part: a 20 mm spacer with a through hole.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <h3>Sketch tools at a glance</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Tool</th><th>Key</th><th>How to draw it</th></tr>
+    <tr><td>Line</td><td><kbd>L</kbd></td><td>Click a start point and an end point.</td></tr>
+    <tr><td>Corner Rectangle</td><td><kbd>R</kbd></td><td>Click two opposite corners.</td></tr>
+    <tr><td>Center Circle</td><td><kbd>C</kbd></td><td>Click the centre, then a point on the circle.</td></tr>
+    <tr><td>Centre Arc</td><td><kbd>A</kbd></td><td>Click the centre, the start point and the end point.</td></tr>
+    <tr><td>Polygon</td><td>—</td><td>Choose 3–64 sides in the drop-down, then click the centre and one vertex.</td></tr>
+    <tr><td>Straight Slot</td><td>—</td><td>Click the first centre, the second centre, then a point on the side to set the width.</td></tr>
+    <tr><td>Point</td><td>—</td><td>Click to place a reference point.</td></tr>
+    <tr><td>Construct</td><td>—</td><td>Toggles construction mode. Construction lines are guides and do not become solid.</td></tr>
+    <tr><td>Dimension</td><td><kbd>D</kbd></td><td>Smart dimension: click geometry to add a driving size.</td></tr>
+  </table></div>
+  <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Your tree should read <i>Sketch1</i>, <i>Extrude Boss</i>. If the extrude shows ⚠, the profile is probably not closed. Double-click the sketch in the tree, make sure the corners meet, and exit the sketch again.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p><kbd>Esc</kbd> cancels the current tool without leaving the sketch. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last entity.</p></div></div>
+  <div class="exercise"><b>Exercise 3.</b> Make a 12 mm thick hexagonal nut blank. Use a 6-sided polygon with a circle inside it. Then try <b>Mid Plane</b>, which grows the extrude equally on both sides of the plane.<label><input type="checkbox" data-done="ch3"> I've done this</label></div>
+</section>
+
+<!-- ======================================================= PART II -->
+<div class="part-banner intermediate" id="part2"><small>Part II</small><h2>Intermediate: build real parts</h2><p>Add holes and patterns, use revolves, and change a design after it is built.</p></div>
+
+<section class="chapter" id="ch4" data-title="Holes & cuts" data-part="intermediate" data-n="4">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 4 · about 10 min</span></div>
+  <h2 class="title">Holes and cuts</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Drill a hole with the Hole Wizard</li><li>Pick a hole type, a diameter, a depth and a drill direction</li><li>Remove material with Extrude Cut</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 4.1</span><h4>Mounting plate with a Ø12 drilled hole</h4><div class="specs"><span>80 × 50 × 20 mm</span><span>Ø12 × 20 deep</span><span>Simple (drilled)</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Build an 80 × 50 mm rectangle on the Front plane and extrude it 20 mm, as in Chapter 3.</li>
+        <li>On the <b>Features</b> tab click <b>Hole</b>. The Hole property panel opens.</li>
+        <li>Set <b>Diameter</b> to <code>12</code> and <b>Hole Depth</b> to <code>20</code>. Leave <b>Hole Type</b> on <i>Simple (drilled)</i>. <i>Counterbore</i> and <i>Countersink</i> are the other choices.</li>
+        <li>Under <b>Hole Position</b>, enter where the hole starts and the drill direction (for example <code>+Z</code> into the front face).</li>
+        <li>Click <b>OK</b>. A <i>Hole</i> feature is added to the tree.</li>
+      </ol>
+      <div>
+        <figure class="shot"><img loading="lazy" src="img/11-hole-panel.webp" alt="Hole wizard panel"><figcaption>Hole Wizard settings.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/12-hole-result.webp" alt="Plate with a drilled hole"><figcaption>The drilled plate.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <h3>Extrude Cut</h3>
+  <p><b>Extrude Cut</b> works like Extrude but removes material. Sketch the shape of the pocket or opening, then pick the cut depth. <b>Through All</b> cuts right through the part however thick it is, which is the safe choice for holes that must always go through.</p>
+  <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Open <b>Mass Props</b> before and after the hole. The volume should drop by about π × 6² × 20 ≈ 2,262 mm³. It drops a little less, because a hole is drawn as a 32-sided polygon.</p></div></div>
+  <div class="exercise"><b>Exercise 4.</b> Add a counterbored hole to the same plate. Then draw a 30 × 10 mm slot and cut it <b>Through All</b>.<label><input type="checkbox" data-done="ch4"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch5" data-title="Patterns & mirror" data-part="intermediate" data-n="5">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 5 · about 10 min</span></div>
+  <h2 class="title">Patterns and mirror</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Repeat a feature in a row with Linear Pattern</li><li>Repeat it around an axis with Circular Pattern</li><li>Copy features across a plane with Mirror</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 5.1</span><h4>Peg rail: four pegs, 30 mm apart</h4><div class="specs"><span>Rail 120 × 40 × 8</span><span>Peg Ø12 × 20</span><span>4 instances</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Make the rail: a 120 × 40 mm rectangle extruded 8 mm.</li>
+        <li>Sketch a Ø12 circle near the left end (centre at x = −45) and extrude it 20 mm. This is the peg.</li>
+        <li>Click <b>Lin Pattern</b>. Set <b>Direction</b> to <code>+X</code>, <b>Instances</b> to <code>4</code> and <b>Spacing</b> to <code>30</code> mm.</li>
+        <li>Click <b>OK</b>. Four pegs now stand on the rail. Change the original peg, and every copy changes with it.</li>
+      </ol>
+      <div>
+        <figure class="shot"><img loading="lazy" src="img/15-pattern-panel.webp" alt="Linear pattern panel"><figcaption>Linear Pattern settings.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/16-pattern-result.webp" alt="Rail with four pegs"><figcaption>The patterned rail.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Command</th><th>Settings</th><th>Typical use</th></tr>
+    <tr><td>Lin Pattern</td><td>Direction, Instances, Spacing</td><td>Rows of holes, ribs, teeth on a rack</td></tr>
+    <tr><td>Cir Pattern</td><td>Instances, Total Angle</td><td>Bolt circles on flanges, spokes, gear features</td></tr>
+    <tr><td>Mirror</td><td>Mirror Plane (Front, Top or Right)</td><td>Symmetric parts: model half, then mirror</td></tr>
+  </table></div>
+  <div class="exercise"><b>Exercise 5.</b> On a Ø100 × 10 disc, put one Ø8 hole 40 mm from the centre. Use <b>Cir Pattern</b> to make 6 holes over 360°.<label><input type="checkbox" data-done="ch5"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch6" data-title="Revolve, sweep & loft" data-part="intermediate" data-n="6">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 6 · about 10 min</span></div>
+  <h2 class="title">Revolve, sweep and loft</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Spin a profile around an axis to make round parts</li><li>Know when to use sweep and loft instead</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 6.1</span><h4>Study the engine piston</h4><div class="specs"><span>Aluminium 7075</span><span>Revolve + cut</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Open <b>Examples ▸ Engine Piston Head</b>.</li>
+        <li>Double-click <i>Sketch1 (Piston Profile)</i>. The profile is a half cross-section with the ring grooves drawn in. A revolve sweeps it 360° to make the whole body.</li>
+        <li>Exit the sketch and double-click <i>Revolve-Boss1</i> to see its <b>Angle</b>. Try 270° to cut the piston open, then put it back to 360°.</li>
+        <li><i>Cut-Extrude1 (Pin Bore)</i> then cuts the wrist-pin hole across the body.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/17-revolve-piston.webp" alt="Revolved piston"><figcaption>The piston: one revolve and one cut.</figcaption></figure>
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card"><b>Revolve</b><p>Round parts: shafts, pulleys, pistons, bottles. Draw half the cross-section.</p></div>
+    <div class="card"><b>Sweep</b><p>A profile moved along a path: pipes, handles, springs.</p></div>
+    <div class="card"><b>Loft</b><p>A smooth blend between two or more profiles: ducts, transitions, hulls.</p></div>
+  </div>
+  <div class="exercise"><b>Exercise 6.</b> Make a stepped shaft: Ø20 for 40 mm, then Ø12 for 30 mm. Draw half the outline in one sketch and revolve it.<label><input type="checkbox" data-done="ch6"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch7" data-title="Editing history: the feature tree" data-part="intermediate" data-n="7">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 7 · about 15 min</span></div>
+  <h2 class="title">Editing history: the feature tree</h2>
+  <p class="lead">This is what makes CasiWorks <i>parametric</i>. Every feature remembers its settings, so you can change one and the rest of the part rebuilds to match.</p>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Edit a feature's settings after it is built</li><li>Roll back history to insert or inspect features</li><li>Suppress features and read rebuild warnings</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 7.1</span><h4>Make the L-bracket's upright taller</h4><div class="specs"><span>Mounting L-Bracket</span><span>Aluminium 6061</span><span>7 features</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open <b>Examples ▸ Mounting L-Bracket</b>.</li>
+        <li>Double-click <i>Boss-Extrude2 (Upright)</i> in the tree. Its property panel opens with the current depth of 55 mm.</li>
+        <li>Change the depth and click <b>OK</b>. The holes and later features rebuild on the new shape.</li>
+        <li>Drag the yellow <b>rollback bar</b> handle up, to just below <i>Boss-Extrude2</i>. The later features turn grey and stop counting. This is how you add a feature in the middle of the history.</li>
+        <li>Drag the bar back to the end, or step it down with the arrow buttons beside it, to turn everything back on.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/19-edit-feature.webp" alt="Editing the upright extrude"><figcaption>Editing <i>Boss-Extrude2</i>: depth 55 mm.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/18-rollback.webp" alt="Rolled back feature tree"><figcaption>Rolled back: the holes and the fillet are greyed out.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card"><b>Suppress</b><p>Turns a feature off without deleting it. Its children are suppressed too, and unsuppressing a child brings its parents back.</p></div>
+    <div class="card"><b>Rebuild (F5)</b><p>Rebuilds the whole tree. Normally this happens on its own after every change.</p></div>
+    <div class="card"><b>⚠ Warnings</b><p>A feature that cannot be built shows ⚠ and is skipped. The rest of the part still builds.</p></div>
+    <div class="card"><b>Filter</b><p>Type in <i>Filter tree items…</i> to find a feature by name in a long history.</p></div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Pro habit</b><p>Rename features after what they do ("Mounting Holes", not "Cut-Extrude1"). Six months later you will be glad you did, and so will your colleagues.</p></div></div>
+  <div class="exercise"><b>Exercise 7.</b> In the L-bracket, roll back to just after <i>Boss-Extrude1</i> and change the base plate thickness. Roll forward and check that the holes are still in the right place.<label><input type="checkbox" data-done="ch7"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch8" data-title="Materials & mass properties" data-part="intermediate" data-n="8">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 8 · about 10 min</span></div>
+  <h2 class="title">Materials and mass properties</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Give a part a material from the library</li><li>Read its mass, volume, surface area, centre of mass and inertia</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 8.1</span><h4>Weigh the L-bracket in aluminium</h4><div class="specs"><span>Al 6061-T6</span><span>2700 kg/m³</span><span>141.37 g</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>With the L-bracket open, click <b>Material</b> in the top bar (or the <i>Material</i> line in the tree).</li>
+        <li>Pick a material on the left. The right side shows its density, elastic modulus, Poisson's ratio and yield strength. Click <b>Apply Material</b>.</li>
+        <li>Click <b>Mass Props</b>. You get mass, volume, surface area, the centre of mass, and the moments of inertia about the centre of mass.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/20-material.webp" alt="Material selection dialog"><figcaption>The material library.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/21-mass-properties.webp" alt="Mass properties dialog"><figcaption>Mass properties of the bracket.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Material</th><th>Typical use</th></tr>
+    <tr><td>AISI 1020 Steel</td><td>General machined parts (the default for new parts)</td></tr>
+    <tr><td>304 Stainless Steel</td><td>Corrosion-resistant parts, food and medical</td></tr>
+    <tr><td>AISI 4140 Steel</td><td>High-strength shafts and gears</td></tr>
+    <tr><td>Aluminium 6061-T6 · 7075-T6</td><td>Light brackets and housings · aerospace and high-stress parts</td></tr>
+    <tr><td>Titanium Ti-6Al-4V</td><td>Very high strength-to-weight ratio</td></tr>
+  </table></div>
+  <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Swap the bracket to Titanium Ti-6Al-4V. The volume stays at 52.36 cm³ but the mass goes up, because titanium is denser than aluminium.</p></div></div>
+  <div class="exercise"><b>Exercise 8.</b> Find the lightest material in the library that still has a yield strength above 250 MPa. What does the bracket weigh in it?<label><input type="checkbox" data-done="ch8"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch9" data-title="Fillet, chamfer & shell" data-part="intermediate" data-n="9">
+  <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 9 · about 5 min</span></div>
+  <h2 class="title">Fillet, chamfer and shell</h2>
+  <p>The <b>Finishing</b> group on the Features tab has <b>Fillet</b> (round edges), <b>Chamfer</b> (bevel edges) and <b>Shell</b> (hollow out a solid with a set wall thickness). You can add them and set their values, and they are saved in the history.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 9.1</span><h4>Add a 4 mm fillet and read the warning</h4><div class="specs"><span>Radius 4 mm</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Click <b>Fillet</b>, set <b>Radius</b> to <code>4</code> and click <b>OK</b>.</li>
+        <li>The tree gets a <i>Fillet</i> entry with ⚠. Hover it to read the message: <i>Fillet not applied: rounding edges needs the exact geometry kernel</i>.</li>
+        <li>The part is built without the fillet. Your setting is kept, so it will take effect once the kernel supports it.</li>
+      </ol>
+      <div>
+        <figure class="shot"><img loading="lazy" src="img/13-fillet-panel.webp" alt="Fillet panel"><figcaption>Fillet settings.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/14-fillet-result.webp" alt="Fillet in tree with warning"><figcaption>The fillet is in the tree with a warning.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>Fillet, chamfer and shell need real edges and faces, and the triangle-mesh kernel does not have them yet. Until it does, round corners in the sketch with a <b>Centre Arc</b>, and hollow a part by sketching the inner outline and using <b>Extrude Cut</b>.</p></div></div>
+  <div class="exercise"><b>Exercise 9.</b> Draw a 60 × 40 rectangle with 5 mm rounded corners using four lines and four centre arcs, then extrude it. This is the sketch-level fillet that works today.<label><input type="checkbox" data-done="ch9"> I've done this</label></div>
+</section>
+
+<!-- ======================================================= PART III -->
+<div class="part-banner advanced" id="part3"><small>Part III</small><h2>Advanced: engineering deliverables</h2><p>Put parts together, make drawings for the shop floor, exchange files and check strength.</p></div>
+
+<section class="chapter" id="ch10" data-title="Assemblies & mates" data-part="advanced" data-n="10">
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 10 · about 15 min</span></div>
+  <h2 class="title">Assemblies and mates</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 10.1</span><h4>Pin a shaft into a base plate</h4><div class="specs"><span>Base plate 50 × 12 × 50</span><span>Alignment pin</span><span>Concentric mate</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Start a new part and open the <b>Assembly</b> tab.</li>
+        <li>Under <b>Components</b>, click <b>Plate</b> and then <b>Pin</b>. Both are inserted at their default positions, so the pin stands beside the plate.</li>
+        <li>Under <b>Mates</b>, click <b>Concentric</b>. The pin's axis is lined up with the plate's centre, and the pin moves onto the plate.</li>
+        <li>Click <b>Solve</b> (Actions) to solve all the mates together. The status bar shows the leftover error, for example <i>residual 0.00000</i>.</li>
+        <li>Click <b>Explode</b> to open the Exploded View settings: <b>Explode Distance</b> and <b>Leader Lines</b>. See the warning below before you rely on it.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/22-assembly-insert.webp" alt="Plate and pin inserted"><figcaption>Step 2: two components, not yet mated.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/23-assembly-mate.webp" alt="Pin mated concentric"><figcaption>Step 3: after the concentric mate.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/24-assembly-solved.webp" alt="Assembly solved"><figcaption>Step 4: solved, with a residual of zero.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/25-exploded.webp" alt="Exploded view settings"><figcaption>Step 5: the Exploded View settings.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Mate</th><th>What it holds</th></tr>
+    <tr><td>Coincident</td><td>Two faces touch, for example top to bottom.</td></tr>
+    <tr><td>Distance</td><td>Two faces stay a set gap apart (15 mm from the ribbon button).</td></tr>
+    <tr><td>Concentric</td><td>Two cylinders share an axis.</td></tr>
+    <tr><td>Parallel · Perpendicular</td><td>Face normals are parallel, or at 90°.</td></tr>
+    <tr><td>Tangent</td><td>A cylinder rests against a flat face.</td></tr>
+    <tr><td>Width</td><td>A component is centred between two boundary faces.</td></tr>
+    <tr><td>Path</td><td>A component is held on a guide curve.</td></tr>
+  </table></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>In the Exploded View panel, <b>OK</b> only solves the mates again. The parts are not moved apart yet, and the distance you set is not used.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Add the fewest mates that fix the position. Extra mates that fight each other leave a residual above zero after <b>Solve</b>, and that number tells you something is over-constrained. <b>Clear</b> removes all components and mates.</p></div></div>
+  <div class="exercise"><b>Exercise 10.</b> Insert a Flange and a Cylinder rod. Make them concentric, then add a Distance mate so the rod sits 15 mm above the flange.<label><input type="checkbox" data-done="ch10"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch11" data-title="2D engineering drawings" data-part="advanced" data-n="11">
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 11 · about 10 min</span></div>
+  <h2 class="title">2D engineering drawings</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as SVG or DXF</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 11.1</span><h4>A drawing sheet for the L-bracket</h4><div class="specs"><span>A4 landscape</span><span>Front · Top · Right · Iso</span><span>Title block</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open the L-bracket and click the green <b>2D Dwg</b> button on the FEA panel. When the panel is folded, the button is called <b>2D Drawing</b>.</li>
+        <li>The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date.</li>
+        <li>Use the buttons at the top to switch <b>Hidden Lines (HLR)</b>, <b>Dimensions</b> and <b>GD&amp;T</b> on and off, and to choose the sheet size.</li>
+        <li>Click <b>Export SVG</b> for a sheet you can print or put in a document, or <b>Export DXF</b> to open it in AutoCAD or another 2D CAD program.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/26-drawing.webp" alt="Drawing sheet of the L-bracket"><figcaption>The drawing sheet, with dimensions, a datum and a feature control frame.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>The sheet is generated for you. The extra forms on the Drawing tab (projected, section and isometric views, the dimension and GD&amp;T editors) do not change the sheet yet. Use the toggles on the sheet itself.</p></div></div>
+  <div class="exercise"><b>Exercise 11.</b> Make drawing sheets for the Hex Bolt and the Spur Gear Blank, and export both as SVG.<label><input type="checkbox" data-done="ch11"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch12" data-title="Saving, import & export" data-part="advanced" data-n="12">
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 12 · about 10 min</span></div>
+  <h2 class="title">Saving, importing and exporting</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Save and reopen your projects</li><li>Choose the right export format for 3D printing, machining or another CAD program</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 12.1</span><h4>Send the bracket to a 3D printer and to a supplier</h4><div class="specs"><span>STL for printing</span><span>STEP for CAD</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to download the project file. This keeps the full feature history. Reopen it with <kbd>Ctrl</kbd>+<kbd>O</kbd>.</li>
+        <li>Click <b>Export</b> in the top bar.</li>
+        <li>Pick <b>STL (Binary)</b> and click <b>Export File</b> to get a file for your slicer.</li>
+        <li>Export again as <b>STEP AP214</b> for a supplier who uses another CAD program.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/27-export.webp" alt="Export dialog"><figcaption>The Export dialog.</figcaption></figure>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Format</th><th>Best for</th><th>Notes</th></tr>
+    <tr><td>Project (Save)</td><td>Your own work</td><td>The only format that keeps the editable history.</td></tr>
+    <tr><td>STL binary / ASCII</td><td>3D printing</td><td>Triangles only. Binary files are smaller.</td></tr>
+    <tr><td>STEP AP214</td><td>Other CAD programs</td><td>A faceted solid (flat triangle faces), not exact curves.</td></tr>
+    <tr><td>IGES 5.3</td><td>Older CAD and CAM programs</td><td>Faceted manifold solid.</td></tr>
+    <tr><td>OBJ</td><td>Rendering and animation</td><td>Mesh with normals.</td></tr>
+    <tr><td>DXF R12</td><td>AutoCAD and laser cutting</td><td>The model as 3DFACE entities. For a 2D sheet, export from the drawing instead.</td></tr>
+  </table></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Know what you send</b><p>STEP and IGES files from CasiWorks are made of flat triangles. A machinist cannot pick a true cylinder from them. For machined parts, send the 2D drawing as well.</p></div></div>
+  <div class="exercise"><b>Exercise 12.</b> Export the Pillow Block in all six formats and compare the file sizes. Which is smallest?<label><input type="checkbox" data-done="ch12"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch13" data-title="Stress analysis (FEA)" data-part="advanced" data-n="13">
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 13 · about 20 min</span></div>
+  <h2 class="title">Stress analysis (FEA)</h2>
+  <p class="lead">Finite element analysis (FEA) predicts how much a part bends and how hard it is stressed under a load, before you make it.</p>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Set up a static study: mesh, fixed face, load face, direction and force</li><li>Solve it and read von Mises stress, deflection and the safety factor</li><li>Show the stress and the deformed shape on the model</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 13.1</span><h4>Is the L-bracket strong enough for 5 kN?</h4><div class="specs"><span>Al 6061-T6</span><span>Tet10 · ~5,000 elements</span><span>5000 N, −Y</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open the L-bracket. If the FEA panel is folded, click <b>3D FEA Stress</b> at the bottom right to open it.</li>
+        <li>Choose the <b>Mesh Element</b>. Use <i>Tet10 (Quadratic)</i> for results you will rely on. <i>Tet4</i> is a quick preview that reads low on bending.</li>
+        <li>Choose the <b>Mesh Size</b>: Coarse (~1,500), Medium (~5,000) or Fine (~15,000 elements).</li>
+        <li>Set <b>Fixed Face</b> to <i>Back (−Z)</i>, <b>Load On</b> to <i>Front (+Z)</i>, <b>Load Direction</b> to <i>−Y</i>, and <b>Applied Force</b> to <code>5000</code> N. The fixed face turns green on the model and red arrows show the load.</li>
+        <li>Click <b>Solve</b>. The solver runs in the background with a progress bar, and <b>Cancel</b> stops it.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/28-fea-setup.webp" alt="FEA setup with load arrows"><figcaption>Study setup: the load arrows on the chosen face.</figcaption></figure>
+      <ol class="steps" start="6" style="counter-reset: step 5">
+        <li>Read the results: <b>Mesh</b> 5,040 elements covering 98% of the part's volume, <b>Max von Mises</b> 99.1 MPa, <b>Max Deflection</b> 93.7 µm, <b>Safety Factor</b> 2.79.</li>
+        <li>With <b>Show on model</b> ticked, the part is coloured by stress, from blue (low) to red (high).</li>
+        <li>Switch the plot to <b>Displacement</b> and tick <b>Deformed</b>. The bend is scaled up (here ×104) so you can see it.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/29-fea-stress.webp" alt="von Mises stress plot"><figcaption>von Mises stress plot.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/30-fea-deformed.webp" alt="Displacement plot deformed"><figcaption>Displacement on the deformed shape.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <h3>Reading the numbers like an engineer</h3>
+  <div class="cards">
+    <div class="card"><b>Safety factor</b><p>Yield strength ÷ peak stress: 276 ÷ 99.1 ≈ 2.79. Most machine parts aim for 1.5–3, so this bracket passes with margin.</p></div>
+    <div class="card"><b>Mesh coverage</b><p>Should be close to 100%. A low figure means the mesh missed thin walls, so try a finer mesh.</p></div>
+    <div class="card"><b>Convergence</b><p>Solve on Medium, then on Fine. If the peak stress changes by less than about 5%, the answer is settled.</p></div>
+    <div class="card"><b>Out of date</b><p>If you change the part, its material or the load after solving, the results grey out until you solve again.</p></div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limits</b><p>Fixed and loaded faces are the six sides of the part's bounding box. You cannot pick a single hole face yet. The study is linear static: small deflections, no contact. Sharp inside corners give stress peaks that are higher than reality, and a real fillet would lower them.</p></div></div>
+  <div class="exercise"><b>Exercise 13.</b> Solve the bracket again in AISI 1020 Steel and in Titanium Ti-6Al-4V. Make a table of mass, deflection and safety factor for all three materials. Which would you choose for a weight-critical drone mount?<label><input type="checkbox" data-done="ch13"> I've done this</label></div>
+</section>
+
+<!-- ======================================================= PART IV -->
+<div class="part-banner pro" id="part4"><small>Part IV</small><h2>Professional: automate and extend</h2><p>Record repeatable work, script the model, and add your own commands to the ribbon.</p></div>
+
+<section class="chapter" id="ch14" data-title="Macros: record & replay" data-part="pro" data-n="14">
+  <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 14 · about 10 min</span></div>
+  <h2 class="title">Macros: record and replay</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Record model changes as a macro file</li><li>Replay a macro into a new part</li><li>Turn a macro into a JavaScript script</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 14.1</span><h4>Record a "standard blank" macro</h4><div class="specs"><span>2 steps</span><span>.casimacro.json</span></div></div>
+    <div class="example-body split">
+      <ol class="steps">
+        <li>Start a new part. On the <b>Tools</b> tab, click <b>Record</b>.</li>
+        <li>Work as usual: sketch a rectangle on the Front plane and extrude it 12 mm. The record button counts the steps, for example <i>Stop (2 steps)</i>.</li>
+        <li>Click <b>Stop</b>. The macro is downloaded as a <code>.casimacro.json</code> file.</li>
+        <li>In a new part, click <b>Run Macro</b> and pick the file. The same features are rebuilt with exactly the same sizes.</li>
+        <li><b>Save as Script</b> turns the last macro into a JavaScript file that you can edit and run in the console or in Node.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/31-macro-recording.webp" alt="Macro recording in progress"><figcaption>Recording: <i>Stop (2 steps)</i> on the Tools tab.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Only changes to the model are recorded. View changes, tool picks and cancelled panels are left out, so macros stay short and replay the same way every time.</p></div></div>
+  <div class="exercise"><b>Exercise 14.</b> Record a macro that builds the peg rail from Chapter 5. Save it as a script, change the number of pegs in the file, and run it.<label><input type="checkbox" data-done="ch14"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch15" data-title="Scripting console & API" data-part="pro" data-n="15">
+  <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 15 · about 20 min</span></div>
+  <h2 class="title">The scripting console and the API</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.4</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
+        <li>Click the <b>Plate with a hole</b> example and press <kbd>Enter</kbd>. The code builds the part and prints its mass properties.</li>
+        <li>Press <kbd>↑</kbd> to bring back earlier input. <kbd>Esc</kbd> closes the console.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/32-console.webp" alt="Scripting console"><figcaption>The console after running <i>Plate with a hole</i>.</figcaption></figure>
+      <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// 80 × 50 × 10 plate with a Ø16 through hole</span>
+api.document.new();
+<span class="tok-k">const</span> plate = api.sketches.create({ entities: [
+  { type: <span class="tok-s">'rectangle'</span>, corner1: { x: <span class="tok-n">-40</span>, y: <span class="tok-n">-25</span> }, corner2: { x: <span class="tok-n">40</span>, y: <span class="tok-n">25</span> } },
+] });
+api.features.extrude({ sketchId: plate.sketchId, depth: <span class="tok-n">10</span>, name: <span class="tok-s">'Plate'</span> });
+
+<span class="tok-k">const</span> hole = api.sketches.create({ entities: [{ type: <span class="tok-s">'circle'</span>, center: { x: <span class="tok-n">0</span>, y: <span class="tok-n">0</span> }, radius: <span class="tok-n">8</span> }] });
+api.features.extrude({ sketchId: hole.sketchId, depth: <span class="tok-n">10</span>, endCondition: <span class="tok-s">'throughall'</span>, cut: <span class="tok-k">true</span>, name: <span class="tok-s">'Hole'</span> });
+
+api.model.massProperties()   <span class="tok-c">// → { volume, mass, centerOfMass, momentOfInertia, … }</span></pre></div>
+    </div>
+  </div>
+
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 15.2</span><h4>Design study: thickness against mass</h4><div class="specs"><span>Loop</span><span>features.update</span></div></div>
+    <div class="example-body split single">
+      <p>Scripts are at their best for jobs that are slow by hand. This one tries five plate thicknesses and lists the mass of each:</p>
+      <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-k">const</span> f = api.features.list().find(f => f.name === <span class="tok-s">'Plate'</span>);
+[<span class="tok-n">6</span>, <span class="tok-n">8</span>, <span class="tok-n">10</span>, <span class="tok-n">12</span>, <span class="tok-n">15</span>].map(t => {
+  api.features.update(f.id, { depth: t });
+  <span class="tok-k">return</span> { thickness: t, grams: +(api.model.massProperties().mass * <span class="tok-n">1000</span>).toFixed(<span class="tok-n">1</span>) };
+})</pre></div>
+      <div class="code"><span class="lang">Console · listen for events</span><button type="button">Copy</button><pre>api.on(<span class="tok-s">'rebuild'</span>, e => console.log(e.ok ? <span class="tok-s">`rebuilt: ${e.bodyCount} body`</span> : e.errors));
+api.commands.execute(<span class="tok-s">'view.isometric'</span>);
+run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'Aluminum_6061'</span> });</pre></div>
+    </div>
+  </div>
+
+  <h3>The API at a glance</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Namespace</th><th>Examples</th></tr>
+    <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
+    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code></td></tr>
+    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
+    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.commands</code></td><td><code>list()</code>, <code>execute(id, args)</code>. Every ribbon button is a command.</td></tr>
+    <tr><td><code>api.macros</code> · <code>api.plugins</code></td><td><code>start()</code>, <code>stop()</code>, <code>run(macro)</code> · <code>load(url)</code>, <code>unload(id)</code></td></tr>
+    <tr><td><code>api.on(event, fn)</code></td><td><code>rebuild</code>, <code>featureAdded</code>, <code>featureRemoved</code>, <code>commandExecuted</code>, …</td></tr>
+  </table></div>
+  <figure class="shot"><img loading="lazy" src="img/35-api-reference.webp" alt="API reference page"><figcaption>The full reference: <b>Tools ▸ API Reference</b> opens it in a new tab at <code>/api/</code>.</figcaption></figure>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Bad calls throw a <code>CasiWorksAPIError</code> with a fixed <code>code</code> such as <code>NOT_FOUND</code> or <code>INVALID_ARGUMENT</code>. Check the code, not the message text, when your script needs to handle errors.</p></div></div>
+  <div class="exercise"><b>Exercise 15.</b> Write a script that builds the spacer block from Chapter 3, gives it 304 Stainless Steel, and returns its mass in grams.<label><input type="checkbox" data-done="ch15"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch16" data-title="Add-ins: extend the ribbon" data-part="pro" data-n="16">
+  <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 16 · about 20 min</span></div>
+  <h2 class="title">Add-ins: extend the ribbon</h2>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Load, use and unload an add-in</li><li>Write your own add-in with commands and ribbon buttons</li></ul></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 16.1</span><h4>The ISO 7089 washer generator</h4><div class="specs"><span>/plugins/washer.js</span><span>M5 … M16</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open the <b>Add-ins</b> tab and click <b>Manage</b>.</li>
+        <li>Click <b>Example: washer generator</b> to fill in its address, then click <b>Load</b>. The message <i>Loaded Washer generator 1.0.0</i> appears.</li>
+        <li>Click <b>Close</b>. The Add-ins tab now has a <b>Washer Generator</b> group with <b>M8</b> and <b>M12</b> buttons.</li>
+        <li>Click <b>M8</b>. A Ø16 × 1.6 mm washer with an 8.4 mm bore is added as a sketch and an extrude.</li>
+        <li>To remove the add-in, open <b>Manage</b> again and click the bin icon next to it.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/33-addins.webp" alt="Add-ins dialog"><figcaption>The Add-ins dialog after loading.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/34-addin-washer.webp" alt="Washer created by add-in"><figcaption>An M8 washer made by the add-in.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <h3>Write your own add-in</h3>
+  <p>An add-in is a JavaScript module. Its default export gives an id, a name, a version, the API version it needs, its commands and, if you like, ribbon buttons. Commands get <code>host.api</code>, which is the same public API as the console.</p>
+  <div class="code"><span class="lang">my-plate.js</span><button type="button">Copy</button><pre><span class="tok-k">export default</span> {
+  id: <span class="tok-s">'plate'</span>,
+  name: <span class="tok-s">'Plate generator'</span>,
+  version: <span class="tok-s">'1.0.0'</span>,
+  apiVersion: <span class="tok-s">'1.4'</span>,
+  commands: [{
+    name: <span class="tok-s">'create'</span>,
+    label: <span class="tok-s">'Plate'</span>,
+    description: <span class="tok-s">'args: { w, h, t } in mm'</span>,
+    run({ w = <span class="tok-n">100</span>, h = <span class="tok-n">60</span>, t = <span class="tok-n">8</span> } = {}, host) {
+      <span class="tok-k">const</span> s = host.api.sketches.create({ entities: [
+        { type: <span class="tok-s">'rectangle'</span>, corner1: { x: -w / <span class="tok-n">2</span>, y: -h / <span class="tok-n">2</span> }, corner2: { x: w / <span class="tok-n">2</span>, y: h / <span class="tok-n">2</span> } },
+      ] });
+      <span class="tok-k">return</span> host.api.features.extrude({ sketchId: s.sketchId, depth: t, name: <span class="tok-s">`Plate ${w}×${h}×${t}`</span> });
+    },
+  }],
+  buttons: [{ command: <span class="tok-s">'create'</span>, label: <span class="tok-s">'100×60'</span>, args: { w: <span class="tok-n">100</span>, h: <span class="tok-n">60</span>, t: <span class="tok-n">8</span> } }],
+};</pre></div>
+  <p>Load it with <b>Manage ▸ Load from file…</b>, or from the console with <code>await api.plugins.load('/plugins/my-plate.js')</code>. Its commands are named after the add-in, so this one runs as <code>run('plate.create', { w: 80 })</code>. Compare your file with <code>public/plugins/washer.js</code>, which is the reference example.</p>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Security</b><p>An add-in runs with the same access as CasiWorks itself: your model, your files when you save, and the network. Only load add-ins from sources you trust.</p></div></div>
+  <div class="exercise"><b>Exercise 16.</b> Add a <code>size</code> argument to the plate add-in with three presets (S, M, L), and give each preset its own ribbon button.<label><input type="checkbox" data-done="ch16"> I've done this</label></div>
+</section>
+
+<section class="chapter" id="ch17" data-title="Headless automation" data-part="pro" data-n="17">
+  <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 17 · about 15 min</span></div>
+  <h2 class="title">Headless automation with Node</h2>
+  <p class="lead">The same API runs without a browser. Use it to make part families in bulk, check designs in CI, or build parts from a spreadsheet.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 17.1</span><h4>Make a family of spacers from a script</h4><div class="specs"><span>Node 22.18+</span><span>createHeadlessAPI</span></div></div>
+    <div class="example-body split single">
+      <div class="code"><span class="lang">spacers.ts · Node</span><button type="button">Copy</button><pre><span class="tok-k">import</span> { createHeadlessAPI } <span class="tok-k">from</span> <span class="tok-s">'casiworks-pro/api'</span>;
+
+<span class="tok-k">const</span> api = createHeadlessAPI();
+<span class="tok-k">for</span> (<span class="tok-k">const</span> t <span class="tok-k">of</span> [<span class="tok-n">5</span>, <span class="tok-n">10</span>, <span class="tok-n">15</span>, <span class="tok-n">20</span>]) {
+  api.document.new();
+  <span class="tok-k">const</span> s = api.sketches.create({ entities: [
+    { type: <span class="tok-s">'circle'</span>, center: { x: <span class="tok-n">0</span>, y: <span class="tok-n">0</span> }, radius: <span class="tok-n">15</span> },
+    { type: <span class="tok-s">'circle'</span>, center: { x: <span class="tok-n">0</span>, y: <span class="tok-n">0</span> }, radius: <span class="tok-n">6.5</span> },
+  ] });
+  api.features.extrude({ sketchId: s.sketchId, depth: t, name: <span class="tok-s">`Spacer ${t}`</span> });
+  <span class="tok-k">const</span> { volume, mass } = api.model.massProperties();
+  console.log(<span class="tok-s">`Spacer Ø30×${t}: ${volume.toFixed(0)} mm³, ${(mass * 1000).toFixed(1)} g`</span>);
+}</pre></div>
+      <div class="code"><span class="lang">Terminal</span><button type="button">Copy</button><pre>node spacers.ts</pre></div>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Run a recorded macro in CI</b><p>A macro saved in Chapter 14 can be replayed headless with <code>api.macros.run(json)</code>. Then check <code>api.model.errors()</code> is empty and the mass is within tolerance. That gives you an automatic regression test for a part.</p></div></div>
+    </div>
+  </div>
+  <div class="exercise"><b>Exercise 17.</b> Read a CSV of <code>name,width,height,thickness</code> rows and print the mass of each plate in aluminium 6061.<label><input type="checkbox" data-done="ch17"> I've done this</label></div>
+</section>
+
+<!-- ======================================================= APPENDICES -->
+<div class="part-banner ref" id="appendix"><small>Appendices</small><h2>Reference</h2><p>Shortcuts, current limits and a glossary.</p></div>
+
+<section class="chapter" id="shortcuts" data-title="A · Keyboard shortcuts" data-part="ref" data-n="A">
+  <h2 class="title">Appendix A · Keyboard shortcuts</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Keys</th><th>Command</th><th>Keys</th><th>Command</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd></td><td>New part</td><td><kbd>L</kbd></td><td>Line</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Open</td><td><kbd>R</kbd></td><td>Corner rectangle</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save (download)</td><td><kbd>C</kbd></td><td>Centre circle</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td><td><kbd>A</kbd></td><td>Centre arc</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td><td><kbd>D</kbd></td><td>Smart dimension</td></tr>
+    <tr><td><kbd>F5</kbd></td><td>Rebuild</td><td><kbd>E</kbd></td><td>Extrude</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Cancel the current tool</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Front, Back, Left, Right, Top, Bottom</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>`</kbd></td><td>Scripting console</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> · <kbd>Space</kbd></td><td>Isometric</td></tr>
+  </table></div>
+  <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
+</section>
+
+<section class="chapter" id="limits" data-title="B · Current limits" data-part="ref" data-n="B">
+  <h2 class="title">Appendix B · Current limits</h2>
+  <p>CasiWorks Pro is under active development. These are the parts of the app that do not yet do what their buttons suggest, so they do not catch you out on a real job:</p>
+  <div class="table-wrap"><table>
+    <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
+    <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs, and hollow parts with Extrude Cut.</td></tr>
+    <tr><td>Surfaces and Sheet Metal tabs</td><td>Each has one button, which opens Extrude.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
+    <tr><td>Exploded view</td><td><b>OK</b> solves the mates again. Parts are not moved apart.</td><td>Move components with a Distance mate to show them apart.</td></tr>
+    <tr><td>Drawing tab forms</td><td>Do not change the generated sheet.</td><td>Use the toggles on the drawing sheet.</td></tr>
+    <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
+    <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
+  </table></div>
+  <p>All of these depend on the exact geometry kernel on the project roadmap (<code>ROADMAP.md</code>).</p>
+</section>
+
+<section class="chapter" id="glossary" data-title="C · Glossary" data-part="ref" data-n="C">
+  <h2 class="title">Appendix C · Glossary</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
+    <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
+    <tr><td>Feature</td><td>One modelling step, such as an extrude, cut, revolve, hole or pattern.</td></tr>
+    <tr><td>Parametric</td><td>Features keep their settings, so changing one rebuilds everything after it.</td></tr>
+    <tr><td>Rollback</td><td>Temporarily turning off every feature after a point in the history.</td></tr>
+    <tr><td>Mate</td><td>A rule that places one assembly component relative to another.</td></tr>
+    <tr><td>HLR</td><td>Hidden line removal: drawing hidden edges dashed or not at all.</td></tr>
+    <tr><td>GD&amp;T</td><td>Geometric dimensioning and tolerancing: symbols for allowed form and position errors.</td></tr>
+    <tr><td>Tet4 / Tet10</td><td>Tetrahedral finite elements with 4 nodes (linear) or 10 nodes (quadratic).</td></tr>
+    <tr><td>von Mises stress</td><td>A single stress value that is compared with the material's yield strength.</td></tr>
+    <tr><td>Safety factor</td><td>Yield strength divided by the peak stress. Above 1 means the part does not yield.</td></tr>
+    <tr><td>MMGS</td><td>The unit system: millimetre, gram, second.</td></tr>
+  </table></div>
+  <p class="meta">Screenshots were taken from the real app by <code>scripts/tutorial-shots.ts</code>. Run <code>npm run build &amp;&amp; node scripts/tutorial-shots.ts</code> to update them after the UI changes.</p>
+</section>
+
+</div>
+</main>
+</div>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Enlarged screenshot">
+  <button class="icon-btn x" aria-label="Close">✕</button>
+  <img alt="">
+  <div class="cap"></div>
+</div>
+
+<script>
+(() => {
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+  };
+
+  // Theme
+  const root = document.documentElement;
+  const saved = store.get('cw-theme');
+  if (saved) root.dataset.theme = saved;
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    store.set('cw-theme', root.dataset.theme);
+  });
+
+  // Contents, built from the chapters
+  const toc = document.getElementById('toc');
+  const chapters = [...document.querySelectorAll('section.chapter')];
+  const partNames = { ref: 'Start here', novice: 'Part I · Novice', intermediate: 'Part II · Intermediate', advanced: 'Part III · Advanced', pro: 'Part IV · Professional' };
+  let lastPart = null, seenRef = false;
+  chapters.forEach(ch => {
+    const part = ch.dataset.part;
+    const key = part === 'ref' && seenRef ? 'appendix' : part;
+    if (key !== lastPart) {
+      const h = document.createElement('div');
+      h.className = 'toc-part ' + part;
+      h.textContent = key === 'appendix' ? 'Appendices' : partNames[part];
+      toc.appendChild(h);
+      lastPart = key;
+    }
+    if (part !== 'ref') seenRef = true;
+    const a = document.createElement('a');
+    a.href = '#' + ch.id;
+    a.dataset.id = ch.id;
+    a.innerHTML = `<span class="n">${ch.dataset.n === '0' ? '•' : ch.dataset.n}</span><span></span>`;
+    a.lastChild.textContent = ch.dataset.title;
+    toc.appendChild(a);
+  });
+  const links = [...toc.querySelectorAll('a')];
+
+  // Previous / next links at the end of each chapter
+  chapters.forEach((ch, i) => {
+    const nav = document.createElement('nav');
+    nav.className = 'pager';
+    const mk = (c, cls, label) => { const a = document.createElement('a'); a.href = '#' + c.id; a.className = cls; a.innerHTML = `<small>${label}</small>`; a.append(c.dataset.title); return a; };
+    if (chapters[i - 1]) nav.appendChild(mk(chapters[i - 1], 'prev', '← Previous'));
+    if (chapters[i + 1]) nav.appendChild(mk(chapters[i + 1], 'next', 'Next →'));
+    ch.appendChild(nav);
+  });
+
+  // Exercise check-offs, remembered in this browser
+  const done = new Set(JSON.parse(store.get('cw-done') || '[]'));
+  const paint = () => links.forEach(a => a.classList.toggle('done', done.has(a.dataset.id)));
+  document.querySelectorAll('input[data-done]').forEach(box => {
+    box.checked = done.has(box.dataset.done);
+    box.addEventListener('change', () => {
+      box.checked ? done.add(box.dataset.done) : done.delete(box.dataset.done);
+      store.set('cw-done', JSON.stringify([...done]));
+      paint();
+    });
+  });
+  paint();
+
+  // Active chapter and reading progress
+  const progress = document.getElementById('progress');
+  const onScroll = () => {
+    const h = document.documentElement;
+    progress.style.width = (100 * h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)) + '%';
+    let current = chapters[0];
+    for (const ch of chapters) if (ch.getBoundingClientRect().top < 120) current = ch;
+    links.forEach(a => a.classList.toggle('active', a.dataset.id === current.id));
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // Mobile drawer
+  const menuBtn = document.getElementById('menuBtn');
+  const setNav = open => { document.body.classList.toggle('nav-open', open); menuBtn.setAttribute('aria-expanded', String(open)); };
+  menuBtn.addEventListener('click', () => setNav(!document.body.classList.contains('nav-open')));
+  document.getElementById('scrim').addEventListener('click', () => setNav(false));
+  toc.addEventListener('click', e => { if (e.target.closest('a')) setNav(false); });
+
+  // Search: filter chapters by their text
+  document.getElementById('search').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    chapters.forEach((ch, i) => {
+      const hit = !q || ch.textContent.toLowerCase().includes(q);
+      links[i].classList.toggle('hidden-by-search', !hit);
+    });
+  });
+
+  // Lightbox
+  const lb = document.getElementById('lightbox');
+  const lbImg = lb.querySelector('img'), lbCap = lb.querySelector('.cap');
+  document.querySelectorAll('figure.shot').forEach(f => f.addEventListener('click', () => {
+    const img = f.querySelector('img');
+    lbImg.src = img.src; lbImg.alt = img.alt;
+    lbCap.textContent = f.querySelector('figcaption')?.textContent || '';
+    lb.classList.add('open');
+  }));
+  const close = () => lb.classList.remove('open');
+  lb.addEventListener('click', close);
+  addEventListener('keydown', e => { if (e.key === 'Escape') { close(); setNav(false); } });
+
+  // Copy buttons on code blocks
+  document.querySelectorAll('.code button').forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.parentElement.querySelector('pre').innerText); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select & copy'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1500);
+  }));
+})();
+</script>
+</body>
+</html>
