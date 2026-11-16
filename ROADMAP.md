@@ -45,7 +45,7 @@ Make every later step safe to take.
 - [x] **0.3** CI: GitHub Actions runs lint, tests and build on every push and PR
 - [x] **0.4** Type checking → replaced by the full TypeScript migration, track T below
 - [ ] **0.5** Split the single test file into per-module test files
-- [ ] **0.6** Autosave the current document to IndexedDB; restore on reload
+- [x] **0.6** Autosave the current document to IndexedDB; restore on reload (one document, about a second after each change and when the tab is hidden; undo history is not kept; two open tabs share the one slot, the last write wins)
 
 ## Track T — Full TypeScript migration (complete)
 

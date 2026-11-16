@@ -13,7 +13,7 @@ import { rebuildModel } from './features/rebuildModel.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from './utils/constants.ts';
 import type { FeatureData } from './types/cad.ts';
 
-export default function App() {
+export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
   const needsRebuild = useCADStore(s => s.needsRebuild);
 
   // Dialog states
@@ -45,10 +45,10 @@ export default function App() {
     };
   }, []);
 
-  // Seed a starter part once, on first launch only. "New" and deleting every
-  // feature must leave an empty document, so this does not depend on features.
+  // Seed a starter part once, on first launch only (not when the last session was restored).
+  // "New" and deleting every feature must leave an empty document, so this does not depend on features.
   useEffect(() => {
-    if (useCADStore.getState().features.length === 0) {
+    if (seedStarter && useCADStore.getState().features.length === 0) {
       // 1. Initial 2D Sketch: 60 x 40 base rectangle with centered circle hole
       const initialSketchId = 'sketch_initial_01';
       useCADStore.setState((state) => {
@@ -80,7 +80,7 @@ export default function App() {
         state.isModified = false;
       });
     }
-  }, []);
+  }, [seedStarter]);
 
   // Rebuild model whenever the feature tree is marked dirty
   useEffect(() => {

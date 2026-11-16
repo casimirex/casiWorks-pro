@@ -293,7 +293,7 @@ npm run dev</pre></div>
     </div>
   </div>
   <div class="callout warn"><span class="ic">⚠</span><div><b class="label">The warning triangle</b><p>The bolt's <i>Chamfer1</i> shows a ⚠ in the tree. Chamfers are not applied by the current geometry kernel, so the part is built without it. Hover the triangle to read the message. Nothing else is affected.</p></div></div>
-  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Loading an example replaces the open part without asking. Save first with <kbd>Ctrl</kbd>+<kbd>S</kbd> if you want to keep your work.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Loading an example replaces the open part without asking, and autosave then keeps the example instead of your part. Save first with <kbd>Ctrl</kbd>+<kbd>S</kbd> if you want to keep your work.</p></div></div>
   <div class="exercise"><b>Exercise 1.</b> Open each of the eight examples in turn and count the features in each tree. Which example has the most?<label><input type="checkbox" data-done="ch1"> I've done this</label></div>
 </section>
 
@@ -636,6 +636,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
       <figure class="shot"><img loading="lazy" src="img/27-export.webp" alt="Export dialog"><figcaption>The Export dialog.</figcaption></figure>
     </div>
   </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Autosave</b><p>CasiWorks also keeps the open part in your browser, about a second after each change. If you reload the page or the tab closes, the part comes back the next time you open CasiWorks, and the status bar says <i>Restored … from autosave</i>. Autosave keeps only one part, the last one you worked on, and it does not keep undo history. It is not a backup: it lives in this browser only, and clearing site data removes it. Save a project file for anything you want to keep.</p></div></div>
   <div class="table-wrap"><table>
     <tr><th>Format</th><th>Best for</th><th>Notes</th></tr>
     <tr><td>Project (Save)</td><td>Your own work</td><td>The only format that keeps the editable history.</td></tr>

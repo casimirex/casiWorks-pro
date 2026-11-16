@@ -506,6 +506,32 @@ const CHECKS: Check[] = [
       return `washer M8 built (${v.toFixed(0)} mm³); unloaded cleanly`;
     },
   },
+  {
+    name: 'autosave: a reload brings the document back; an empty New stays empty',
+    async run(p) {
+      const reload = async () => {
+        await sleep(1500); // past the autosave delay
+        await p.send('Page.reload');
+        await sleep(500);
+        await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelector('.status-msg-text') !== null`), 'app restart');
+        await sleep(1500); // rebuild
+      };
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await sleep(1500);
+      const before = { names: await treeNames(p), volume: await volume(p) };
+      await reload();
+      const after = { names: await treeNames(p), volume: await volume(p) };
+      const restored = await status(p);
+      assert(/^Restored Mounting_L_Bracket from autosave/.test(restored), `status after reload: "${restored}"`);
+      assert(after.names.join() === before.names.join() && Math.abs(after.volume - before.volume) < 1e-6,
+        `before ${JSON.stringify(before)}, after ${JSON.stringify(after)}`);
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await reload();
+      const left = await p.eval<number>(`document.querySelectorAll('.feature-item').length`);
+      assert(left === 0, `New, then reload: ${left} features (the starter part must not come back)`);
+      return `${after.names.length} features and ${after.volume.toFixed(0)} mm³ back after reload; "${restored}"; empty New stays empty`;
+    },
+  },
 ];
 
 // ------------------------------------------------------------------ runner
