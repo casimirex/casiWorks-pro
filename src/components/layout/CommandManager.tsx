@@ -29,6 +29,8 @@ export default function CommandManager() {
   const constructionMode = useCADStore(s => s.constructionMode);
   const sectionActive = useCADStore(s => s.sectionViewActive);
   const documentName = useCADStore(s => s.documentName);
+  const configurations = useCADStore(s => s.configurations);
+  const activeConfiguration = useCADStore(s => s.activeConfiguration);
   const isModified = useCADStore(s => s.isModified);
 
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
@@ -158,6 +160,7 @@ export default function CommandManager() {
         <div className="doc-name-pill">
           <span className={`doc-status-dot ${isModified ? 'modified' : 'saved'}`} />
           <span className="doc-title-text">{documentName}</span>
+          {activeConfiguration && <span className="doc-unit-tag doc-config-tag" title="Active configuration">{activeConfiguration}</span>}
           <span className="doc-unit-tag">MMGS</span>
         </div>
 
@@ -816,6 +819,24 @@ export default function CommandManager() {
                 <button className="ribbon-btn" onClick={() => runCommand('tools.equations')} title="Equations: global variables that drive feature sizes">
                   <Sigma size={19} color="#a78bfa" />
                   <span>Equations</span>
+                </button>
+                <button className="ribbon-btn" onClick={() => runCommand('tools.configurations')} title="Configurations: versions of the part from variable values (design table)">
+                  <Layers size={19} color="#38bdf8" />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    Configs
+                    <select
+                      className="config-switch"
+                      value={activeConfiguration ?? ''}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => runCommand('configurations.activate', { name: e.target.value || null })}
+                      aria-label="Active configuration"
+                      title="Active configuration"
+                      style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0, maxWidth: 70 }}
+                    >
+                      <option value="">Default</option>
+                      {configurations.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </span>
                 </button>
                 <button className="ribbon-btn" onClick={() => runCommand('help.apiReference')} title="API reference (opens in a new tab)">
                   <FileText size={19} color="#94a3b8" />

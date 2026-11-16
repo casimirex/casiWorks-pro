@@ -106,3 +106,60 @@ test('Equations reach grouped parameters: a hole position linked with position.x
   assert.deepEqual(links.map(l => [l.parameter, l.value]), [['position.x', 15], ['position.y', -30], ['diameter', 7.5]]);
   s().newProject();
 });
+
+test('Configurations: variants override variables; activate, list, undo, save/load; bad ones refused', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = useCADStore.getState;
+  s().newProject();
+  r.execute('equations.set', { variables: [{ name: 'wall', expression: '3' }, { name: 'depth', expression: 'wall * 8' }] });
+  const { sketchId } = r.execute('sketch.create', { plane: 'Front', entities: [{ type: 'rectangle', corner1: { x: 0, y: 0 }, corner2: { x: 40, y: 20 } }] }) as { sketchId: string };
+  const { featureId } = r.execute('feature.create', { type: 'extrude_boss', sketchId, depth: 1, expressions: { depth: 'depth' } }) as { featureId: string };
+  const depth = () => (s().features.find(f => f.id === featureId) as ExtrudeFeature).depth;
+  const code = (fn: () => unknown) => { try { fn(); } catch (e) { return (e as Error).message; } return null; };
+
+  assert.match(code(() => r.execute('configurations.set', { configurations: [{ name: 'Default', values: {} }] }))!, /reserved/);
+  assert.match(code(() => r.execute('configurations.set', { configurations: [{ name: 'A', values: {} }, { name: 'A', values: {} }] }))!, /used twice/);
+  assert.match(code(() => r.execute('configurations.set', { configurations: [{ name: 'A', values: { nope: '1' } }] }))!, /no variable "nope"/);
+  assert.match(code(() => r.execute('configurations.set', { configurations: [{ name: 'A', values: { wall: 'depth' } }] }))!, /Circular/);
+
+  r.execute('configurations.set', { configurations: [{ name: 'Small', values: { wall: '2' } }, { name: 'Large', values: { depth: '50' } }] });
+  assert.equal(depth(), 24, 'Default still active');
+  r.execute('configurations.activate', { name: 'Small' });
+  assert.equal(depth(), 16);
+  assert.equal(s().activeConfiguration, 'Small');
+  r.execute('configurations.activate', { name: 'Large' });
+  assert.equal(depth(), 50);
+  assert.match(code(() => r.execute('configurations.activate', { name: 'Huge' }))!, /No configuration "Huge"; one of Default, Small, Large/);
+
+  const list = r.execute('configurations.list') as { active: string; configurations: Array<{ name: string; variables: Record<string, number> }> };
+  assert.equal(list.active, 'Large');
+  assert.deepEqual(list.configurations.map(c => [c.name, c.variables.depth]), [['Default', 24], ['Small', 16], ['Large', 50]]);
+  const eq = r.execute('equations.list') as { configuration: string; variables: Array<{ name: string; value: number; override?: string }> };
+  assert.equal(eq.configuration, 'Large');
+  assert.deepEqual(eq.variables.map(v => [v.name, v.value, v.override]), [['wall', 3, undefined], ['depth', 50, '50']]);
+
+  s().undo();
+  assert.equal(s().activeConfiguration, 'Small', 'undo the switch');
+  assert.equal(depth(), 16);
+  s().redo();
+
+  // Changing defaults that a configuration overrides only shows outside it
+  r.execute('equations.set', { variables: [{ name: 'wall', expression: '4' }, { name: 'depth', expression: 'wall * 8' }] });
+  assert.equal(depth(), 50);
+  r.execute('configurations.activate', { name: 'Default' });
+  assert.equal(depth(), 32);
+  r.execute('configurations.activate', { name: 'Small' });
+
+  const saved = s().saveProject();
+  s().newProject();
+  s().loadProject(saved);
+  assert.equal(s().activeConfiguration, 'Small');
+  assert.equal((s().features.find(f => f.id === featureId) as ExtrudeFeature).depth, 16);
+  assert.deepEqual(s().configurations.map(c => c.name), ['Small', 'Large']);
+
+  // Removing the active configuration falls back to Default
+  r.execute('configurations.set', { configurations: [{ name: 'Large', values: { depth: '50' } }] });
+  assert.equal(s().activeConfiguration, null);
+  assert.equal((s().features.find(f => f.id === featureId) as ExtrudeFeature).depth, 32);
+  s().newProject();
+});

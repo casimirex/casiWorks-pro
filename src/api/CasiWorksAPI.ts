@@ -16,6 +16,18 @@ import type { CommandExecution, CommandInfo } from '../commands/CommandRegistry.
 import type { Macro } from '../commands/macros.ts';
 import { macroToScript, parseMacro } from '../commands/macros.ts';
 import type { BufferGeometry } from 'three';
+import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { Configuration, GlobalVariable, LinkedParameter } from '../features/equations.ts';
+import { extendLine, mirrorEntities, offsetEntity, trimEntity } from '../kernel/sketchEdit.ts';
+import type { EditResult } from '../kernel/sketchEdit.ts';
+import { buildBom } from '../assembly/bom.ts';
+import type { Bom, BomComponent } from '../assembly/bom.ts';
+import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
+import { drawingFile } from '../drawings/drawingSheet.ts';
+import type { DrawingSource } from '../drawings/drawingSheet.ts';
+import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
+import { MATERIALS, MATE_TYPES } from '../utils/constants.ts';
+import type { MateType } from '../utils/constants.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
 import { generateId } from '../utils/math.ts';
@@ -35,7 +47,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.4.0';
+export const API_VERSION = '1.5.0';
 
 // =====================================================================
 // Public types
@@ -142,6 +154,21 @@ export interface SketchesAPI {
   create(spec: SketchSpec): SketchRef;
   /** A copy of the sketch's entities (internal format: arc angles in radians). */
   getEntities(sketchId: string): SketchEntity[];
+  /**
+   * Trim entity `entityId` at point `at`: the part between the nearest crossings
+   * around it is removed (an entity that crosses nothing is deleted; a circle needs
+   * two crossings and becomes an arc). Returns the sketch's new entities. Since 1.5.
+   */
+  trim(sketchId: string, entityId: string, at: Point2): SketchEntity[];
+  /** Lengthen the end of line `entityId` nearest `near` to the first entity in its way. Since 1.5. */
+  extend(sketchId: string, entityId: string, near: Point2): SketchEntity[];
+  /**
+   * Offset `entityId` by `distance` mm towards `side`. Lines and arcs offset their
+   * whole connected chain (a rectangle, a slot) with the corners re-joined. Since 1.5.
+   */
+  offset(sketchId: string, entityId: string, distance: number, side: Point2): SketchEntity[];
+  /** Add mirrored copies of `entityIds` about the line `axisId`. Since 1.5. */
+  mirror(sketchId: string, axisId: string, entityIds: string[]): SketchEntity[];
 }
 
 /** The feature tree: create, inspect, edit, suppress and roll back features. */
@@ -333,6 +360,133 @@ export interface CasiWorksAPIOptions {
   plugins?: ApiPluginManager;
 }
 
+/** A global variable as given to equations.set. */
+export interface VariableSpec { name: string; expression: string }
+
+/** Variables with their values (as the active configuration sees them) and the feature sizes they drive. */
+export interface EquationsInfo {
+  /** Active configuration, or null for Default. */
+  configuration: string | null;
+  variables: Array<{ name: string; expression: string; override?: string; value: number | null; error?: string }>;
+  links: LinkedParameter[];
+}
+
+/** Global variables and the feature sizes they drive (Tools ▸ Equations). Since 1.5. */
+export interface EquationsAPI {
+  /** Variables, values and links. */
+  list(): EquationsInfo;
+  /**
+   * Replace all variables; returns their values. Throws INVALID_ARGUMENT naming each
+   * problem (syntax, unknown name, cycle, duplicate or built-in name).
+   * @example api.equations.set([{ name: 'wall', expression: '3' }, { name: 'depth', expression: 'wall * 8' }])
+   */
+  set(variables: VariableSpec[]): Record<string, number>;
+  /** Evaluate an expression with the current variables, e.g. 'wall * 2 + 1'. */
+  evaluate(expression: string): number;
+  /**
+   * Link a feature parameter to an expression (null unlinks and keeps the number).
+   * Grouped parameters use a dot: 'position.x'.
+   * @example api.equations.link(holeId, 'diameter', 'wall * 2')
+   */
+  link(featureId: string, parameter: string, expression: string | null): void;
+}
+
+/** A configuration as given to configurations.set: variable expressions that replace the defaults. */
+export interface ConfigurationSpec { name: string; values: Record<string, string> }
+
+/** One configuration with every variable's value in it. */
+export interface ConfigurationInfo {
+  name: string;
+  values: Record<string, string>;
+  variables: Record<string, number>;
+  active: boolean;
+}
+
+/** Versions of the part from variable values (design table). "Default" is the plain variables. Since 1.5. */
+export interface ConfigurationsAPI {
+  /** Default first, then each configuration, with its variable values. */
+  list(): ConfigurationInfo[];
+  /** Name of the active configuration ('Default' when none). */
+  active(): string;
+  /** Replace all configurations. Throws INVALID_ARGUMENT for duplicates, "Default", unknown variables or failing values. */
+  set(configurations: ConfigurationSpec[]): void;
+  /** Switch configuration ('Default' or null for the plain values); linked sizes update. Throws NOT_FOUND. */
+  activate(name: string | null): void;
+}
+
+/** Shapes the assembly can insert. */
+export type ComponentShape = 'box' | 'cylinder' | 'flange' | 'pin';
+
+/** An assembly component. */
+export interface ComponentInfo {
+  id: string;
+  name: string;
+  shape: ComponentShape;
+  dimensions: { width?: number; height?: number; depth?: number; radius?: number };
+  /** Own material key, or null when it follows the part material. */
+  material: string | null;
+  fixed: boolean;
+  position: { x: number; y: number; z: number };
+}
+
+/** A mate between two components. */
+export interface MateSpec {
+  type: MateType;
+  component1: string;
+  component2: string;
+  /** Face or axis references; default per mate type (e.g. concentric: 'y' / 'y'). */
+  ref1?: string;
+  ref2?: string;
+  /** mm (distance mates). */
+  offset?: number;
+}
+
+/** The assembly: components, mates, materials and the bill of materials. Since 1.5. */
+export interface AssemblyAPI {
+  /** Every component. */
+  list(): ComponentInfo[];
+  /**
+   * Insert a component; returns its id. The first is fixed.
+   * @example api.assembly.insert({ name: 'Pin_Shaft', shape: 'pin' })
+   */
+  insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] }): string;
+  /** Add a mate between two components (then call solve). */
+  mate(spec: MateSpec): void;
+  /** Solve all mates; converged is false when they conflict. */
+  solve(): { converged: boolean; message: string };
+  /** Give components their own material key, or null to follow the part material. */
+  setMaterial(componentIds: string[], material: string | null): void;
+  /** The bill of materials (identical parts grouped, masses in kg, volumes in mm³). */
+  bom(): Bom;
+  /** Show the exploded view (display only). */
+  explode(options?: { distance?: number; leaderLines?: boolean }): void;
+  /** End the exploded view. */
+  collapse(): void;
+  /** Remove all components and mates. */
+  clear(): void;
+}
+
+/** What the drawing sheet shows. */
+export interface DrawingOptionsInfo {
+  subject: 'part' | 'assembly';
+  sheetSize: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B';
+  hiddenLines: boolean;
+  dimensions: boolean;
+  gdt: boolean;
+}
+
+/** The 2D drawing sheet (part, or assembly with parts list and balloons) as SVG or DXF text. Works headless. Since 1.5. */
+export interface DrawingsAPI {
+  /** The current options. */
+  getOptions(): DrawingOptionsInfo;
+  /** Change only the options given; returns them all. */
+  setOptions(options: Partial<DrawingOptionsInfo>): DrawingOptionsInfo;
+  /** The sheet as SVG. Throws NOT_FOUND when there is nothing to draw. */
+  svg(): string;
+  /** The sheet as DXF R12. Throws NOT_FOUND when there is nothing to draw. */
+  dxf(): string;
+}
+
 /** The CasiWorks public API. */
 export interface CasiWorksAPI {
   /** Semantic version of this API, e.g. '1.3.0'. */
@@ -364,6 +518,14 @@ export interface CasiWorksAPI {
   readonly macros: MacrosAPI;
   /** Load and unload plugins (add-ins). Since 1.4. */
   readonly plugins: PluginsAPI;
+  /** Global variables and equations. Since 1.5. */
+  readonly equations: EquationsAPI;
+  /** Configurations (design table). Since 1.5. */
+  readonly configurations: ConfigurationsAPI;
+  /** Assembly components, mates, materials and BOM. Since 1.5. */
+  readonly assembly: AssemblyAPI;
+  /** The 2D drawing sheet as SVG / DXF. Since 1.5. */
+  readonly drawings: DrawingsAPI;
 }
 
 /** Error thrown by every API call that rejects its input or cannot complete. */
@@ -417,6 +579,27 @@ export interface ApiStoreState extends RebuildState {
   setMaterial(key: string): void;
   undo(): void;
   redo(): void;
+  // Since 1.5
+  sketchEntities: Record<string, SketchEntity[]>;
+  setSketchEntities(sketchId: string, entities: SketchEntity[]): void;
+  variables: GlobalVariable[];
+  configurations: Configuration[];
+  activeConfiguration: string | null;
+  setVariables(variables: GlobalVariable[]): void;
+  setConfigurations(configurations: Configuration[]): void;
+  activateConfiguration(name: string | null): void;
+  assemblyComponents: Array<DrawingComponent & BomComponent & {
+    isFixed: boolean;
+    position: { x: number; y: number; z: number };
+  }>;
+  insertAssemblyPart(name: string, shape?: ComponentShape, dims?: ComponentInfo['dimensions']): void;
+  addAssemblyMate(type: MateType, comp1Id: string, ref1: string, comp2Id: string, ref2: string, offset?: number): void;
+  solveAssembly(): void;
+  setComponentMaterial(componentIds: string[], material: string | null): void;
+  setExplodedView(settings: { distance: number; leaderLines: boolean } | null): void;
+  clearAssembly(): void;
+  drawingOptions: DrawingOptionsInfo;
+  setDrawingOptions(options: Partial<DrawingOptionsInfo>): void;
 }
 
 export interface ApiStore {
@@ -606,7 +789,39 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   });
 
+  // ------------------------------------------------------------------ sketch editing (since 1.5)
+  const editSketch = (sketchId: string, edit: (entities: SketchEntity[], id: string) => EditResult): SketchEntity[] => {
+    const id = requireSketch(sketchId);
+    const r = edit(get().sketchEntities[id] ?? [], id);
+    if ('error' in r) fail('INVALID_ARGUMENT', r.error);
+    get().setSketchEntities(id, r.entities);
+    return clone(get().sketchEntities[id] ?? []);
+  };
+  const point = (p: unknown, what: string): Point2 => {
+    const o = requireObject(p, what);
+    return { x: requireNumber(o.x, `${what}.x`), y: requireNumber(o.y, `${what}.y`) };
+  };
+  const requireEntity = (sketchId: string, entityId: unknown): string => {
+    if (typeof entityId !== 'string' || !(get().sketchEntities[sketchId] ?? []).some(e => e.id === entityId)) {
+      fail('NOT_FOUND', `No entity ${JSON.stringify(entityId)} in sketch ${sketchId}`);
+    }
+    return entityId as string;
+  };
+  const sketchEdits = {
+    trim: (sketchId: string, entityId: string, at: Point2) =>
+      editSketch(sketchId, (ents, id) => trimEntity(ents, requireEntity(id, entityId), point(at, 'at'))),
+    extend: (sketchId: string, entityId: string, near: Point2) =>
+      editSketch(sketchId, (ents, id) => extendLine(ents, requireEntity(id, entityId), point(near, 'near'))),
+    offset: (sketchId: string, entityId: string, distance: number, side: Point2) =>
+      editSketch(sketchId, (ents, id) => offsetEntity(ents, requireEntity(id, entityId), requireNumber(distance, 'distance', { positive: true }), point(side, 'side'))),
+    mirror: (sketchId: string, axisId: string, entityIds: string[]) => {
+      if (!Array.isArray(entityIds)) fail('INVALID_ARGUMENT', 'entityIds must be a list');
+      return editSketch(sketchId, (ents, id) => mirrorEntities(ents, requireEntity(id, axisId), entityIds.map(e => requireEntity(id, e))));
+    },
+  };
+
   const sketches: SketchesAPI = Object.freeze({
+    ...sketchEdits,
     create(spec: SketchSpec) {
       const s = requireObject(spec, 'spec');
       const plane = (s.plane ?? 'Front') as SketchPlane;
@@ -898,11 +1113,200 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   });
 
+
+  // ------------------------------------------------------------------ since 1.5
+  const activeVariables = () => {
+    const st = get();
+    return effectiveVariables(st.variables, st.configurations.find(c => c.name === st.activeConfiguration));
+  };
+  const variableValues = () => evaluateVariables(activeVariables()).values;
+
+  const equations: EquationsAPI = Object.freeze({
+    list() {
+      const active = activeVariables();
+      const { values, errors } = evaluateVariables(active);
+      return clone({
+        configuration: get().activeConfiguration,
+        variables: get().variables.map((v, i) => ({
+          ...v,
+          ...(active[i].expression !== v.expression ? { override: active[i].expression } : {}),
+          value: values[v.name] ?? null,
+          ...(errors[v.name] ? { error: errors[v.name] } : {}),
+        })),
+        links: evaluateLinks(get().features, values).links,
+      });
+    },
+    set(variables: VariableSpec[]) {
+      if (!Array.isArray(variables) || !variables.every(v => v && typeof v.name === 'string' && typeof v.expression === 'string')) {
+        fail('INVALID_ARGUMENT', 'variables must be a list of { name, expression }');
+      }
+      const { values, errors } = evaluateVariables(variables);
+      const bad = Object.entries(errors);
+      if (bad.length) fail('INVALID_ARGUMENT', bad.map(([n, m]) => `${n}: ${m}`).join('; '));
+      const configProblems = configurationProblems(variables, get().configurations).filter(p => !/no variable/.test(p));
+      if (configProblems.length) fail('INVALID_ARGUMENT', `With these variables a configuration fails: ${configProblems.join('; ')}`);
+      get().setVariables(variables);
+      return clone(values);
+    },
+    evaluate(expression: string) {
+      try {
+        return evaluateExpression(expression, variableValues());
+      } catch (e) {
+        return fail('INVALID_ARGUMENT', (e as Error).message);
+      }
+    },
+    link(featureId: string, parameter: string, expression: string | null) {
+      const { feature } = findFeature(featureId);
+      if (typeof parameter !== 'string' || !parameter) fail('INVALID_ARGUMENT', 'parameter is required');
+      const top = parameter.split('.')[0];
+      const reserved = ['id', 'type', 'name', 'sketchId', 'parentIds', 'childIds', 'expressions'];
+      if (!(top in feature) || reserved.includes(top)) fail('INVALID_ARGUMENT', `${feature.name} has no parameter "${parameter}"`);
+      const expressions = { ...((feature as { expressions?: Record<string, string> }).expressions ?? {}) };
+      if (expression === null) {
+        delete expressions[parameter];
+      } else {
+        if (typeof expression !== 'string') fail('INVALID_ARGUMENT', 'expression must be text or null');
+        try {
+          evaluateExpression(expression, variableValues());
+        } catch (e) {
+          fail('INVALID_ARGUMENT', `${parameter} = ${expression}: ${(e as Error).message}`);
+        }
+        expressions[parameter] = expression;
+      }
+      get().updateFeature(feature.id, { expressions } as unknown as FeatureChanges);
+    },
+  });
+
+  const configurations: ConfigurationsAPI = Object.freeze({
+    list() {
+      const st = get();
+      const vals = (c: Configuration | null) => evaluateVariables(effectiveVariables(st.variables, c)).values;
+      return clone([
+        { name: 'Default', values: {}, variables: vals(null), active: st.activeConfiguration === null },
+        ...st.configurations.map(c => ({ name: c.name, values: { ...c.values }, variables: vals(c), active: st.activeConfiguration === c.name })),
+      ]);
+    },
+    active: () => get().activeConfiguration ?? 'Default',
+    set(list: ConfigurationSpec[]) {
+      const valid = Array.isArray(list) && list.every(c => c && typeof c.name === 'string' && c.values && typeof c.values === 'object'
+        && Object.values(c.values).every(v => typeof v === 'string'));
+      if (!valid) fail('INVALID_ARGUMENT', 'configurations must be a list of { name, values: { variable: expression } }');
+      const problems = configurationProblems(get().variables, list);
+      if (problems.length) fail('INVALID_ARGUMENT', problems.join('; '));
+      get().setConfigurations(list);
+    },
+    activate(name: string | null) {
+      const target = name === null || name === 'Default' ? null : name;
+      if (target !== null && !get().configurations.some(c => c.name === target)) {
+        fail('NOT_FOUND', `No configuration ${JSON.stringify(name)}; one of Default, ${get().configurations.map(c => c.name).join(', ') || '(none defined)'}`);
+      }
+      get().activateConfiguration(target);
+    },
+  });
+
+  const SHAPES: readonly ComponentShape[] = ['box', 'cylinder', 'flange', 'pin'];
+  const MATES = Object.values(MATE_TYPES) as MateType[];
+  const requireComponent = (id: unknown): string => {
+    if (typeof id !== 'string' || !get().assemblyComponents.some(c => c.id === id)) fail('NOT_FOUND', `No component ${JSON.stringify(id)}`);
+    return id as string;
+  };
+  const assembly: AssemblyAPI = Object.freeze({
+    list() {
+      return clone(get().assemblyComponents.map(c => ({
+        id: c.id,
+        name: c.name,
+        shape: (c.geometryType ?? 'box') as ComponentShape,
+        dimensions: { ...(c.dimensions ?? {}) },
+        material: c.material ?? null,
+        fixed: !!c.isFixed,
+        position: { x: c.position.x, y: c.position.y, z: c.position.z },
+      })));
+    },
+    insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] }) {
+      const o = requireObject(spec, 'spec');
+      const name = optionalName(o.name) ?? fail('INVALID_ARGUMENT', 'name is required');
+      if (!SHAPES.includes(o.shape as ComponentShape)) fail('INVALID_ARGUMENT', `shape must be one of ${SHAPES.join(', ')}`);
+      const dims = (o.dimensions ?? {}) as ComponentInfo['dimensions'];
+      for (const [k, v] of Object.entries(requireObject(dims, 'dimensions'))) requireNumber(v, `dimensions.${k}`, { positive: true });
+      get().insertAssemblyPart(name, o.shape as ComponentShape, dims);
+      const all = get().assemblyComponents;
+      return all[all.length - 1].id;
+    },
+    mate(spec: MateSpec) {
+      const o = requireObject(spec, 'spec');
+      if (!MATES.includes(o.type as MateType)) fail('INVALID_ARGUMENT', `type must be one of ${MATES.join(', ')}`);
+      const d = MATE_DEFAULTS[o.type as MateType] ?? { ref1: 'top', ref2: 'bottom', offset: 0 };
+      const offset = o.offset === undefined ? d.offset : requireNumber(o.offset, 'offset');
+      get().addAssemblyMate(
+        o.type as MateType,
+        requireComponent(o.component1), typeof o.ref1 === 'string' ? o.ref1 : d.ref1,
+        requireComponent(o.component2), typeof o.ref2 === 'string' ? o.ref2 : d.ref2,
+        offset,
+      );
+    },
+    solve() {
+      get().solveAssembly();
+      const message = get().statusMessage;
+      return { converged: message.startsWith('Assembly solved'), message };
+    },
+    setMaterial(componentIds: string[], material: string | null) {
+      if (!Array.isArray(componentIds) || componentIds.length === 0) fail('INVALID_ARGUMENT', 'componentIds must be a non-empty list');
+      componentIds.forEach(requireComponent);
+      if (material !== null && !(material in MATERIALS)) fail('NOT_FOUND', `Unknown material ${JSON.stringify(material)}`);
+      get().setComponentMaterial(componentIds, material);
+    },
+    bom: () => clone(buildBom(get().assemblyComponents, get().activeMaterial)),
+    explode(options: { distance?: number; leaderLines?: boolean } = {}) {
+      const distance = options.distance === undefined ? 40 : requireNumber(options.distance, 'distance', { positive: true });
+      if (distance > 1000) fail('INVALID_ARGUMENT', 'distance must be at most 1000 mm');
+      if (get().assemblyComponents.length < 2) fail('OPERATION_FAILED', 'Insert at least two components to explode');
+      get().setExplodedView({ distance, leaderLines: options.leaderLines ?? true });
+    },
+    collapse: () => get().setExplodedView(null),
+    clear: () => get().clearAssembly(),
+  });
+
+  const SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'];
+  const sheetText = (format: 'svg' | 'dxf'): string => {
+    ensureRebuilt();
+    const st = get();
+    const file = drawingFile(st as unknown as DrawingSource, format);
+    return file?.text ?? fail('NOT_FOUND', st.drawingOptions.subject === 'assembly' ? 'The assembly is empty' : 'There is no solid body to draw');
+  };
+  const drawings: DrawingsAPI = Object.freeze({
+    getOptions: () => clone(get().drawingOptions),
+    setOptions(options: Partial<DrawingOptionsInfo>) {
+      const o = requireObject(options, 'options');
+      const next: Partial<DrawingOptionsInfo> = {};
+      if (o.subject !== undefined) {
+        if (o.subject !== 'part' && o.subject !== 'assembly') fail('INVALID_ARGUMENT', "subject must be 'part' or 'assembly'");
+        next.subject = o.subject;
+      }
+      if (o.sheetSize !== undefined) {
+        if (!SIZES.includes(o.sheetSize as string)) fail('INVALID_ARGUMENT', `sheetSize must be one of ${SIZES.join(', ')}`);
+        next.sheetSize = o.sheetSize as DrawingOptionsInfo['sheetSize'];
+      }
+      for (const k of ['hiddenLines', 'dimensions', 'gdt'] as const) {
+        if (o[k] === undefined) continue;
+        if (typeof o[k] !== 'boolean') fail('INVALID_ARGUMENT', `${k} must be true or false`);
+        next[k] = o[k] as boolean;
+      }
+      get().setDrawingOptions(next);
+      return clone(get().drawingOptions);
+    },
+    svg: () => sheetText('svg'),
+    dxf: () => sheetText('dxf'),
+  });
+
   return Object.freeze({
     on,
     off,
     macros,
     plugins,
+    equations,
+    configurations,
+    assembly,
+    drawings,
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),
     document,

@@ -241,7 +241,7 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'equations: variables drive an extrude depth typed as an expression',
+    name: 'equations and configurations: variables drive an extrude depth typed as an expression',
     async run(p) {
       await p.eval(`window.casiworks.commands.execute('document.new')`);
       const type = (sel: string, i: number, value: string) => p.eval(`(() => {
@@ -285,8 +285,32 @@ const CHECKS: Check[] = [
       const v2 = await volume(p);
       assert(Math.abs(v2 - 40 * 20 * 41) < 1e-6, `volume ${v2}, expected 32800 (depth 5 × 8 + 1)`);
       assert(/Boss|Extrude/.test(linkRow) && linkRow.includes('= depth + 1') && linkRow.includes('41'), `links: ${linkRow}`);
+
+      // Configurations: a Large version with wall = 10, switched from the ribbon
+      await p.click('Tools');
+      await p.click('Configurations: versions of the part from variable values (design table)', 300);
+      await p.click('Add configuration', 100);
+      await type('.config-name', 0, 'Large');
+      await type('.config-cell', 0, '10');
+      await sleep(200);
+      await p.click('Apply', 600);
+      await p.screenshot('02e-configurations');
+      await p.click('Close', 300);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.config-switch');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'Large');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(1200);
+      const v3 = await volume(p);
+      const badge = await p.eval<string>(`document.querySelector('.doc-config-tag')?.textContent ?? ''`);
+      assert(Math.abs(v3 - 40 * 20 * 81) < 1e-6 && badge === 'Large', `Large: volume ${v3} (expected 64800), badge "${badge}"`);
+      await p.eval(`window.casiworks.configurations.activate('Default')`);
+      await sleep(1200);
+      const v4 = await volume(p);
+      assert(Math.abs(v4 - v2) < 1e-6, `back to Default: ${v4}`);
       await p.click('Features', 200);
-      return `wall 3 → ${v1} mm³; wall 5 → ${v2} mm³; link row "${linkRow}"`;
+      return `wall 3 → ${v1} mm³; wall 5 → ${v2} mm³; Large (wall 10) → ${v3} mm³, back to Default → ${v4}; link row "${linkRow}"`;
     },
   },
   {

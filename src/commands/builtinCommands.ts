@@ -5,9 +5,10 @@ import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '..
 import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
+import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
-import { evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
-import type { GlobalVariable } from '../features/equations.ts';
+import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
@@ -17,11 +18,14 @@ import { downloadProject, newProject, openProject } from '../utils/projectFile.t
 
 const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'] as const;
 
+/** The variables as the active configuration sees them. */
+const activeVariables = (s: CADStore) => effectiveVariables(s.variables, s.configurations.find(c => c.name === s.activeConfiguration));
+
 /** Check a feature's `expressions` against the current variables; throws INVALID_ARGUMENT naming the bad one. */
 function requireExpressions(state: CADStore, expressions: unknown): void {
   if (expressions === undefined) return;
   if (!expressions || typeof expressions !== 'object' || Array.isArray(expressions)) throw new CommandError('INVALID_ARGUMENT', 'expressions must be an object of parameter → expression');
-  const { values } = evaluateVariables(state.variables);
+  const { values } = evaluateVariables(activeVariables(state));
   for (const [param, expr] of Object.entries(expressions as Record<string, unknown>)) {
     if (typeof expr !== 'string') throw new CommandError('INVALID_ARGUMENT', `expression for ${param} must be text`);
     try { evaluateExpression(expr, values); } catch (e) {
@@ -74,22 +78,7 @@ const requireEntities = (entities: unknown): SketchEntity[] => {
   return entities as SketchEntity[];
 };
 
-/** Default references the ribbon mate buttons use (first two components). */
-const MATE_DEFAULTS: Record<MateType, { ref1: string; ref2: string; offset: number; swap?: boolean }> = {
-  coincident: { ref1: 'top', ref2: 'bottom', offset: 0 },
-  distance: { ref1: 'top', ref2: 'bottom', offset: 15 },
-  // three.js cylinders (pin, flange, rod) have their axis along Y
-  concentric: { ref1: 'y', ref2: 'y', offset: 0 },
-  parallel: { ref1: 'top', ref2: 'top', offset: 0 },
-  perpendicular: { ref1: 'top', ref2: 'front', offset: 0 },
-  // Second component's cylinder axis (Y) tangent to the first component's top face
-  tangent: { ref1: 'y', ref2: 'top', offset: 0, swap: true },
-  // Centre the second component between the first component's left and right faces
-  width: { ref1: 'left', ref2: 'left', offset: 0 },
-  // Keep the second component on the first component's top centre line
-  path: { ref1: 'top', ref2: 'top', offset: 0 },
-} as Record<MateType, { ref1: string; ref2: string; offset: number; swap?: boolean }>;
-
+/** Mate defaults (MATE_DEFAULTS) are shared with the API: assembly/mateDefaults.ts. */
 interface MateArgs {
   type: MateType;
   /** Defaults: the first two components. */
@@ -437,6 +426,8 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       const { values, errors } = evaluateVariables(vars);
       const bad = Object.entries(errors);
       if (bad.length) throw new CommandError('INVALID_ARGUMENT', bad.map(([n, m]) => `${n}: ${m}`).join('; '));
+      const configProblems = configurationProblems(vars, state().configurations).filter(p => !/no variable/.test(p));
+      if (configProblems.length) throw new CommandError('INVALID_ARGUMENT', `With these variables a configuration fails: ${configProblems.join('; ')}`);
       state().setVariables(vars);
       return values;
     },
@@ -445,13 +436,57 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     id: 'equations.list', label: 'List equations', category: 'Tools', record: false,
     description: 'Returns { variables: [{ name, expression, value, error? }], links: [{ featureId, featureName, parameter, expression, value, error? }] }',
     run: ({ state }) => {
-      const { values, errors } = evaluateVariables(state().variables);
+      const active = activeVariables(state());
+      const { values, errors } = evaluateVariables(active);
       return {
-        variables: state().variables.map(v => ({ ...v, value: values[v.name] ?? null, ...(errors[v.name] ? { error: errors[v.name] } : {}) })),
+        configuration: state().activeConfiguration,
+        variables: state().variables.map((v, i) => ({ ...v, ...(active[i].expression !== v.expression ? { override: active[i].expression } : {}), value: values[v.name] ?? null, ...(errors[v.name] ? { error: errors[v.name] } : {}) })),
         links: evaluateLinks(state().features, values).links,
       };
     },
   },
+  {
+    id: 'configurations.set', label: 'Set configurations', category: 'Tools',
+    description: "args: { configurations: [{ name, values: { variable: expression } }] } — replaces them all; e.g. [{ name: 'Large', values: { wall: '6' } }]",
+    run: ({ state }, args: { configurations?: Configuration[] }) => {
+      const list = args?.configurations;
+      if (!Array.isArray(list) || !list.every(c => c && typeof c.name === 'string' && c.values && typeof c.values === 'object' && Object.values(c.values).every(v => typeof v === 'string'))) {
+        throw new CommandError('INVALID_ARGUMENT', 'configurations must be a list of { name, values: { variable: expression } }');
+      }
+      const problems = configurationProblems(state().variables, list);
+      if (problems.length) throw new CommandError('INVALID_ARGUMENT', problems.join('; '));
+      state().setConfigurations(list);
+    },
+  },
+  {
+    id: 'configurations.activate', label: 'Activate configuration', category: 'Tools',
+    description: 'args: { name } — a configuration name, or null / "Default" for the plain variable values',
+    run: ({ state }, args: { name?: string | null } | undefined) => {
+      const raw = args?.name ?? null;
+      const name = raw === null || raw === 'Default' ? null : raw;
+      if (name !== null && !state().configurations.some(c => c.name === name)) {
+        throw new CommandError('INVALID_ARGUMENT', `No configuration "${name}"; one of Default, ${state().configurations.map(c => c.name).join(', ') || '(none defined)'}`);
+      }
+      state().activateConfiguration(name);
+      return { configuration: name ?? 'Default' };
+    },
+  },
+  {
+    id: 'configurations.list', label: 'List configurations', category: 'Tools', record: false,
+    description: 'Returns { active, configurations: [{ name, values, variables: { name: value } }] } (Default first)',
+    run: ({ state }) => {
+      const s = state();
+      const evaluate = (c: Configuration | null) => evaluateVariables(effectiveVariables(s.variables, c)).values;
+      return {
+        active: s.activeConfiguration ?? 'Default',
+        configurations: [
+          { name: 'Default', values: {}, variables: evaluate(null) },
+          ...s.configurations.map(c => ({ name: c.name, values: { ...c.values }, variables: evaluate(c) })),
+        ],
+      };
+    },
+  },
+  { id: 'tools.configurations', label: 'Configurations…', category: 'Tools', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('configurations') },
   { id: 'tools.equations', label: 'Equations…', category: 'Tools', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('equations') },
   { id: 'assembly.billOfMaterials', label: 'Bill of materials…', category: 'Assembly', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('bom') },
   {

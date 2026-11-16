@@ -500,7 +500,7 @@ npm run dev</pre></div>
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 7 · about 15 min</span></div>
   <h2 class="title">Editing history: the feature tree</h2>
   <p class="lead">This is what makes CasiWorks <i>parametric</i>. Every feature remembers its settings, so you can change one and the rest of the part rebuilds to match.</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Edit a feature's settings after it is built</li><li>Roll back history to insert or inspect features</li><li>Suppress features and read rebuild warnings</li><li>Drive sizes from named variables with equations</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Edit a feature's settings after it is built</li><li>Roll back history to insert or inspect features</li><li>Suppress features and read rebuild warnings</li><li>Drive sizes from named variables with equations</li><li>Keep several versions of a part as configurations</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 7.1</span><h4>Make the L-bracket's upright taller</h4><div class="specs"><span>Mounting L-Bracket</span><span>Aluminium 6061</span><span>7 features</span></div></div>
     <div class="example-body">
@@ -537,6 +537,18 @@ npm run dev</pre></div>
         <figure class="shot"><img loading="lazy" src="img/19b-linked-field.webp" alt="Extrude depth linked to an expression"><figcaption>The depth is linked: ƒ, with the expression in the tooltip.</figcaption></figure>
         <figure class="shot"><img loading="lazy" src="img/19c-equations.webp" alt="Equations dialog"><figcaption>The Equations dialog: variables, values and the sizes they drive.</figcaption></figure>
       </div>
+    </div>
+  </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 7.3</span><h4>Light and Heavy versions of the plate</h4><div class="specs"><span>Configurations</span><span>Light: wall = 2</span><span>Heavy: wall = 8</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>With the plate from Example 7.2, click <b>Configs</b> on the <b>Tools</b> tab. The table has a row per version of the part and a column per variable. <b>Default</b> is the plain variable values.</li>
+        <li>Click <b>Add configuration</b> twice. Name the rows <i>Light</i> and <i>Heavy</i>, put <code>2</code> and <code>8</code> in their <b>wall</b> column, and click <b>Apply</b>. Leave a cell empty to keep the default. The grey hint shows what the value is in that row.</li>
+        <li>Click the circle in the <i>Heavy</i> row, or choose it in the picker beside <b>Configs</b> on the ribbon. The plate rebuilds 24 mm thick, and the title bar shows <b>Heavy</b> next to the part name.</li>
+        <li>Switch back to <b>Default</b> the same way. Switching is an undo step, and the active configuration is saved with the project.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/19d-configurations.webp" alt="Configurations design table"><figcaption>The design table with Heavy active.</figcaption></figure>
     </div>
   </div>
   <div class="table-wrap"><table>
@@ -787,7 +799,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.4</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.5</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -828,9 +840,12 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="table-wrap"><table>
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
-    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code></td></tr>
+    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
+    <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
+    <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>: the drawing sheet as text, also headless (since 1.5)</td></tr>
     <tr><td><code>api.commands</code></td><td><code>list()</code>, <code>execute(id, args)</code>. Every ribbon button is a command.</td></tr>
     <tr><td><code>api.macros</code> · <code>api.plugins</code></td><td><code>start()</code>, <code>stop()</code>, <code>run(macro)</code> · <code>load(url)</code>, <code>unload(id)</code></td></tr>
     <tr><td><code>api.on(event, fn)</code></td><td><code>rebuild</code>, <code>featureAdded</code>, <code>featureRemoved</code>, <code>commandExecuted</code>, …</td></tr>
@@ -952,6 +967,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Term</th><th>Meaning</th></tr>
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
+    <tr><td>Configuration</td><td>A named version of a part that changes some variable values (Tools ▸ Configs). Default is the plain values.</td></tr>
     <tr><td>Global variable</td><td>A named value, such as <code>wall = 4</code>, that feature sizes can use in expressions (Tools ▸ Equations).</td></tr>
     <tr><td>Feature</td><td>One modelling step, such as an extrude, cut, revolve, hole or pattern.</td></tr>
     <tr><td>Parametric</td><td>Features keep their settings, so changing one rebuilds everything after it.</td></tr>

@@ -232,3 +232,38 @@ export function evaluateLinks(
   }
   return { updates, links };
 }
+
+// ------------------------------------------------------------------ configurations
+
+/** A named variant of the part: variable expressions that replace the defaults while it is active. */
+export interface Configuration {
+  name: string;
+  /** variable name → expression; variables not listed keep their default. */
+  values: Record<string, string>;
+}
+
+/** The variables as a configuration sees them (unknown names in the configuration are ignored). */
+export function effectiveVariables(variables: GlobalVariable[], configuration: Configuration | null | undefined): GlobalVariable[] {
+  if (!configuration) return variables;
+  return variables.map(v => (Object.prototype.hasOwnProperty.call(configuration.values, v.name) && configuration.values[v.name].trim() !== ''
+    ? { name: v.name, expression: configuration.values[v.name] }
+    : v));
+}
+
+/** Problems with a set of configurations (empty when they are fine). */
+export function configurationProblems(variables: GlobalVariable[], configurations: Configuration[]): string[] {
+  const problems: string[] = [];
+  const names = new Set<string>();
+  const known = new Set(variables.map(v => v.name));
+  for (const c of configurations) {
+    const name = c.name.trim();
+    if (!name) { problems.push('A configuration needs a name'); continue; }
+    if (name.toLowerCase() === 'default') problems.push('"Default" is reserved for the plain variable values');
+    if (names.has(name)) problems.push(`"${name}" is used twice`);
+    names.add(name);
+    for (const v of Object.keys(c.values)) if (!known.has(v)) problems.push(`${name}: no variable "${v}"`);
+    const { errors } = evaluateVariables(effectiveVariables(variables, c));
+    for (const [v, m] of Object.entries(errors)) problems.push(`${name}: ${v}: ${m}`);
+  }
+  return problems;
+}

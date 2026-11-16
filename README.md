@@ -223,7 +223,7 @@ console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
 shown. Or use the browser's developer console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.4.0'
+const api = window.casiworks;          // api.version === '1.5.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -248,6 +248,27 @@ const api = createHeadlessAPI();   // same API, no browser or React
 
 `api.version` follows semantic versioning: minor versions only add, major
 versions may break.
+
+**New in 1.5**: equations, configurations, assemblies, drawings and sketch editing:
+
+```js
+api.equations.set([{ name: 'wall', expression: '3' }, { name: 'depth', expression: 'wall * 8' }]);
+api.equations.link(boss, 'depth', 'depth + 1');           // the extrude follows the variables
+api.configurations.set([{ name: 'Large', values: { wall: '6' } }]);
+api.configurations.activate('Large');                    // depth becomes 49
+
+const plate = api.assembly.insert({ name: 'Base_Plate', shape: 'box', dimensions: { width: 50, height: 12, depth: 50 } });
+const pin = api.assembly.insert({ name: 'Pin_Shaft', shape: 'pin' });
+api.assembly.mate({ type: 'concentric', component1: plate, component2: pin });
+api.assembly.solve();
+api.assembly.setMaterial([pin], 'Brass_C36000');
+api.assembly.bom();                                      // rows with quantities and masses
+
+api.drawings.setOptions({ subject: 'assembly', sheetSize: 'A3_LANDSCAPE' });
+const svg = api.drawings.svg();                          // parts list and balloons; dxf() too
+
+api.sketches.trim(sketchId, lineId, { x: 5, y: 0 });     // also extend, offset, mirror
+```
 
 **Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
 object; it gets the public API and can add commands and Add-ins ribbon buttons.

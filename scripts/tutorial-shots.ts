@@ -320,6 +320,14 @@ const SHOTS: Shot[] = [
       await run(p, 'tools.equations', undefined, 500);
       await p.screenshot('19c-equations');
       await p.click('Close', 300);
+      await run(p, 'configurations.set', { configurations: [{ name: 'Light', values: { wall: '2' } }, { name: 'Heavy', values: { wall: '8' } }] });
+      await run(p, 'configurations.activate', { name: 'Heavy' }, 1200);
+      await p.click('Tools');
+      await run(p, 'tools.configurations', undefined, 500);
+      await p.screenshot('19d-configurations');
+      await p.click('Close', 300);
+      await run(p, 'configurations.activate', { name: 'Default' }, 800);
+      await p.click('Features');
     },
   },
   {

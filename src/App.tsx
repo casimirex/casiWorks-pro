@@ -7,6 +7,7 @@ import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
 import AddinsDialog from './components/dialogs/AddinsDialog.tsx';
 import BomDialog from './components/dialogs/BomDialog.tsx';
 import EquationsDialog from './components/dialogs/EquationsDialog.tsx';
+import ConfigurationsDialog from './components/dialogs/ConfigurationsDialog.tsx';
 import DrawingViewModal from './drawings/DrawingViewModal.tsx';
 import { commands } from './commands/index.ts';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
@@ -28,6 +29,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [bomOpen, setBomOpen] = useState(false);
   const [equationsOpen, setEquationsOpen] = useState(false);
+  const [configurationsOpen, setConfigurationsOpen] = useState(false);
 
   // The UI that commands open dialogs in, and keyboard shortcuts that run commands
   useEffect(() => {
@@ -40,6 +42,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
         else if (name === 'addins') setAddinsOpen(true);
         else if (name === 'bom') setBomOpen(true);
         else if (name === 'equations') setEquationsOpen(true);
+        else if (name === 'configurations') setConfigurationsOpen(true);
       },
       toggleFeatureTree: () => setTreeOpen(open => !open),
       toggleConsole: () => setConsoleOpen(open => !open),
@@ -103,6 +106,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
       <AddinsDialog isOpen={addinsOpen} onClose={() => setAddinsOpen(false)} />
       <BomDialog isOpen={bomOpen} onClose={() => setBomOpen(false)} />
       <EquationsDialog isOpen={equationsOpen} onClose={() => setEquationsOpen(false)} />
+      <ConfigurationsDialog isOpen={configurationsOpen} onClose={() => setConfigurationsOpen(false)} />
 
       <DrawingViewModal isOpen={drawingOpen} onClose={() => setDrawingOpen(false)} />
     </>

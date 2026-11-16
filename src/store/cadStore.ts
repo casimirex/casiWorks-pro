@@ -13,8 +13,8 @@ import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '..
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
-import { evaluateLinks, evaluateVariables } from '../features/equations.ts';
-import type { GlobalVariable } from '../features/equations.ts';
+import { effectiveVariables, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
   Feature,
@@ -108,6 +108,8 @@ interface DocumentSnapshot {
   rollbackIndex: number;
   activeMaterial: string;
   variables: GlobalVariable[];
+  configurations: Configuration[];
+  activeConfiguration: string | null;
 }
 
 interface UndoEntry {
@@ -187,6 +189,10 @@ export interface CADState {
   explodedView: ExplodedViewSettings | null;
   /** Global variables (equations), saved with the project. */
   variables: GlobalVariable[];
+  /** Named variants that override variable values (design table). */
+  configurations: Configuration[];
+  /** The configuration in use; null is Default (the plain variable values). */
+  activeConfiguration: string | null;
   /** Drawing sheet display options (a session preference, not saved in the project). */
   drawingOptions: DrawingOptions;
 
@@ -278,6 +284,10 @@ export interface CADActions {
   setDrawingOptions(options: Partial<DrawingOptions>): void;
   /** Replace the global variables and update every parameter linked to them (one undo step). */
   setVariables(variables: GlobalVariable[]): void;
+  /** Replace the configurations (one undo step); the active one stays active if it still exists. */
+  setConfigurations(configurations: Configuration[]): void;
+  /** Switch to a configuration (null = Default); linked sizes update and the part rebuilds. */
+  activateConfiguration(name: string | null): void;
 
   // Documents
   saveProject(): string;
@@ -374,6 +384,8 @@ function snapshotOf(state: Draft<CADStore>): DocumentSnapshot {
     rollbackIndex: state.rollbackIndex,
     activeMaterial: state.activeMaterial,
     variables: safeDeepClone(state.variables as GlobalVariable[]),
+    configurations: safeDeepClone(state.configurations as Configuration[]),
+    activeConfiguration: state.activeConfiguration,
   };
 }
 
@@ -385,6 +397,8 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
   state.rollbackIndex = s.rollbackIndex ?? -1;
   state.activeMaterial = s.activeMaterial || 'Steel_1020';
   state.variables = s.variables ?? [];
+  state.configurations = (s.configurations ?? []) as Draft<Configuration>[];
+  state.activeConfiguration = s.activeConfiguration ?? null;
   state.needsRebuild = true;
 }
 
@@ -394,7 +408,8 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
  */
 function applyEquations(state: Draft<CADStore>): void {
   if (state.variables.length === 0 && !state.features.some(f => f.expressions && Object.keys(f.expressions).length)) return;
-  const { values } = evaluateVariables(state.variables as GlobalVariable[]);
+  const config = state.configurations.find(c => c.name === state.activeConfiguration) as Configuration | undefined;
+  const { values } = evaluateVariables(effectiveVariables(state.variables as GlobalVariable[], config));
   const { updates } = evaluateLinks(state.features as Feature[], values);
   for (const f of state.features) {
     const u = updates[f.id];
@@ -473,6 +488,8 @@ function initialState(): CADState {
     mates: [],
     explodedView: null,
     variables: [],
+    configurations: [],
+    activeConfiguration: null,
     drawingOptions: { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
     needsRebuild: false,
     rebuildCount: 0,
@@ -955,6 +972,25 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = `Equations updated (${variables.length} variable${variables.length === 1 ? '' : 's'})`;
     }),
 
+    setConfigurations: (configurations) => set(state => {
+      get()._captureUndoSnapshot(state, 'Edit Configurations');
+      state.configurations = configurations.map(c => ({ name: c.name.trim(), values: { ...c.values } }));
+      if (state.activeConfiguration && !state.configurations.some(c => c.name === state.activeConfiguration)) state.activeConfiguration = null;
+      applyEquations(state);
+      state.isModified = true;
+      state.statusMessage = `Configurations updated (${configurations.length})`;
+    }),
+
+    activateConfiguration: (name) => set(state => {
+      if (name !== null && !state.configurations.some(c => c.name === name)) return;
+      if (state.activeConfiguration === name) return;
+      get()._captureUndoSnapshot(state, `Configuration: ${name ?? 'Default'}`);
+      state.activeConfiguration = name;
+      applyEquations(state);
+      state.isModified = true;
+      state.statusMessage = `Configuration: ${name ?? 'Default'}`;
+    }),
+
     setDrawingOptions: (options) => set(state => {
       Object.assign(state.drawingOptions, options);
     }),
@@ -985,6 +1021,7 @@ export const useCADStore = create<CADStore>()(
         rollbackIndex: state.rollbackIndex,
         activeMaterial: state.activeMaterial,
         ...(state.variables.length ? { variables: state.variables } : {}),
+        ...(state.configurations.length ? { configurations: state.configurations, activeConfiguration: state.activeConfiguration } : {}),
         settings: state.settings,
         assemblyComponents,
         mates: state.mates,
@@ -1018,6 +1055,12 @@ export const useCADStore = create<CADStore>()(
         state.variables = Array.isArray(project.variables)
           ? project.variables.filter(v => v && typeof v.name === 'string' && typeof v.expression === 'string').map(v => ({ name: v.name, expression: v.expression }))
           : [];
+        state.configurations = Array.isArray(project.configurations)
+          ? project.configurations
+            .filter(c => c && typeof c.name === 'string' && c.values && typeof c.values === 'object')
+            .map(c => ({ name: c.name, values: Object.fromEntries(Object.entries(c.values).filter(([, e]) => typeof e === 'string')) as Record<string, string> }))
+          : [];
+        state.activeConfiguration = state.configurations.some(c => c.name === project.activeConfiguration) ? project.activeConfiguration! : null;
         applyEquations(state);
 
         // Restore assembly components

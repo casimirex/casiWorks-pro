@@ -286,5 +286,8 @@ export interface ProjectFile {
   mates: unknown[];
   /** Global variables (equations); absent in older files. */
   variables?: Array<{ name: string; expression: string }>;
+  /** Configurations (design table) and the active one; absent in older files. */
+  configurations?: Array<{ name: string; values: Record<string, string> }>;
+  activeConfiguration?: string | null;
   timestamp: number;
 }

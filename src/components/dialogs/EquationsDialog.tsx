@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Sigma, Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { evaluateLinks, evaluateVariables } from '../../features/equations.ts';
+import { effectiveVariables, evaluateLinks, evaluateVariables } from '../../features/equations.ts';
 import type { GlobalVariable } from '../../features/equations.ts';
 import { runCommand } from '../../commands/index.ts';
 
@@ -16,12 +16,15 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
 export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
   const variables = useCADStore(s => s.variables);
   const features = useCADStore(s => s.features);
+  const configurations = useCADStore(s => s.configurations);
+  const activeConfiguration = useCADStore(s => s.activeConfiguration);
   const [draft, setDraft] = useState<GlobalVariable[]>([]);
 
   // Start from the document's variables each time the dialog opens
   useEffect(() => { if (isOpen) setDraft(variables.map(v => ({ ...v }))); }, [isOpen, variables]);
 
-  const { values, errors } = useMemo(() => evaluateVariables(draft.filter(v => v.name || v.expression)), [draft]);
+  const config = configurations.find(c => c.name === activeConfiguration);
+  const { values, errors } = useMemo(() => evaluateVariables(effectiveVariables(draft.filter(v => v.name || v.expression), config)), [draft, config]);
   const links = useMemo(() => evaluateLinks(features, values).links, [features, values]);
   const changed = JSON.stringify(draft) !== JSON.stringify(variables);
   const blank = draft.some(v => !v.name.trim() || !v.expression.trim());
@@ -54,6 +57,11 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
             Name sizes once and use them anywhere: type an expression such as <code>wall * 2</code> into a feature&apos;s number field.
             Lengths are in mm, angles in degrees. Operators: + − * / ^ ( ); functions sqrt, abs, round, floor, ceil, sin, cos, tan, min, max; constant pi.
           </p>
+          {config && (
+            <p className="eq-config-note" style={{ fontSize: 11, color: '#38bdf8', margin: '0 0 8px' }}>
+              Configuration <b>{config.name}</b> is active: values include its changes ({Object.keys(config.values).join(', ') || 'none'}). Expressions here are the defaults.
+            </p>
+          )}
           <table className="equations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr><th style={{ ...th, width: '26%' }}>Name</th><th style={th}>Expression</th><th style={{ ...th, width: '18%', textAlign: 'right' }}>Value</th><th style={{ ...th, width: 32 }} /></tr>
