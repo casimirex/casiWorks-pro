@@ -5,6 +5,8 @@ import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '..
 import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
+import { bomCSV, buildBom } from '../assembly/bom.ts';
+import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
@@ -381,6 +383,23 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   { id: 'assembly.collapse', label: 'Collapse exploded view', category: 'Assembly', record: false, run: ({ state }) => state().setExplodedView(null) },
+  {
+    id: 'assembly.bom', label: 'Bill of materials (data)', category: 'Assembly', record: false,
+    description: 'Returns { rows: [{ item, partNumber, description, quantity, material, unitVolume (mm³), unitMass, totalMass (kg), componentIds }], totalQuantity, totalMass, material }',
+    run: ({ state }) => buildBom(state().assemblyComponents, materialLibrary.getMaterial(state().activeMaterial)),
+  },
+  { id: 'assembly.billOfMaterials', label: 'Bill of materials…', category: 'Assembly', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('bom') },
+  {
+    id: 'assembly.exportBom', label: 'Export bill of materials (CSV)', category: 'Assembly', requiresUI: true, record: false,
+    run: ({ state }) => {
+      const s = state();
+      if (s.assemblyComponents.length === 0) throw new CommandError('NOT_AVAILABLE', 'Insert components first: the assembly is empty');
+      const filename = `${(s.documentName || 'Assembly').replace(/\s+/g, '_')}_BOM.csv`;
+      downloadBlob(bomCSV(buildBom(s.assemblyComponents, materialLibrary.getMaterial(s.activeMaterial))), filename, 'text/csv;charset=utf-8');
+      s.setStatus(`Bill of materials exported: ${filename}`);
+      return { filename };
+    },
+  },
   { id: 'assembly.clear', label: 'Clear assembly', category: 'Assembly', run: ({ state }) => state().clearAssembly() },
 ] as Array<Def<never>>;
 

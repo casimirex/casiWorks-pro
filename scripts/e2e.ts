@@ -378,6 +378,30 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'bill of materials: grouped rows, totals and CSV export',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Assembly');
+      await p.click('Insert Base Mounting Plate', 300);
+      await p.click('Insert Cylindrical Alignment Pin', 300);
+      await p.click('Insert Cylindrical Alignment Pin', 300);
+      await p.click('Bill of Materials: parts, quantities and masses, with CSV export', 400);
+      const rows = await p.eval<string[][]>(`[...document.querySelectorAll('.bom-table tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim()))`);
+      const total = await p.eval<string>(`document.querySelector('.bom-total').textContent`);
+      assert(rows.length === 2 && rows[0][1] === 'Base_Plate' && rows[1][1] === 'Pin_Shaft' && rows[1][3] === '2', `rows ${JSON.stringify(rows)}`);
+      assert(rows[0][5] === '237.00', `plate mass ${rows[0][5]} g (50 × 12 × 50 mm of steel = 237.00 g)`);
+      await p.screenshot('08b-bom');
+      await p.eval(CAPTURE_DOWNLOADS);
+      await p.click('Export CSV', 400);
+      const csv = await p.eval<string>(`window.__blobs.at(-1).text()`);
+      assert(csv.startsWith('Item,Part number,Description,Qty') && csv.includes('2,Pin_Shaft,Pin Ø12 × 40 mm,2,'), `CSV: ${csv.slice(0, 200)}`);
+      await p.click('Close', 300);
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await p.click('Features', 1500);
+      return `${rows.map(r => `${r[3]} × ${r[1]}`).join(', ')}; ${total.replace(/\s+/g, ' ')}; CSV ${csv.split('\r\n').length - 1} lines`;
+    },
+  },
+  {
     name: 'commands, keyboard and events',
     async run(p) {
       await p.eval(`window.__events = []; ['featureAdded', 'featureRemoved', 'commandExecuted'].forEach(n => window.casiworks.on(n, e => window.__events.push(n + ':' + (e.feature?.type ?? e.id))));`);

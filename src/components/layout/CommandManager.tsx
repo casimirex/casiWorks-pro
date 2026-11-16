@@ -669,6 +669,14 @@ export default function CommandManager() {
                   </button>
                   <button
                     className="ribbon-btn"
+                    onClick={() => runCommand('assembly.billOfMaterials')}
+                    title="Bill of Materials: parts, quantities and masses, with CSV export"
+                  >
+                    <FileText size={19} color="#fbbf24" />
+                    <span>BOM</span>
+                  </button>
+                  <button
+                    className="ribbon-btn"
                     onClick={() => runCommand('assembly.clear')}
                     title="Remove all components and mates"
                   >

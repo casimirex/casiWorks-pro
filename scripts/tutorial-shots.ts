@@ -340,6 +340,10 @@ const SHOTS: Shot[] = [
       await zoom(p, 4);
       await p.screenshot('25-exploded');
       await run(p, 'assembly.collapse');
+      await p.click('Insert Cylindrical Alignment Pin', 600);
+      await p.click('Bill of Materials: parts, quantities and masses, with CSV export', 600);
+      await p.screenshot('25b-bom');
+      await p.click('Close', 300);
     },
   },
   {

@@ -585,7 +585,7 @@ npm run dev</pre></div>
 <section class="chapter" id="ch10" data-title="Assemblies & mates" data-part="advanced" data-n="10">
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 10 · about 15 min</span></div>
   <h2 class="title">Assemblies and mates</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li><li>List the parts in a bill of materials and export it</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 10.1</span><h4>Pin a shaft into a base plate</h4><div class="specs"><span>Base plate 50 × 12 × 50</span><span>Alignment pin</span><span>Concentric mate</span></div></div>
     <div class="example-body">
@@ -618,6 +618,10 @@ npm run dev</pre></div>
   </table></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Display only</b><p>The exploded view only changes what you see. Components keep their real positions and mates, so saving, solving and exporting all use the assembled positions. Each mated part moves away from its partner; parts later in the list move further.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Add the fewest mates that fix the position. Extra mates that fight each other leave a residual above zero after <b>Solve</b>, and that number tells you something is over-constrained. <b>Clear</b> removes all components and mates.</p></div></div>
+  <h3>Bill of materials</h3>
+  <p>Click <b>BOM</b> in the Actions group to list the parts in the assembly. Identical parts (same name and same size) share one row with their quantity. Each row gives a description of the shape and its size, the material, and the mass of one part and of all of them. <b>Export CSV</b> saves the table for a spreadsheet or a purchasing system.</p>
+  <figure class="shot"><img loading="lazy" src="img/25b-bom.webp" alt="Bill of materials with a base plate and two pins"><figcaption>Example 10.1 with a second pin: the two pins share row 2, quantity 2.</figcaption></figure>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Masses</b><p>Masses use exact volumes of the component shapes and the part material chosen with <b>Material</b>. All components share that one material for now. From the console, <code>casiworks.commands.execute('assembly.bom')</code> returns the same table as data.</p></div></div>
   <div class="exercise"><b>Exercise 10.</b> Insert a Flange and a Cylinder rod. Make them concentric, then add a Distance mate so the rod sits 15 mm above the flange.<label><input type="checkbox" data-done="ch10"> I've done this</label></div>
 </section>
 
