@@ -250,7 +250,7 @@ export default function PropertyPanel() {
     } else {
       const params = featureParameters();
       // Only links to this feature type's own parameters; an edit always sends them, so unlinking sticks
-      const links = Object.fromEntries(Object.entries(expressions).filter(([k]) => k in params));
+      const links = Object.fromEntries(Object.entries(expressions).filter(([k]) => k.split('.')[0] in params));
       const featData = {
         type: featureType,
         name: propertyPanelContent.name || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
@@ -584,7 +584,7 @@ export default function PropertyPanel() {
               {(['x', 'y', 'z'] as const).map(k => (
                 <div className="property-row" key={k}>
                   <span className="property-label">Entry {k.toUpperCase()}:</span>
-                  <NumericInput value={holePosition[k]} onChange={(v) => setHolePosition(p => ({ ...p, [k]: v }))} step={1} unit="mm" />
+                  <NumericInput value={holePosition[k]} onChange={(v) => setHolePosition(p => ({ ...p, [k]: v }))} step={1} unit="mm" {...linkable(`position.${k}`)} />
                 </div>
               ))}
               {axisSelect(holeAxis, setHoleAxis, 'Drill Direction:')}

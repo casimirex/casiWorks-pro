@@ -400,8 +400,17 @@ function applyEquations(state: Draft<CADStore>): void {
     const u = updates[f.id];
     if (!u) continue;
     for (const [k, v] of Object.entries(u)) {
-      if ((f as unknown as Record<string, unknown>)[k] !== v) {
-        (f as unknown as Record<string, unknown>)[k] = v;
+      // "position.x" reaches into a grouped parameter
+      const path = k.split('.');
+      let target = f as unknown as Record<string, unknown>;
+      for (const part of path.slice(0, -1)) {
+        const next = target[part];
+        if (!next || typeof next !== 'object') { target = {}; break; }
+        target = next as Record<string, unknown>;
+      }
+      const last = path[path.length - 1];
+      if (target[last] !== v && last in target) {
+        target[last] = v;
         state.needsRebuild = true;
       }
     }

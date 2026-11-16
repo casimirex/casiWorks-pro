@@ -87,3 +87,22 @@ test('Equations drive feature parameters: create, change a variable, undo, save 
   assert.equal((s().features.find(f => f.id === featureId) as ExtrudeFeature).depth, 12);
   s().newProject();
 });
+
+test('Equations reach grouped parameters: a hole position linked with position.x / position.y', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = useCADStore.getState;
+  s().newProject();
+  r.execute('equations.set', { variables: [{ name: 'pitch', expression: '20' }] });
+  const { featureId } = r.execute('feature.create', {
+    type: 'hole', diameter: 6, depth: 10, holeType: 'simple', position: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 },
+    expressions: { 'position.x': 'pitch / 2', 'position.y': '-pitch', diameter: 'pitch / 4' },
+  }) as { featureId: string };
+  const hole = () => s().features.find(f => f.id === featureId) as unknown as { position: { x: number; y: number; z: number }; diameter: number };
+  assert.deepEqual(hole().position, { x: 10, y: -20, z: 0 });
+  assert.equal(hole().diameter, 5);
+  r.execute('equations.set', { variables: [{ name: 'pitch', expression: '30' }] });
+  assert.deepEqual(hole().position, { x: 15, y: -30, z: 0 }, 'z untouched');
+  const links = (r.execute('equations.list') as { links: Array<{ parameter: string; value: number }> }).links;
+  assert.deepEqual(links.map(l => [l.parameter, l.value]), [['position.x', 15], ['position.y', -30], ['diameter', 7.5]]);
+  s().newProject();
+});

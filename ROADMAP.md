@@ -108,7 +108,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [x] **3.4** Arcs, splines, slots, polygons, trim / extend / offset / mirror (all with click hints; trim cuts back to the nearest crossings and turns a cut circle into an arc; extend lengthens lines to the next entity; offset follows a connected chain of lines and arcs and re-joins the corners; mirror copies about a picked line; splines through clicked points, open or closed; pick tolerance is 8 screen pixels; grid snap can be switched off. Splines and ellipses can be mirrored but not trimmed or offset)
 - [ ] **3.5** Reference geometry: planes, axes, points, coordinate systems
 - [ ] **3.6** Hole wizard (counterbore, countersink, tapped) with standards tables
-- [x] **3.7** Global variables and equations (Tools ▸ Equations; any feature number field takes an expression and stays linked (ƒ); safe parser, dependency order, cycle detection; saved with the project, in undo; `equations.set` / `equations.list`)
+- [x] **3.7** Global variables and equations (Tools ▸ Equations; any feature number field (hole positions too, as `position.x`) takes an expression and stays linked (ƒ); safe parser, dependency order, cycle detection; saved with the project, in undo; `equations.set` / `equations.list`)
 - [ ] **3.8** Configurations (design tables)
 - [ ] **3.9** Measure tool and section view on exact geometry
 
