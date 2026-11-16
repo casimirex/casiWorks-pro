@@ -5,7 +5,6 @@ import ExportDialog from './components/dialogs/ExportDialog.tsx';
 import MaterialDialog from './components/dialogs/MaterialDialog.tsx';
 import MassPropsDialog from './components/dialogs/MassPropsDialog.tsx';
 import AddinsDialog from './components/dialogs/AddinsDialog.tsx';
-import ResultsViewer from './simulation/ResultsViewer.tsx';
 import DrawingViewModal from './drawings/DrawingViewModal.tsx';
 import { commands } from './commands/index.ts';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
@@ -97,8 +96,6 @@ export default function App() {
       <MassPropsDialog isOpen={massPropsOpen} onClose={() => setMassPropsOpen(false)} />
       <AddinsDialog isOpen={addinsOpen} onClose={() => setAddinsOpen(false)} />
 
-      {/* FEA stress simulation overlay */}
-      <ResultsViewer />
       <DrawingViewModal isOpen={drawingOpen} onClose={() => setDrawingOpen(false)} />
     </>
   );

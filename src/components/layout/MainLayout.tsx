@@ -6,6 +6,7 @@ import StatusBar from './StatusBar.tsx';
 import Viewport3D from '../../viewport/Viewport3D.tsx';
 import ErrorBoundary from '../common/ErrorBoundary.tsx';
 import ScriptConsole from '../../console/ScriptConsole.tsx';
+import ResultsViewer from '../../simulation/ResultsViewer.tsx';
 import { useCADStore } from '../../store/cadStore.ts';
 
 import { runCommand } from '../../commands/index.ts';
@@ -49,6 +50,10 @@ export default function MainLayout({ treeOpen, onCloseTree, consoleOpen, onClose
         <div className="viewport-wrapper" style={{ flex: 1, position: 'relative', height: '100%', overflow: 'hidden' }}>
           <ErrorBoundary name="3D viewport">
             <Viewport3D />
+          </ErrorBoundary>
+          {/* FEA panel: inside the viewport, so it never covers the property panel */}
+          <ErrorBoundary name="FEA panel">
+            <ResultsViewer />
           </ErrorBoundary>
           <ErrorBoundary name="Console" onReset={onCloseConsole}>
             <ScriptConsole open={consoleOpen} onClose={onCloseConsole} api={window.casiworks} />

@@ -202,12 +202,21 @@ const CHECKS: Check[] = [
       await setField(p, 'Diameter', 10);
       await setField(p, 'Hole Depth', 10);
       await setField(p, 'Drill Direction', '+Z');
+      // The FEA panel stays in the viewport, clear of the property panel
+      const overlap = await p.eval<number>(`(() => {
+        const a = document.querySelector('.fea-panel')?.getBoundingClientRect();
+        const b = document.querySelector('.property-panel')?.getBoundingClientRect();
+        if (!a || !b) return -1;
+        return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      })()`);
+      assert(overlap === 0, overlap < 0 ? 'FEA panel or property panel missing' : `FEA panel covers ${overlap} px² of the property panel`);
+      await p.screenshot('04-hole-panel');
       await p.eval(`document.querySelector('.action-btn-green').click()`);
       await sleep(1200);
       const removed = before - await volume(p);
       const faceted = 16 * Math.sin(Math.PI / 16) * 25 * 10; // 32-sided Ø10 × 10
       assert(Math.abs(removed - faceted) < 1, `removed ${removed} mm³, expected ${faceted}`);
-      return `removed ${removed.toFixed(0)} mm³`;
+      return `removed ${removed.toFixed(0)} mm³; FEA panel clear of the property panel`;
     },
   },
   {

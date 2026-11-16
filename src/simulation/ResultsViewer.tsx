@@ -130,7 +130,7 @@ export default function ResultsViewer() {
   return (
     <>
       {minimized ? (
-        <div style={{ position: 'absolute', bottom: 32, right: 12, display: 'flex', gap: 8, zIndex: 50 }}>
+        <div style={{ position: 'absolute', bottom: 12, right: 12, display: 'flex', gap: 8, zIndex: 50 }}>
           <button
             className="fea-minimized-badge"
             onClick={() => setMinimized(false)}
@@ -181,14 +181,16 @@ export default function ResultsViewer() {
       ) : (
         <div className="fea-panel" style={{
           position: 'absolute',
-          bottom: 34,
+          bottom: 12,
           right: 12,
+          maxHeight: 'calc(100% - 24px)',
+          overflowY: 'auto',
           background: 'rgba(25, 25, 28, 0.95)',
           border: '1px solid #444',
           borderRadius: 8,
           padding: 12,
           width: 290,
-          maxWidth: 'calc(100vw - 24px)',
+          maxWidth: 'calc(100% - 24px)',
           color: '#fff',
           zIndex: 50,
           boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
