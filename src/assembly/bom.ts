@@ -1,15 +1,18 @@
 // CasiWorks Pro - Bill of materials for the assembly
 //
-// One row per distinct part (same name, shape and size), with its quantity.
-// Volumes are exact for the primitive shapes (not the faceted display mesh);
-// mass uses the document's material, which every component shares today.
+// One row per distinct part (same name, shape, size and material), with its
+// quantity. Volumes are exact for the primitive shapes (not the faceted display
+// mesh); mass uses each component's material, or the document's when it has none.
 import type { PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
+import { MATERIALS } from '../utils/constants.ts';
 
 export interface BomComponent {
   id: string;
   name: string;
   geometryType?: PrimitiveShape;
   dimensions?: PrimitiveDims;
+  /** Material key; unset means the document material. */
+  material?: string;
 }
 
 export interface BomRow {
@@ -17,7 +20,12 @@ export interface BomRow {
   partNumber: string;
   description: string;
   quantity: number;
+  /** Material name, as shown. */
   material: string;
+  /** Material key (MATERIALS). */
+  materialKey: string;
+  /** True when it is the document material (the component has none of its own). */
+  inherited: boolean;
   /** mm³ per part. */
   unitVolume: number;
   /** kg per part. */
@@ -32,6 +40,7 @@ export interface Bom {
   totalQuantity: number;
   /** kg */
   totalMass: number;
+  /** Document material name (what components without their own use). */
   material: string;
 }
 
@@ -55,14 +64,19 @@ function shapeSize(shape: PrimitiveShape, dims: PrimitiveDims): { description: s
   }
 }
 
+const materialOf = (key: string) => MATERIALS[key] ?? MATERIALS.Steel_1020;
+
 /** The bill of materials: parts in the order they were first inserted. */
-export function buildBom(components: BomComponent[], material: { name: string; density: number }): Bom {
+export function buildBom(components: BomComponent[], documentMaterial: string): Bom {
   const rows = new Map<string, BomRow>();
   for (const c of components) {
     const shape = c.geometryType ?? 'box';
     const dims = c.dimensions ?? {};
     const { description, volume } = shapeSize(shape, dims);
-    const key = `${c.name}\u0000${description}`;
+    const own = c.material && c.material in MATERIALS ? c.material : null;
+    const materialKey = own ?? (documentMaterial in MATERIALS ? documentMaterial : 'Steel_1020');
+    const material = materialOf(materialKey);
+    const key = `${c.name}\u0000${description}\u0000${materialKey}\u0000${own ? 'own' : 'doc'}`;
     const row = rows.get(key);
     if (row) {
       row.quantity += 1;
@@ -71,7 +85,7 @@ export function buildBom(components: BomComponent[], material: { name: string; d
     }
     const unitMass = volume * 1e-9 * material.density;
     rows.set(key, {
-      item: rows.size + 1, partNumber: c.name, description, quantity: 1, material: material.name,
+      item: rows.size + 1, partNumber: c.name, description, quantity: 1, material: material.name, materialKey, inherited: !own,
       unitVolume: volume, unitMass, totalMass: unitMass, componentIds: [c.id],
     });
   }
@@ -81,7 +95,7 @@ export function buildBom(components: BomComponent[], material: { name: string; d
     rows: list,
     totalQuantity: list.reduce((n, r) => n + r.quantity, 0),
     totalMass: list.reduce((m, r) => m + r.totalMass, 0),
-    material: material.name,
+    material: materialOf(documentMaterial).name,
   };
 }
 

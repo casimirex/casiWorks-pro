@@ -708,7 +708,7 @@ export default function Viewport3D() {
               shadedMode={shadedMode}
               wireframeMode={wireframeMode}
               edgeDisplay={edgeDisplay}
-              materialKey={activeMaterial}
+              materialKey={comp.material ?? activeMaterial}
             />
           </group>
         ))}

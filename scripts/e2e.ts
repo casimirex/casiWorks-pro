@@ -390,11 +390,21 @@ const CHECKS: Check[] = [
       const total = await p.eval<string>(`document.querySelector('.bom-total').textContent`);
       assert(rows.length === 2 && rows[0][1] === 'Base_Plate' && rows[1][1] === 'Pin_Shaft' && rows[1][3] === '2', `rows ${JSON.stringify(rows)}`);
       assert(rows[0][5] === '237.00', `plate mass ${rows[0][5]} g (50 × 12 × 50 mm of steel = 237.00 g)`);
+      // Brass pins: the row's material picker sets both pins
+      await p.eval(`(() => {
+        const sel = document.querySelectorAll('.bom-material')[1];
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'Brass_C36000');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(300);
+      const brass = await p.eval<string[]>(`[...document.querySelectorAll('.bom-table tbody tr')][1].querySelectorAll('td')[5].textContent`);
+      const picked = await p.eval<string>(`document.querySelectorAll('.bom-material')[1].value`);
+      assert(picked === 'Brass_C36000' && String(brass) === '38.45', `brass pin: ${picked}, ${brass} g (Ø12 × 40 mm × 8500 kg/m³ = 38.45 g)`);
       await p.screenshot('08b-bom');
       await p.eval(CAPTURE_DOWNLOADS);
       await p.click('Export CSV', 400);
       const csv = await p.eval<string>(`window.__blobs.at(-1).text()`);
-      assert(csv.startsWith('Item,Part number,Description,Qty') && csv.includes('2,Pin_Shaft,Pin Ø12 × 40 mm,2,'), `CSV: ${csv.slice(0, 200)}`);
+      assert(csv.startsWith('Item,Part number,Description,Qty') && csv.includes('2,Pin_Shaft,Pin Ø12 × 40 mm,2,Brass C36000,38.45,76.91'), `CSV: ${csv.slice(0, 300)}`);
       await p.click('Close', 300);
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
       await p.click('Features', 1500);

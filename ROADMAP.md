@@ -118,7 +118,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [ ] **4.2** Insert real part documents as components (with references, not copies)
 - [ ] **4.3** Mates picked on real faces/edges; under/over-defined feedback
 - [ ] **4.4** Interference detection
-- [x] **4.5** Bill of materials (BOM button on the Assembly tab: identical parts grouped with quantities, exact masses in the document material, CSV export; `assembly.bom` returns it as data)
+- [x] **4.5** Bill of materials (BOM button on the Assembly tab: identical parts grouped with quantities, exact masses, a material per component (picked in the BOM, shown in the viewport, saved with the project; unset follows the document material), CSV export; `assembly.bom` / `assembly.setMaterial` from scripts)
 - [ ] **4.6** Exploded views with steps; motion along mates
 
 ## Phase 5 — Drawings

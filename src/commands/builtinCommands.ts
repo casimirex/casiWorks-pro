@@ -6,7 +6,6 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
-import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
@@ -386,7 +385,21 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   {
     id: 'assembly.bom', label: 'Bill of materials (data)', category: 'Assembly', record: false,
     description: 'Returns { rows: [{ item, partNumber, description, quantity, material, unitVolume (mm³), unitMass, totalMass (kg), componentIds }], totalQuantity, totalMass, material }',
-    run: ({ state }) => buildBom(state().assemblyComponents, materialLibrary.getMaterial(state().activeMaterial)),
+    run: ({ state }) => buildBom(state().assemblyComponents, state().activeMaterial),
+  },
+  {
+    id: 'assembly.setMaterial', label: 'Component material', category: 'Assembly',
+    description: "args: { components: string[] (component ids), material: key such as 'Brass_C36000', or null for the part material }",
+    run: ({ state }, args: { components?: string[]; material?: string | null }) => {
+      const ids = args?.components;
+      if (!Array.isArray(ids) || ids.length === 0 || !ids.every(id => typeof id === 'string')) throw new CommandError('INVALID_ARGUMENT', 'components must be a list of component ids');
+      const known = new Set(state().assemblyComponents.map(c => c.id));
+      const missing = ids.filter(id => !known.has(id));
+      if (missing.length) throw new CommandError('INVALID_ARGUMENT', `No component with id ${missing.map(m => JSON.stringify(m)).join(', ')}`);
+      const material = args.material ?? null;
+      if (material !== null && !(material in MATERIALS)) throw new CommandError('INVALID_ARGUMENT', `Unknown material ${JSON.stringify(material)}; one of ${Object.keys(MATERIALS).join(', ')}`);
+      state().setComponentMaterial(ids, material);
+    },
   },
   { id: 'assembly.billOfMaterials', label: 'Bill of materials…', category: 'Assembly', requiresUI: true, record: false, run: ({ ui }) => ui().openDialog('bom') },
   {
@@ -395,7 +408,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       const s = state();
       if (s.assemblyComponents.length === 0) throw new CommandError('NOT_AVAILABLE', 'Insert components first: the assembly is empty');
       const filename = `${(s.documentName || 'Assembly').replace(/\s+/g, '_')}_BOM.csv`;
-      downloadBlob(bomCSV(buildBom(s.assemblyComponents, materialLibrary.getMaterial(s.activeMaterial))), filename, 'text/csv;charset=utf-8');
+      downloadBlob(bomCSV(buildBom(s.assemblyComponents, s.activeMaterial)), filename, 'text/csv;charset=utf-8');
       s.setStatus(`Bill of materials exported: ${filename}`);
       return { filename };
     },

@@ -8,7 +8,7 @@ import { immer } from 'zustand/middleware/immer';
 import type { Draft } from 'immer';
 import * as THREE from 'three';
 import { generateId } from '../utils/math.ts';
-import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES } from '../utils/constants.ts';
+import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES, MATERIALS } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
@@ -48,6 +48,8 @@ export interface PrimitiveDims {
 export type StoreAssemblyComponent = AssemblyComponent & {
   geometryType?: PrimitiveShape;
   dimensions?: PrimitiveDims;
+  /** Material key (MATERIALS); unset means the document material. */
+  material?: string;
 };
 
 export type AssemblyMate = ReturnType<typeof assemblyManager.addMate>;
@@ -84,6 +86,7 @@ interface SerializedComponent {
   scale: { x: number; y: number; z: number };
   geometryType: PrimitiveShape;
   dimensions: PrimitiveDims;
+  material?: string;
 }
 
 /** Something selected in the viewport or tree. */
@@ -262,6 +265,8 @@ export interface CADActions {
   removeAssemblyMate(mateId: string): void;
   solveAssembly(): void;
   clearAssembly(): void;
+  /** Give components their own material (a MATERIALS key), or null to use the document material again. */
+  setComponentMaterial(componentIds: string[], material: string | null): void;
   setExplodedView(settings: ExplodedViewSettings | null): void;
   setDrawingOptions(options: Partial<DrawingOptions>): void;
 
@@ -870,6 +875,19 @@ export const useCADStore = create<CADStore>()(
         : `Mates not satisfied — they may conflict (largest error: ${(res?.error ?? 0).toFixed(3)})`;
     }),
 
+    setComponentMaterial: (componentIds, material) => set(state => {
+      const ids = new Set(componentIds);
+      const changed = assemblyManager.components.filter(c => ids.has(c.id)) as StoreAssemblyComponent[];
+      if (changed.length === 0) return;
+      for (const c of changed) {
+        if (material) c.material = material; else delete c.material;
+      }
+      state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
+      state.isModified = true;
+      const what = changed.length === 1 ? `"${changed[0].name}"` : `${changed.length} components`;
+      state.statusMessage = material ? `${what}: ${MATERIALS[material]?.name ?? material}` : `${what}: part material`;
+    }),
+
     clearAssembly: () => set(state => {
       assemblyManager.components = [];
       assemblyManager.mates = [];
@@ -902,6 +920,7 @@ export const useCADStore = create<CADStore>()(
         scale: { x: comp.scale.x, y: comp.scale.y, z: comp.scale.z },
         geometryType: comp.geometryType || 'box',
         dimensions: comp.dimensions || {},
+        ...(comp.material ? { material: comp.material } : {}),
       }));
 
       const project: ProjectFile = {
@@ -956,6 +975,7 @@ export const useCADStore = create<CADStore>()(
             comp.id = c.id;
             comp.geometryType = shape;
             comp.dimensions = dims;
+            if (typeof c.material === 'string' && c.material in MATERIALS) comp.material = c.material;
             if (c.position) comp.position.set(c.position.x, c.position.y, c.position.z);
             if (c.quaternion) comp.quaternion.set(c.quaternion.x, c.quaternion.y, c.quaternion.z, c.quaternion.w);
             if (c.scale) comp.scale.set(c.scale.x, c.scale.y, c.scale.z);

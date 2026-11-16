@@ -342,6 +342,12 @@ const SHOTS: Shot[] = [
       await run(p, 'assembly.collapse');
       await p.click('Insert Cylindrical Alignment Pin', 600);
       await p.click('Bill of Materials: parts, quantities and masses, with CSV export', 600);
+      await p.eval(`(() => {
+        const sel = document.querySelectorAll('.bom-material')[1];
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'Brass_C36000');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(400);
       await p.screenshot('25b-bom');
       await p.click('Close', 300);
     },

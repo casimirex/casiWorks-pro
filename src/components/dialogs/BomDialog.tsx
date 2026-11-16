@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import { X, FileText, Download } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
+import { MATERIALS } from '../../utils/constants.ts';
 import { buildBom } from '../../assembly/bom.ts';
 import { runCommand } from '../../commands/index.ts';
 
@@ -16,7 +16,7 @@ const grams = (kg: number) => (kg * 1000).toLocaleString(undefined, { minimumFra
 export default function BomDialog({ isOpen, onClose }: DialogProps) {
   const components = useCADStore(s => s.assemblyComponents);
   const activeMaterial = useCADStore(s => s.activeMaterial);
-  const bom = useMemo(() => buildBom(components, materialLibrary.getMaterial(activeMaterial)), [components, activeMaterial]);
+  const bom = useMemo(() => buildBom(components, activeMaterial), [components, activeMaterial]);
 
   if (!isOpen) return null;
 
@@ -56,7 +56,18 @@ export default function BomDialog({ isOpen, onClose }: DialogProps) {
                         <td style={{ ...td, fontWeight: 600 }}>{r.partNumber}</td>
                         <td style={td}>{r.description}</td>
                         <td style={num}>{r.quantity}</td>
-                        <td style={td}>{r.material}</td>
+                        <td style={td}>
+                          <select
+                            className="bom-material property-select"
+                            value={r.inherited ? '' : r.materialKey}
+                            onChange={(e) => runCommand('assembly.setMaterial', { components: r.componentIds, material: e.target.value || null })}
+                            aria-label={`Material of ${r.partNumber}`}
+                            style={{ width: 'auto', padding: '3px 6px', fontSize: 12 }}
+                          >
+                            <option value="">Part material ({bom.material})</option>
+                            {Object.entries(MATERIALS).map(([key, m]) => <option key={key} value={key}>{m.name}</option>)}
+                          </select>
+                        </td>
                         <td style={num}>{grams(r.unitMass)}</td>
                         <td style={num}>{grams(r.totalMass)}</td>
                       </tr>
@@ -73,7 +84,7 @@ export default function BomDialog({ isOpen, onClose }: DialogProps) {
                 </table>
               </div>
               <p style={{ fontSize: 11, color: '#888', margin: '10px 0 0' }}>
-                Identical parts (same name and size) share a row. Masses use the part material, {bom.material}, and exact volumes of the component shapes.
+                Identical parts (same name, size and material) share a row. Choose a material per row; “Part material” follows the document material ({bom.material}). Masses use exact volumes of the component shapes.
               </p>
             </>
           )}

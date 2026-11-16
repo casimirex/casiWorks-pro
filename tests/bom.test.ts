@@ -7,7 +7,7 @@ import { useCADStore } from '../src/store/cadStore.ts';
 import { createCommandRegistry } from '../src/commands/builtinCommands.ts';
 import type { Bom } from '../src/assembly/bom.ts';
 
-const steel = { name: 'AISI 1020 Steel', density: 7900 };
+const steel = 'Steel_1020';
 const near = (a: number, b: number, rel = 1e-9) => assert.ok(Math.abs(a - b) <= rel * Math.max(1, Math.abs(b)), `${a} ≠ ${b}`);
 
 test('BOM: identical parts share a row with their quantity; masses from exact volumes', () => {
@@ -52,5 +52,45 @@ test('BOM command: uses the document material and the components in the store', 
   assert.deepEqual(bom.rows.map(x => x.quantity), [1, 2]);
   near(bom.rows[0].unitMass, 30000 * 1e-9 * 2700);
   assert.throws(() => r.execute('assembly.exportBom'), (e: unknown) => (e as { code?: string }).code === 'NOT_AVAILABLE', 'needs the UI');
+  s().newProject();
+});
+
+test('Component materials: own material per component, grouped apart, saved with the project', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = () => useCADStore.getState();
+  s().newProject();
+  r.execute('assembly.insertPart', { name: 'Base_Plate', shape: 'box', dims: { width: 50, height: 12, depth: 50 } });
+  const pins = [r.execute('assembly.insertPart', { name: 'Pin_Shaft', shape: 'pin' }), r.execute('assembly.insertPart', { name: 'Pin_Shaft', shape: 'pin' })]
+    .map(x => (x as { componentId: string }).componentId);
+  const code = (fn: () => unknown) => { try { fn(); } catch (e) { return (e as { code?: string }).code; } return null; };
+  assert.equal(code(() => r.execute('assembly.setMaterial', { components: pins, material: 'Unobtainium' })), 'INVALID_ARGUMENT');
+  assert.equal(code(() => r.execute('assembly.setMaterial', { components: ['nope'], material: 'Brass_C36000' })), 'INVALID_ARGUMENT');
+  assert.equal(code(() => r.execute('assembly.setMaterial', { components: [], material: 'Brass_C36000' })), 'INVALID_ARGUMENT');
+
+  // One brass pin: the two pins split into two rows
+  r.execute('assembly.setMaterial', { components: [pins[0]], material: 'Brass_C36000' });
+  let bom = r.execute('assembly.bom') as Bom;
+  assert.deepEqual(bom.rows.map(x => [x.partNumber, x.material, x.quantity, x.inherited]),
+    [['Base_Plate', 'AISI 1020 Steel', 1, true], ['Pin_Shaft', 'Brass C36000', 1, false], ['Pin_Shaft', 'AISI 1020 Steel', 1, true]]);
+  near(bom.rows[1].unitMass, Math.PI * 36 * 40 * 1e-9 * 8500);
+  assert.match(s().statusMessage, /"Pin_Shaft": Brass C36000/);
+
+  // Both brass: one row again. The document material change leaves them brass.
+  r.execute('assembly.setMaterial', { components: pins, material: 'Brass_C36000' });
+  r.execute('model.setMaterial', { key: 'Aluminum_6061' });
+  bom = r.execute('assembly.bom') as Bom;
+  assert.deepEqual(bom.rows.map(x => [x.material, x.quantity]), [['Aluminum 6061-T6', 1], ['Brass C36000', 2]]);
+
+  // Saved and loaded with the project
+  const saved = s().saveProject();
+  s().newProject();
+  s().loadProject(saved);
+  bom = r.execute('assembly.bom') as Bom;
+  assert.deepEqual(bom.rows.map(x => [x.material, x.quantity]), [['Aluminum 6061-T6', 1], ['Brass C36000', 2]], 'after reload');
+
+  // null goes back to the part material
+  r.execute('assembly.setMaterial', { components: s().assemblyComponents.map(c => c.id), material: null });
+  bom = r.execute('assembly.bom') as Bom;
+  assert.ok(bom.rows.every(x => x.inherited && x.material === 'Aluminum 6061-T6'));
   s().newProject();
 });
