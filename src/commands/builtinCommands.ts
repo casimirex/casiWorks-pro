@@ -1,13 +1,18 @@
 // CasiWorks Pro - Built-in commands: everything the ribbon, status bar and keyboard do
 import { CommandError, CommandRegistry } from './CommandRegistry.ts';
 import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
-import type { CADStore, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
+import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
+import { drawingFile } from '../drawings/drawingSheet.ts';
+import type { DrawingFormat } from '../drawings/drawingSheet.ts';
+import { downloadBlob } from '../utils/download.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
 import { generateId } from '../utils/math.ts';
 import { CAD_EXAMPLES } from '../utils/examples.ts';
 import { downloadProject, newProject, openProject } from '../utils/projectFile.ts';
+
+const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'] as const;
 
 type Def<A = void> = CommandDefinition<CADStore, A>;
 type Store = { getState(): CADStore };
@@ -286,14 +291,38 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   { id: 'evaluate.massProperties', label: 'Mass properties…', category: 'Evaluate', requiresUI: true, run: ({ ui }) => ui().openDialog('massProperties') },
   { id: 'drawing.open', label: '2D drawing sheet…', category: 'Drawing', requiresUI: true, description: 'Standard 3-view sheet with SVG / DXF export', run: ({ ui }) => ui().openDialog('drawing') },
   {
-    id: 'drawing.view', label: 'Drawing view', category: 'Drawing', record: false,
-    description: "args: { viewType: 'standard_3_view' | 'projected' | 'section' | 'isometric' }",
-    run: ({ state }, args: { viewType?: string } | undefined) => state().openPropertyPanel({ type: 'drawing_view', viewType: args?.viewType ?? 'standard_3_view' }),
+    id: 'drawing.options', label: 'Drawing sheet options', category: 'Drawing', record: false,
+    description: "args: { sheetSize?: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B', hiddenLines?, dimensions?, gdt? } — only the given ones change",
+    run: ({ state }, args: Partial<DrawingOptions> | undefined) => {
+      const next: Partial<DrawingOptions> = {};
+      if (args?.sheetSize !== undefined) {
+        if (!(DRAWING_SHEET_SIZES as readonly string[]).includes(args.sheetSize)) {
+          throw new CommandError('INVALID_ARGUMENT', `sheetSize must be one of ${DRAWING_SHEET_SIZES.join(', ')}`);
+        }
+        next.sheetSize = args.sheetSize;
+      }
+      for (const key of ['hiddenLines', 'dimensions', 'gdt'] as const) {
+        const v = args?.[key];
+        if (v === undefined) continue;
+        if (typeof v !== 'boolean') throw new CommandError('INVALID_ARGUMENT', `${key} must be true or false`);
+        next[key] = v;
+      }
+      state().setDrawingOptions(next);
+      return { ...state().drawingOptions };
+    },
   },
-  { id: 'drawing.dimension', label: 'Drawing dimension', category: 'Drawing', record: false, run: ({ state }) => state().openPropertyPanel({ type: 'drawing_dimension', dimType: 'smart' }) },
   {
-    id: 'drawing.gdt', label: 'GD&T symbol', category: 'Drawing', record: false, description: "args: { gdtType: 'fcf' | 'datum' }",
-    run: ({ state }, args: { gdtType?: string } | undefined) => state().openPropertyPanel({ type: 'drawing_gdt', gdtType: args?.gdtType ?? 'fcf' }),
+    id: 'drawing.export', label: 'Export drawing (SVG / DXF)', category: 'Drawing', requiresUI: true, record: false,
+    description: "args: { format: 'svg' | 'dxf' } — downloads the sheet with the current drawing options",
+    run: ({ state }, args: { format?: DrawingFormat } | undefined) => {
+      const format = args?.format ?? 'svg';
+      if (format !== 'svg' && format !== 'dxf') throw new CommandError('INVALID_ARGUMENT', "format must be 'svg' or 'dxf'");
+      const file = drawingFile(state(), format);
+      if (!file) throw new CommandError('NOT_AVAILABLE', 'Create a solid body first: the drawing is made from it');
+      downloadBlob(file.text, file.filename, file.mimeType);
+      state().setStatus(`Drawing exported: ${file.filename}`);
+      return { filename: file.filename };
+    },
   },
 
   // ------------------------------------------------------------------ assembly

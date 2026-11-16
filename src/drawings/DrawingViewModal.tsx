@@ -1,10 +1,12 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Download, Eye, FileText, Check } from 'lucide-react';
-import { drawingEngine, SHEET_SIZES } from './DrawingEngine.ts';
+import { drawingEngine } from './DrawingEngine.ts';
+import { buildDrawingSheet, visibleSheet } from './drawingSheet.ts';
+import type { DrawingFormat } from './drawingSheet.ts';
 import { useCADStore } from '../store/cadStore.ts';
-
-type SheetSizeKey = keyof typeof SHEET_SIZES;
+import type { DrawingSheetSize } from '../store/cadStore.ts';
+import { commands } from '../commands/index.ts';
 
 interface DrawingViewModalProps {
   isOpen: boolean;
@@ -13,23 +15,20 @@ interface DrawingViewModalProps {
 
 export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalProps) {
   const bodies = useCADStore(s => s.bodies);
-  const documentName = useCADStore(s => s.documentName || 'Part1');
-  const activeMaterial = useCADStore(s => s.activeMaterial || 'Steel 1020');
-
-  const [enableHLR, setEnableHLR] = useState(true);
-  const [sheetSizeKey, setSheetSizeKey] = useState<SheetSizeKey>('A4_LANDSCAPE');
-  const [showDimensions, setShowDimensions] = useState(true);
-  const [showGDT, setShowGDT] = useState(true);
+  const documentName = useCADStore(s => s.documentName);
+  const activeMaterial = useCADStore(s => s.activeMaterial);
+  // Shared with the Drawing tab, so the ribbon and this window always agree
+  const options = useCADStore(s => s.drawingOptions);
+  const setOptions = useCADStore(s => s.setDrawingOptions);
+  const { hiddenLines: enableHLR, dimensions: showDimensions, gdt: showGDT, sheetSize: sheetSizeKey } = options;
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
   const downloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const revokeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clean up any pending timers on unmount to prevent React state leaks
+  // Clean up any pending timer on unmount to prevent React state leaks
   useEffect(() => {
     return () => {
       if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
-      if (revokeTimerRef.current) clearTimeout(revokeTimerRef.current);
     };
   }, []);
 
@@ -43,20 +42,11 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Compute 2D drawing sheet data whenever geometry or options change
+  // Compute 2D drawing sheet data whenever geometry or options change (annotation switches only filter it)
   const sheetData = useMemo(() => {
-    if (!isOpen || bodies.length === 0 || !bodies[0]?.geometry) return null;
-
+    if (!isOpen) return null;
     try {
-      const sheetSize = SHEET_SIZES[sheetSizeKey] || SHEET_SIZES.A4_LANDSCAPE;
-      const data = drawingEngine.createStandardSheet(bodies[0].geometry, {
-        sheetSize,
-        enableHLR,
-        title: documentName.toUpperCase(),
-        partNumber: 'DWG-' + (documentName.slice(0, 4).toUpperCase() || 'PART'),
-        material: activeMaterial,
-      });
-      return data;
+      return buildDrawingSheet({ bodies, documentName, activeMaterial, drawingOptions: { sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
     } catch (err) {
       console.error('Failed to generate drawing sheet:', err);
       return null;
@@ -65,65 +55,16 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
 
   if (!isOpen) return null;
 
-  const handleExportSVG = () => {
-    if (!sheetData) return;
+  const handleExport = (format: DrawingFormat) => {
     try {
-      const svgStr = drawingEngine.exportSVG({
-        ...sheetData,
-        dimensions: showDimensions ? sheetData.dimensions : [],
-        gdtFrames: showGDT ? sheetData.gdtFrames : [],
-      });
-      const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${documentName.replace(/\s+/g, '_')}_drawing.svg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch { /* already revoked */ }
-      }, 1000);
-
-      setDownloadSuccess('SVG Exported');
-      if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
-      downloadTimerRef.current = setTimeout(() => {
-        setDownloadSuccess(null);
-      }, 2500);
+      commands.execute('drawing.export', { format });
     } catch (err) {
-      console.error('Failed to export SVG drawing:', err);
+      console.error(`Failed to export ${format.toUpperCase()} drawing:`, err);
+      return;
     }
-  };
-
-  const handleExportDXF = () => {
-    if (!sheetData) return;
-    try {
-      const dxfStr = drawingEngine.exportDXF({
-        ...sheetData,
-        dimensions: showDimensions ? sheetData.dimensions : [],
-      });
-      const blob = new Blob([dxfStr], { type: 'application/dxf;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${documentName.replace(/\s+/g, '_')}_drawing.dxf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      revokeTimerRef.current = setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch { /* already revoked */ }
-      }, 1000);
-
-      setDownloadSuccess('DXF Exported');
-      if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
-      downloadTimerRef.current = setTimeout(() => {
-        setDownloadSuccess(null);
-      }, 2500);
-    } catch (err) {
-      console.error('Failed to export DXF drawing:', err);
-    }
+    setDownloadSuccess(`${format.toUpperCase()} Exported`);
+    if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
+    downloadTimerRef.current = setTimeout(() => setDownloadSuccess(null), 2500);
   };
 
   return (
@@ -160,7 +101,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* HLR Toggle */}
           <button
-            onClick={() => setEnableHLR(!enableHLR)}
+            onClick={() => setOptions({ hiddenLines: !enableHLR })}
             style={{
               background: enableHLR ? '#094771' : '#2d2d30',
               border: '1px solid #4fc3f7',
@@ -181,7 +122,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
 
           {/* Dimensions Toggle */}
           <button
-            onClick={() => setShowDimensions(!showDimensions)}
+            onClick={() => setOptions({ dimensions: !showDimensions })}
             style={{
               background: showDimensions ? '#094771' : '#2d2d30',
               border: '1px solid #555',
@@ -197,7 +138,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
 
           {/* GD&T Toggle */}
           <button
-            onClick={() => setShowGDT(!showGDT)}
+            onClick={() => setOptions({ gdt: !showGDT })}
             style={{
               background: showGDT ? '#094771' : '#2d2d30',
               border: '1px solid #555',
@@ -214,7 +155,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
           {/* Sheet Size Selector */}
           <select
             value={sheetSizeKey}
-            onChange={(e) => setSheetSizeKey(e.target.value as SheetSizeKey)}
+            onChange={(e) => setOptions({ sheetSize: e.target.value as DrawingSheetSize })}
             style={{
               background: '#2d2d30',
               border: '1px solid #555',
@@ -226,13 +167,14 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
             }}
           >
             <option value="A4_LANDSCAPE">A4 Landscape (297 x 210 mm)</option>
+            <option value="A4_PORTRAIT">A4 Portrait (210 x 297 mm)</option>
             <option value="A3_LANDSCAPE">A3 Landscape (420 x 297 mm)</option>
             <option value="ANSI_B">ANSI B (17 x 11 in)</option>
           </select>
 
           {/* Export SVG */}
           <button
-            onClick={handleExportSVG}
+            onClick={() => handleExport('svg')}
             style={{
               background: '#0284c7',
               border: 'none',
@@ -253,7 +195,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
 
           {/* Export DXF */}
           <button
-            onClick={handleExportDXF}
+            onClick={() => handleExport('dxf')}
             style={{
               background: '#059669',
               border: 'none',
@@ -321,11 +263,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
               display: 'flex',
             }}
             dangerouslySetInnerHTML={{
-              __html: drawingEngine.exportSVG({
-                ...sheetData,
-                dimensions: showDimensions ? sheetData.dimensions : [],
-                gdtFrames: showGDT ? sheetData.gdtFrames : [],
-              }),
+              __html: drawingEngine.exportSVG(visibleSheet(sheetData, options)),
             }}
           />
         ) : (

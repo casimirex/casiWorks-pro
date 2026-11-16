@@ -10,6 +10,8 @@ import { createCommandRegistry } from '../src/commands/builtinCommands.ts';
 import { attachMacros } from '../src/commands/macros.ts';
 import { useCADStore } from '../src/store/cadStore.ts';
 import { createCasiWorksAPI, CasiWorksAPIError } from '../src/api/CasiWorksAPI.ts';
+import { drawingFile } from '../src/drawings/drawingSheet.ts';
+import { BoxGeometry } from 'three';
 
 const throwsCode = (fn: () => unknown, code: string) =>
   assert.throws(fn, (e: unknown) => (e as { code?: string }).code === code, `expected ${code}`);
@@ -145,6 +147,36 @@ test('Exploded view: display-only settings, checked arguments, cleared with the 
   r.execute('assembly.clear');
   assert.equal(s().explodedView, null, 'clearing the assembly collapses it');
   for (const id of ['assembly.explode', 'assembly.collapse']) assert.equal(r.macroStepFor({ id, args: undefined, ok: true, result: undefined } as CommandExecution), null, `${id} is not recorded in macros`);
+});
+
+test('Drawing commands: sheet options are validated and shared; exports follow them; the dead view/dimension/GD&T forms are gone', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = () => useCADStore.getState();
+  s().newProject();
+  for (const id of ['drawing.view', 'drawing.dimension', 'drawing.gdt']) assert.equal(r.has(id), false, `${id} removed`);
+  assert.deepEqual(s().drawingOptions, { sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true });
+
+  throwsCode(() => r.execute('drawing.options', { sheetSize: 'A0' }), 'INVALID_ARGUMENT');
+  throwsCode(() => r.execute('drawing.options', { dimensions: 'no' }), 'INVALID_ARGUMENT');
+  const after = r.execute('drawing.options', { sheetSize: 'A3_LANDSCAPE', dimensions: false });
+  assert.deepEqual(after, { sheetSize: 'A3_LANDSCAPE', hiddenLines: true, dimensions: false, gdt: true }, 'only the given options change');
+  s().newProject();
+  assert.equal(s().drawingOptions.sheetSize, 'A3_LANDSCAPE', 'a preference: New keeps it');
+
+  throwsCode(() => r.execute('drawing.export', { format: 'svg' }), 'NOT_AVAILABLE');
+  const body = { id: 'b', geometry: new BoxGeometry(40, 20, 10), visible: true };
+  const src = { bodies: [body], documentName: 'My Part', activeMaterial: 'Steel 1020', drawingOptions: s().drawingOptions };
+  assert.equal(drawingFile({ ...src, bodies: [] }, 'svg'), null, 'nothing to draw without a body');
+  const bare = drawingFile(src, 'svg')!;
+  assert.equal(bare.filename, 'My_Part_drawing.svg');
+  assert.match(bare.text, /viewBox="0 0 420.00 297.00"/, 'A3 sheet');
+  assert.doesNotMatch(bare.text, /id="dimensions"/, 'dimensions switched off');
+  assert.match(bare.text, /id="gdt"/);
+  const full = drawingFile({ ...src, drawingOptions: { ...src.drawingOptions, dimensions: true, gdt: false } }, 'svg')!;
+  assert.match(full.text, /id="dimensions"/);
+  assert.doesNotMatch(full.text, /id="gdt"/);
+  assert.match(drawingFile(src, 'dxf')!.text, /^0\nSECTION\n2\nHEADER/);
+  r.execute('drawing.options', { sheetSize: 'A4_LANDSCAPE', dimensions: true });
 });
 
 test('API: commands namespace lists and runs commands with API error codes', () => {

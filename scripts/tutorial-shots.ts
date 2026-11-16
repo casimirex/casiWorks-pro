@@ -309,6 +309,15 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: '26-drawing-tab', async run(p) {
+      await example(p, 'l_bracket');
+      await feaPanel(p, false);
+      await p.click('Drawing', 400);
+      await p.screenshot('26-drawing-tab');
+      await p.click('Features', 300);
+    },
+  },
+  {
     name: '26-drawing', async run(p) {
       await example(p, 'l_bracket');
       await run(p, 'drawing.open');

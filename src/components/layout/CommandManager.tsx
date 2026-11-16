@@ -6,8 +6,8 @@ import {
   Layers, Copy, Scissors, Sliders, Play, CheckCircle2,
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
-  Sparkles, Layers3, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, Move, Crosshair, Puzzle, Hexagon, RectangleHorizontal
+  Sparkles, Cpu, FileText, ArrowRight,
+  ArrowDownToLine, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
@@ -40,12 +40,11 @@ export default function CommandManager() {
   const addinButtons = useSyncExternalStore((onChange) => pluginManager.subscribe(onChange), () => pluginManager.buttons());
   const addinGroups = [...new Set(addinButtons.map(b => b.pluginId))].map(id => addinButtons.filter(b => b.pluginId === id));
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const drawingOptions = useCADStore(s => s.drawingOptions);
 
   const tabList = [
     { id: 'Features', label: 'Features', icon: <Box size={14} /> },
     { id: 'Sketch', label: 'Sketch', icon: <PenTool size={14} /> },
-    { id: 'Surfaces', label: 'Surfaces', icon: <Layers size={14} /> },
-    { id: 'Sheet Metal', label: 'Sheet Metal', icon: <Layers3 size={14} /> },
     { id: 'Assembly', label: 'Assembly', icon: <Cpu size={14} /> },
     { id: 'Evaluate', label: 'Evaluate', icon: <Scale size={14} /> },
     { id: 'Drawing', label: 'Drawing', icon: <FileText size={14} /> },
@@ -620,89 +619,76 @@ export default function CommandManager() {
             </>
           )}
 
-          {/* DRAWING TAB */}
+          {/* DRAWING TAB: the standard 3-view sheet of the first body */}
           {activeTab === 'Drawing' && (
             <>
-              {/* VIEWS */}
               <div className="tool-group">
                 <div className="tool-group-buttons">
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.view', { viewType: 'standard_3_view' })}
-                    title="Insert Standard 3-View (Front, Top, Right)"
-                  >
-                    <Grid size={19} color="#38bdf8" />
-                    <span>Standard 3</span>
+                  <button className="ribbon-btn drawing-open" onClick={() => runCommand('drawing.open')} title="Open the 2D drawing sheet: front, top, right and isometric views with a title block">
+                    <FileText size={19} color="#38bdf8" />
+                    <span>Open Sheet</span>
                   </button>
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.view', { viewType: 'projected' })}
-                    title="Projected Orthographic View"
-                  >
-                    <Box size={19} color="#4ade80" />
-                    <span>Projected</span>
-                  </button>
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.view', { viewType: 'section' })}
-                    title="Cross-Section Cut View"
-                  >
-                    <Scissors size={19} color="#fb923c" />
-                    <span>Section</span>
-                  </button>
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.view', { viewType: 'isometric' })}
-                    title="Isometric 3D Projected View"
-                  >
-                    <Layers size={19} color="#c084fc" />
-                    <span>Isometric</span>
-                  </button>
+                  <label className="ribbon-btn" title="Sheet size" style={{ cursor: 'default' }}>
+                    <Grid size={19} color="#94a3b8" />
+                    <select
+                      className="drawing-sheet-size"
+                      value={drawingOptions.sheetSize}
+                      onChange={(e) => runCommand('drawing.options', { sheetSize: e.target.value })}
+                      aria-label="Sheet size"
+                      style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0 }}
+                    >
+                      <option value="A4_LANDSCAPE">A4 Landscape</option>
+                      <option value="A4_PORTRAIT">A4 Portrait</option>
+                      <option value="A3_LANDSCAPE">A3 Landscape</option>
+                      <option value="ANSI_B">ANSI B</option>
+                    </select>
+                  </label>
                 </div>
-                <div className="tool-group-label">VIEWS</div>
+                <div className="tool-group-label">SHEET</div>
               </div>
 
-              {/* ANNOTATIONS */}
               <div className="tool-group">
                 <div className="tool-group-buttons">
                   <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.dimension')}
-                    title="Smart Dimension (Linear, Radius, Diameter, Angle)"
+                    className={`ribbon-btn drawing-hidden-lines ${drawingOptions.hiddenLines ? 'active' : ''}`}
+                    onClick={() => runCommand('drawing.options', { hiddenLines: !drawingOptions.hiddenLines })}
+                    title="Hidden line removal: leave out edges that are behind faces"
+                    aria-pressed={drawingOptions.hiddenLines}
+                  >
+                    <Eye size={19} color="#c084fc" />
+                    <span>Hidden Lines</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn drawing-dimensions ${drawingOptions.dimensions ? 'active' : ''}`}
+                    onClick={() => runCommand('drawing.options', { dimensions: !drawingOptions.dimensions })}
+                    title="Overall width, height and depth dimensions"
+                    aria-pressed={drawingOptions.dimensions}
                   >
                     <Scale size={19} color="#f97316" />
-                    <span>Dimension</span>
+                    <span>Dimensions</span>
                   </button>
                   <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.gdt', { gdtType: 'fcf' })}
-                    title="Feature Control Frame (Geometric Tolerance)"
+                    className={`ribbon-btn drawing-gdt ${drawingOptions.gdt ? 'active' : ''}`}
+                    onClick={() => runCommand('drawing.options', { gdt: !drawingOptions.gdt })}
+                    title="Datum A and a perpendicularity feature control frame (SVG only)"
+                    aria-pressed={drawingOptions.gdt}
                   >
                     <Shield size={19} color="#38bdf8" />
-                    <span>GD&T FCF</span>
-                  </button>
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.gdt', { gdtType: 'datum' })}
-                    title="Datum Feature Symbol (A, B, C)"
-                  >
-                    <Crosshair size={19} color="#fbbf24" />
-                    <span>Datum</span>
+                    <span>GD&amp;T</span>
                   </button>
                 </div>
-                <div className="tool-group-label">ANNOTATIONS</div>
+                <div className="tool-group-label">SHOW</div>
               </div>
 
-              {/* EXPORT */}
               <div className="tool-group">
                 <div className="tool-group-buttons">
-                  <button
-                    className="ribbon-btn"
-                    onClick={() => runCommand('drawing.open')}
-                    title="Export 2D Drawing to DXF / SVG"
-                  >
+                  <button className="ribbon-btn drawing-export-svg" onClick={() => runCommand('drawing.export', { format: 'svg' })} title="Download the sheet as SVG">
                     <Download size={19} color="#4ade80" />
-                    <span>Export 2D</span>
+                    <span>SVG</span>
+                  </button>
+                  <button className="ribbon-btn drawing-export-dxf" onClick={() => runCommand('drawing.export', { format: 'dxf' })} title="Download the sheet as DXF (views and dimensions)">
+                    <Download size={19} color="#fbbf24" />
+                    <span>DXF</span>
                   </button>
                 </div>
                 <div className="tool-group-label">EXPORT</div>
@@ -781,21 +767,6 @@ export default function CommandManager() {
             </>
           )}
 
-          {/* SURFACES, SHEET METAL tabs */}
-          {(activeTab === 'Surfaces' || activeTab === 'Sheet Metal') && (
-            <div className="tool-group">
-              <div className="tool-group-buttons">
-                <button
-                  className="ribbon-btn"
-                  onClick={() => runCommand('feature.extrude')}
-                >
-                  <Box size={19} color="#38bdf8" />
-                  <span>{activeTab} Tool</span>
-                </button>
-              </div>
-              <div className="tool-group-label">ACTIONS</div>
-            </div>
-          )}
         </div>
       )}
     </header>

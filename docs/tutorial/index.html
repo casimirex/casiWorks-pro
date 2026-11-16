@@ -268,7 +268,7 @@ npm run dev</pre></div>
       <div class="table-wrap"><table>
         <tr><th>Area</th><th>Where</th><th>What it does</th></tr>
         <tr><td><b>Quick-access bar</b></td><td>Top row</td><td>New, Open, Save, Undo, Redo, Rebuild, the <b>Examples</b> menu, Material, Mass Props and Export.</td></tr>
-        <tr><td><b>Ribbon</b></td><td>Below the top bar</td><td>Tabs of commands: Features, Sketch, Surfaces, Sheet Metal, Assembly, Evaluate, Drawing, Tools and Add-ins. The ⌃ button at the far right folds it away.</td></tr>
+        <tr><td><b>Ribbon</b></td><td>Below the top bar</td><td>Tabs of commands: Features, Sketch, Assembly, Evaluate, Drawing, Tools and Add-ins. The ⌃ button at the far right folds it away.</td></tr>
         <tr><td><b>Feature tree</b></td><td>Left</td><td>The history of your part: material, reference planes, and every sketch and feature in the order it was made. The <b>rollback bar</b> sits at the bottom.</td></tr>
         <tr><td><b>Viewport</b></td><td>Centre</td><td>The 3D model with the Front, Top and Right planes. The <b>VIEW</b> box (top right) jumps to standard views.</td></tr>
         <tr><td><b>FEA panel</b></td><td>Bottom right</td><td>Stress analysis setup and results (Chapter 13). Use the ⌄ button to shrink it to two small buttons.</td></tr>
@@ -602,15 +602,21 @@ npm run dev</pre></div>
     <div class="example-head"><span class="tag">Example 11.1</span><h4>A drawing sheet for the L-bracket</h4><div class="specs"><span>A4 landscape</span><span>Front · Top · Right · Iso</span><span>Title block</span></div></div>
     <div class="example-body">
       <ol class="steps">
-        <li>Open the L-bracket and click the green <b>2D Dwg</b> button on the FEA panel. When the panel is folded, the button is called <b>2D Drawing</b>.</li>
-        <li>The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date.</li>
-        <li>Use the buttons at the top to switch <b>Hidden Lines (HLR)</b>, <b>Dimensions</b> and <b>GD&amp;T</b> on and off, and to choose the sheet size.</li>
-        <li>Click <b>Export SVG</b> for a sheet you can print or put in a document, or <b>Export DXF</b> to open it in AutoCAD or another 2D CAD program.</li>
+        <li>Open the L-bracket and click the <b>Drawing</b> tab on the ribbon.</li>
+        <li>Choose the sheet size in the <b>SHEET</b> group: A4 landscape or portrait, A3 landscape or ANSI B.</li>
+        <li>In the <b>SHOW</b> group, switch <b>Hidden Lines</b>, <b>Dimensions</b> and <b>GD&amp;T</b> on or off. A highlighted button is on.</li>
+        <li>Click <b>Open Sheet</b>. The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date. The green <b>2D Dwg</b> button on the FEA panel opens the same sheet.</li>
+        <li>Click <b>SVG</b> for a sheet you can print or put in a document, or <b>DXF</b> to open it in AutoCAD or another 2D CAD program. You can export straight from the ribbon without opening the sheet, or use <b>Export SVG</b> and <b>Export DXF</b> on the sheet.</li>
       </ol>
+      <figure class="shot"><img loading="lazy" src="img/26-drawing-tab.webp" alt="Drawing tab of the ribbon with sheet, show and export groups"><figcaption>The Drawing tab: sheet size, what to show, and export.</figcaption></figure>
       <figure class="shot"><img loading="lazy" src="img/26-drawing.webp" alt="Drawing sheet of the L-bracket"><figcaption>The drawing sheet, with dimensions, a datum and a feature control frame.</figcaption></figure>
     </div>
   </div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>The sheet is generated for you. The extra forms on the Drawing tab (projected, section and isometric views, the dimension and GD&amp;T editors) do not change the sheet yet. Use the toggles on the sheet itself.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Shared settings</b><p>The ribbon and the sheet window use the same settings, so a switch changed in one shows in the other. The settings stay when you start a new part. DXF holds the views and dimensions; the GD&amp;T symbols are in the SVG only.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>The views, dimensions and GD&amp;T symbols are placed for you, from the first body. You cannot add a section view or your own dimensions yet.</p></div></div>
+  <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// The same from the scripting console (chapter 15)</span>
+casiworks.commands.execute(<span class="tok-s">'drawing.options'</span>, { sheetSize: <span class="tok-s">'A3_LANDSCAPE'</span>, dimensions: <span class="tok-k">true</span>, gdt: <span class="tok-k">false</span> });
+casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format: <span class="tok-s">'dxf'</span> });</pre></div>
   <div class="exercise"><b>Exercise 11.</b> Make drawing sheets for the Hex Bolt and the Spur Gear Blank, and export both as SVG.<label><input type="checkbox" data-done="ch11"> I've done this</label></div>
 </section>
 
@@ -860,8 +866,8 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="table-wrap"><table>
     <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
     <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs, and hollow parts with Extrude Cut.</td></tr>
-    <tr><td>Surfaces and Sheet Metal tabs</td><td>Each has one button, which opens Extrude.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
-    <tr><td>Drawing tab forms</td><td>Do not change the generated sheet.</td><td>Use the toggles on the drawing sheet.</td></tr>
+    <tr><td>Surfaces and sheet metal</td><td>Not available: there are no surface or sheet-metal tools.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
+    <tr><td>Drawing sheet</td><td>Views, dimensions and GD&amp;T are placed for you; no section views or your own dimensions.</td><td>Export DXF and add these in a 2D CAD program.</td></tr>
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
   </table></div>

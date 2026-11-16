@@ -349,6 +349,36 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'Drawing tab: switches the sheet options, opens the sheet, exports DXF',
+    async run(p) {
+      const tabs = await p.eval<string[]>(`[...document.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => t === 'Surfaces' || t === 'Sheet Metal')`);
+      assert(tabs.length === 0, `placeholder tabs still shown: ${tabs}`);
+      await p.click('Drawing');
+      await p.click('Dimensions');
+      const off = await p.eval<boolean>(`!document.querySelector('.drawing-dimensions').classList.contains('active')`);
+      assert(off, 'Dimensions button still active');
+      await p.click('Open Sheet');
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.drawing-sheet-view line.visible-line').length`), 'drawing sheet');
+      const sheet = await p.eval<{ dims: boolean; gdt: boolean; label: string }>(`({
+        dims: !!document.querySelector('.drawing-sheet-view #dimensions'),
+        gdt: !!document.querySelector('.drawing-sheet-view #gdt'),
+        label: [...document.querySelectorAll('button')].map(b => b.textContent.trim()).find(t => t.startsWith('Dimensions:')),
+      })`);
+      assert(!sheet.dims && sheet.gdt && sheet.label === 'Dimensions: OFF', `sheet ${JSON.stringify(sheet)}`);
+      await p.screenshot('09-drawing-tab');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(300);
+      await p.eval(CAPTURE_DOWNLOADS);
+      await p.click('DXF', 600);
+      const dxf = await p.eval<string>(`window.__blobs.at(-1).text()`);
+      const exported = await status(p);
+      assert(dxf.startsWith('0\nSECTION') && /^Drawing exported: .+_drawing\.dxf$/.test(exported), `DXF export: "${exported}"`);
+      await p.click('Dimensions');
+      await p.click('Features', 300);
+      return `dimensions switched off on the sheet, GD&T kept; ${exported}`;
+    },
+  },
+  {
     name: 'record a macro in the UI and replay it into a new part',
     async run(p) {
       await p.eval(`window.casiworks.commands.execute('document.new')`);

@@ -50,9 +50,6 @@ interface PanelContentFields {
   flip?: boolean;
   thin?: boolean;
   wallThickness?: number;
-  viewType?: string;
-  dimType?: string;
-  gdtType?: string;
   distance?: number;
   holeType?: HoleFeature['holeType'];
   position?: Point3;
@@ -109,26 +106,6 @@ export default function PropertyPanel() {
   const [explodeDist, setExplodeDist] = useState(() => useCADStore.getState().explodedView?.distance ?? 40);
   const [explodeLeaders, setExplodeLeaders] = useState(() => useCADStore.getState().explodedView?.leaderLines ?? true);
 
-  // Drawing View State
-  const [drawingViewType, setDrawingViewType] = useState('standard_3_view');
-  const [drawingScale, setDrawingScale] = useState('1:1');
-  const [drawingProjection, setDrawingProjection] = useState('third_angle');
-  const [drawingDisplayStyle, setDrawingDisplayStyle] = useState('hlr');
-
-  // Drawing Dimension State
-  const [dimType, setDimType] = useState('linear');
-  const [dimTolerance, setDimTolerance] = useState('bilateral');
-  const [dimUpperTol, setDimUpperTol] = useState(0.05);
-  const [dimLowerTol, setDimLowerTol] = useState(-0.05);
-  const [dimPrefix, setDimPrefix] = useState('');
-
-  // GD&T State
-  const [gdtSymbol, setGdtSymbol] = useState('flatness');
-  const [gdtTol, setGdtTol] = useState(0.02);
-  const [gdtModifier, setGdtModifier] = useState('MMC');
-  const [gdtDatumA, setGdtDatumA] = useState('A');
-  const [gdtDatumB, setGdtDatumB] = useState('B');
-  const [gdtDatumC, setGdtDatumC] = useState('');
 
 
   // Debounced slider handler to keep UI fluid
@@ -173,9 +150,6 @@ export default function PropertyPanel() {
       if (propertyPanelContent.flip !== undefined) setFlipDir(propertyPanelContent.flip);
       if (propertyPanelContent.thin !== undefined) setThin(propertyPanelContent.thin);
       if (propertyPanelContent.wallThickness !== undefined) setWallThickness(propertyPanelContent.wallThickness);
-      if (propertyPanelContent.viewType) setDrawingViewType(propertyPanelContent.viewType);
-      if (propertyPanelContent.dimType) setDimType(propertyPanelContent.dimType);
-      if (propertyPanelContent.gdtType) setGdtSymbol(propertyPanelContent.gdtType === 'datum' ? 'datum' : 'flatness');
       const c = propertyPanelContent;
       if (c.type === FEATURE_TYPES.CHAMFER && c.distance !== undefined) setRadius(c.distance);
       if (c.holeType) setHoleType(c.holeType);
@@ -251,8 +225,6 @@ export default function PropertyPanel() {
       cancelTool();
       runCommand('assembly.explode', { distance: explodeDist, leaderLines: explodeLeaders });
       return;
-    } else if (featureType.startsWith('drawing_')) {
-      // Drawing annotation / view committed
     } else {
       const featData = {
         type: featureType,
@@ -404,154 +376,6 @@ export default function PropertyPanel() {
                 >
                   Collapse
                 </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ==================== DRAWING VIEW CARD ==================== */}
-        {featureType === 'drawing_view' && (
-          <div className="property-card">
-            <div className="property-card-header">2D Drawing View Setup</div>
-            <div className="property-card-body">
-              <label className="property-label">View Orientation</label>
-              <select className="property-select" value={drawingViewType} onChange={(e) => setDrawingViewType(e.target.value)}>
-                <option value="standard_3_view">Standard 3-View (Front, Top, Right)</option>
-                <option value="projected">Projected Orthographic View</option>
-                <option value="section">Full Section Cut View</option>
-                <option value="isometric">Isometric 30° Projected View</option>
-                <option value="detail">Detail Circular Zoom View</option>
-              </select>
-
-              <label className="property-label" style={{ marginTop: 8 }}>Sheet Scale</label>
-              <select className="property-select" value={drawingScale} onChange={(e) => setDrawingScale(e.target.value)}>
-                <option value="1:1">1:1 (Full Size)</option>
-                <option value="1:2">1:2 (Half Scale)</option>
-                <option value="2:1">2:1 (Double Scale)</option>
-                <option value="1:5">1:5</option>
-                <option value="1:10">1:10</option>
-              </select>
-
-              <label className="property-label" style={{ marginTop: 8 }}>Projection Standard</label>
-              <div className="segmented-control">
-                <button
-                  className={`segment-btn ${drawingProjection === 'third_angle' ? 'active' : ''}`}
-                  onClick={() => setDrawingProjection('third_angle')}
-                >
-                  Third Angle (USA/ISO)
-                </button>
-                <button
-                  className={`segment-btn ${drawingProjection === 'first_angle' ? 'active' : ''}`}
-                  onClick={() => setDrawingProjection('first_angle')}
-                >
-                  First Angle (Europe)
-                </button>
-              </div>
-
-              <label className="property-label" style={{ marginTop: 8 }}>Display Style</label>
-              <select className="property-select" value={drawingDisplayStyle} onChange={(e) => setDrawingDisplayStyle(e.target.value)}>
-                <option value="hlr">Hidden Lines Removed (Solid Contours Only)</option>
-                <option value="hlv">Hidden Lines Visible (Dashed Line Font)</option>
-                <option value="shaded">Shaded with Tangent Edges</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* ==================== DRAWING DIMENSION CARD ==================== */}
-        {featureType === 'drawing_dimension' && (
-          <div className="property-card">
-            <div className="property-card-header">Drawing Dimension & Tolerances</div>
-            <div className="property-card-body">
-              <label className="property-label">Dimension Type</label>
-              <select className="property-select" value={dimType} onChange={(e) => setDimType(e.target.value)}>
-                <option value="linear">Linear Horizontal / Vertical</option>
-                <option value="diameter">Diameter Callout (Ø)</option>
-                <option value="radius">Radius Callout (R)</option>
-                <option value="angular">Angular Dimension (°)</option>
-              </select>
-
-              <label className="property-label" style={{ marginTop: 8 }}>Tolerance Standard</label>
-              <select className="property-select" value={dimTolerance} onChange={(e) => setDimTolerance(e.target.value)}>
-                <option value="none">None (Nominal Only)</option>
-                <option value="bilateral">Bilateral (+/- Deviations)</option>
-                <option value="symmetric">Symmetric (± Value)</option>
-                <option value="limit">Limit Dimensions</option>
-                <option value="basic">Basic Theoretical Box</option>
-              </select>
-
-              {dimTolerance !== 'none' && dimTolerance !== 'basic' && (
-                <>
-                  <div className="property-row" style={{ marginTop: 8 }}>
-                    <span className="property-label">Upper Tol (+):</span>
-                    <NumericInput value={dimUpperTol} onChange={setDimUpperTol} step={0.01} precision={3} unit="mm" />
-                  </div>
-                  <div className="property-row">
-                    <span className="property-label">Lower Tol (-):</span>
-                    <NumericInput value={dimLowerTol} onChange={setDimLowerTol} step={0.01} precision={3} unit="mm" />
-                  </div>
-                </>
-              )}
-
-              <div className="property-row" style={{ marginTop: 8 }}>
-                <span className="property-label">Prefix (e.g. 2X, Ø):</span>
-                <input
-                  type="text"
-                  className="property-select"
-                  style={{ width: 80, padding: '2px 6px' }}
-                  value={dimPrefix}
-                  onChange={(e) => setDimPrefix(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ==================== GD&T FEATURE CONTROL FRAME CARD ==================== */}
-        {featureType === 'drawing_gdt' && (
-          <div className="property-card">
-            <div className="property-card-header">Geometric Dimensioning & Tolerancing (GD&T)</div>
-            <div className="property-card-body">
-              <label className="property-label">Geometric Characteristic</label>
-              <select className="property-select" value={gdtSymbol} onChange={(e) => setGdtSymbol(e.target.value)}>
-                <option value="flatness">Flatness [⏥]</option>
-                <option value="perpendicularity">Perpendicularity [⟂]</option>
-                <option value="parallelism">Parallelism [∥]</option>
-                <option value="position">True Position [⌖]</option>
-                <option value="concentricity">Concentricity [◎]</option>
-                <option value="circular_runout">Circular Runout [↗]</option>
-                <option value="total_runout">Total Runout [⌰]</option>
-                <option value="datum">Datum Feature Symbol</option>
-              </select>
-
-              {gdtSymbol !== 'datum' ? (
-                <>
-                  <div className="property-row" style={{ marginTop: 8 }}>
-                    <span className="property-label">Tolerance Value:</span>
-                    <NumericInput value={gdtTol} onChange={setGdtTol} min={0.001} max={5} step={0.005} precision={3} unit="mm" />
-                  </div>
-
-                  <label className="property-label" style={{ marginTop: 8 }}>Material Condition Modifier</label>
-                  <select className="property-select" value={gdtModifier} onChange={(e) => setGdtModifier(e.target.value)}>
-                    <option value="MMC">Maximum Material Condition [Ⓜ]</option>
-                    <option value="LMC">Least Material Condition [Ⓛ]</option>
-                    <option value="RFS">Regardless of Feature Size [None]</option>
-                  </select>
-
-                  <div className="property-row" style={{ marginTop: 8 }}>
-                    <span className="property-label">Datum References:</span>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input type="text" className="property-select" style={{ width: 32, textAlign: 'center' }} value={gdtDatumA} onChange={(e) => setGdtDatumA(e.target.value)} />
-                      <input type="text" className="property-select" style={{ width: 32, textAlign: 'center' }} value={gdtDatumB} onChange={(e) => setGdtDatumB(e.target.value)} />
-                      <input type="text" className="property-select" style={{ width: 32, textAlign: 'center' }} value={gdtDatumC} onChange={(e) => setGdtDatumC(e.target.value)} />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="property-row" style={{ marginTop: 8 }}>
-                  <span className="property-label">Datum Label:</span>
-                  <input type="text" className="property-select" style={{ width: 60, textAlign: 'center', fontWeight: 700 }} value={gdtDatumA} onChange={(e) => setGdtDatumA(e.target.value)} />
-                </div>
               )}
             </div>
           </div>

@@ -52,6 +52,20 @@ export type StoreAssemblyComponent = AssemblyComponent & {
 
 export type AssemblyMate = ReturnType<typeof assemblyManager.addMate>;
 
+/** Sheet sizes the drawing sheet offers (keys of SHEET_SIZES in drawings/DrawingEngine.ts). */
+export type DrawingSheetSize = 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B';
+
+/** What the 2D drawing sheet shows and exports. Shared by the Drawing tab and the sheet window. */
+export interface DrawingOptions {
+  sheetSize: DrawingSheetSize;
+  /** Hidden line removal: drop edges that are behind faces. */
+  hiddenLines: boolean;
+  /** Overall dimensions on the front and top views. */
+  dimensions: boolean;
+  /** Datum symbol and feature control frame. */
+  gdt: boolean;
+}
+
 /** Exploded-view display settings. Display only: components keep their real positions. */
 export interface ExplodedViewSettings {
   /** Base explosion step (mm); later components move further. */
@@ -161,6 +175,8 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /** Drawing sheet display options (a session preference, not saved in the project). */
+  drawingOptions: DrawingOptions;
 
   // Rebuild
   needsRebuild: boolean;
@@ -241,6 +257,7 @@ export interface CADActions {
   solveAssembly(): void;
   clearAssembly(): void;
   setExplodedView(settings: ExplodedViewSettings | null): void;
+  setDrawingOptions(options: Partial<DrawingOptions>): void;
 
   // Documents
   saveProject(): string;
@@ -403,6 +420,7 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     explodedView: null,
+    drawingOptions: { sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
     needsRebuild: false,
     rebuildCount: 0,
     documentRevision: 0,
@@ -845,6 +863,10 @@ export const useCADStore = create<CADStore>()(
         : 'Exploded view collapsed';
     }),
 
+    setDrawingOptions: (options) => set(state => {
+      Object.assign(state.drawingOptions, options);
+    }),
+
     // ==================== DOCUMENTS ====================
     saveProject: () => {
       const state = get();
@@ -960,10 +982,12 @@ export const useCADStore = create<CADStore>()(
       assemblyManager.components = [];
       assemblyManager.mates = [];
       const { documentRevision, rebuildCount } = state;
+      const drawingOptions = { ...state.drawingOptions };
       Object.assign(state, initialState());
-      // Counters keep counting across documents
+      // Counters keep counting across documents; the drawing preferences stay
       state.documentRevision = documentRevision + 1;
       state.rebuildCount = rebuildCount;
+      state.drawingOptions = drawingOptions;
     }),
 
     setDocumentName: (name) => set(state => {
