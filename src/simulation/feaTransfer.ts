@@ -11,6 +11,7 @@ import { autoMesh } from './autoMesh.ts';
 import type { MeshInfo, MeshQuality } from './autoMesh.ts';
 import { fixturesFor, loadsFor } from './studySetup.ts';
 import type { StudySetup } from './studySetup.ts';
+import { solveModal } from './modal.ts';
 
 export interface SolveRequest {
   /** Model triangles (mm), as in a non-indexed or indexed BufferGeometry. */
@@ -28,22 +29,32 @@ export interface SolveRequest {
   quality?: MeshQuality;
   /** Fixed face, loaded face and load direction (default: the engine's built-in cantilever study). */
   setup?: StudySetup;
+  /** 'static' (default): stress under the load. 'modal': natural frequencies with the fixed face held. */
+  analysis?: 'static' | 'modal';
+  /** kg/m³ (modal) */
+  density?: number;
+  /** How many modes (modal, default 6). */
+  modes?: number;
 }
 
 export type SolvePhase = 'meshing' | 'solving';
 
 /** Results and plot mesh as transferable plain data. */
 export interface PackedSolve {
-  results: Omit<FEAResults, 'deformedGeometry' | 'solidResult'> & {
+  /** Static results (null for a modal analysis). */
+  results: null | Omit<FEAResults, 'deformedGeometry' | 'solidResult'> & {
     solidResult: (Omit<SolidResult, 'displacementVectors' | 'deformedGeometry'> & { displacementVectors: Float64Array }) | null;
   };
   mesh: { points: Float64Array; faces: Uint32Array; size: [number, number, number] } | null;
   /** How the part was meshed and how well the mesh matches it. */
   meshInfo?: MeshInfo;
+  /** Modal results: frequencies (Hz) and the mode shapes, one after another (x y z per node, max 1). */
+  modal?: { frequencies: number[]; shapes: Float64Array; mass: number };
 }
 
 export interface Solved {
-  results: FEAResults;
+  results: FEAResults | null;
+  modal?: { frequencies: number[]; shapes: Float64Array[]; mass: number };
   mesh: PlotMesh | null;
   meshInfo?: MeshInfo;
 }
@@ -57,33 +68,46 @@ export function runSolve(req: SolveRequest, onPhase: (phase: SolvePhase) => void
   onPhase('meshing');
   const meshInfo = autoMesh(fea, geometry, req.elementType, req.quality ?? 'medium');
   onPhase('solving');
+  if (req.analysis === 'modal') {
+    const m = solveModal(fea, {
+      youngsModulus: req.youngsModulus, poissonRatio: req.poissonRatio, density: req.density ?? 7850,
+      fixtures: fixturesFor(req.setup ?? { fixedFace: 'zMin', loadFace: 'zMax', loadDirection: '-Y' }), modes: req.modes,
+    });
+    const shapes = new Float64Array(m.shapes.reduce((a, s) => a + s.length, 0));
+    let at = 0;
+    for (const s of m.shapes) { shapes.set(s, at); at += s.length; }
+    const packed = pack(null, fea.solidMesh);
+    return { results: null, mesh: packed.mesh, meshInfo, modal: { frequencies: m.frequencies, shapes, mass: m.mass } };
+  }
   const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio,
     req.setup ? { fixtures: fixturesFor(req.setup), loads: loadsFor(req.setup, req.load) } : {});
   return { ...pack(res, fea.solidMesh), meshInfo };
 }
 
-export function pack(res: FEAResults, mesh: { nodes: Array<{ point: THREE.Vector3 }>; boundaryFaces: Array<{ nodes: ArrayLike<number> }>; size: THREE.Vector3 } | null): PackedSolve {
+export function pack(res: FEAResults | null, mesh: { nodes: Array<{ point: THREE.Vector3 }>; boundaryFaces: Array<{ nodes: ArrayLike<number> }>; size: THREE.Vector3 } | null): PackedSolve {
+  if (!res) return { results: null, mesh: packMesh(mesh) };
   const { deformedGeometry: _dropped, solidResult, ...rest } = res;
-  let packedSolid: PackedSolve['results']['solidResult'] = null;
+  let packedSolid: NonNullable<PackedSolve['results']>['solidResult'] = null;
   if (solidResult) {
     const { displacementVectors, deformedGeometry: _geometry, ...solidRest } = solidResult;
     const d = new Float64Array(displacementVectors.length * 3);
     displacementVectors.forEach((v, i) => { d[i * 3] = v?.x ?? 0; d[i * 3 + 1] = v?.y ?? 0; d[i * 3 + 2] = v?.z ?? 0; });
     packedSolid = { ...solidRest, displacementVectors: d };
   }
-  let packedMesh: PackedSolve['mesh'] = null;
-  if (mesh) {
-    const points = new Float64Array(mesh.nodes.length * 3);
-    mesh.nodes.forEach((n, i) => { points[i * 3] = n.point.x; points[i * 3 + 1] = n.point.y; points[i * 3 + 2] = n.point.z; });
-    const faces = new Uint32Array(mesh.boundaryFaces.length * 3);
-    mesh.boundaryFaces.forEach((f, i) => { faces[i * 3] = f.nodes[0]; faces[i * 3 + 1] = f.nodes[1]; faces[i * 3 + 2] = f.nodes[2]; });
-    packedMesh = { points, faces, size: [mesh.size.x, mesh.size.y, mesh.size.z] };
-  }
-  return { results: { ...rest, solidResult: packedSolid }, mesh: packedMesh };
+  return { results: { ...rest, solidResult: packedSolid }, mesh: packMesh(mesh) };
+}
+
+function packMesh(mesh: { nodes: Array<{ point: THREE.Vector3 }>; boundaryFaces: Array<{ nodes: ArrayLike<number> }>; size: THREE.Vector3 } | null): PackedSolve['mesh'] {
+  if (!mesh) return null;
+  const points = new Float64Array(mesh.nodes.length * 3);
+  mesh.nodes.forEach((n, i) => { points[i * 3] = n.point.x; points[i * 3 + 1] = n.point.y; points[i * 3 + 2] = n.point.z; });
+  const faces = new Uint32Array(mesh.boundaryFaces.length * 3);
+  mesh.boundaryFaces.forEach((f, i) => { faces[i * 3] = f.nodes[0]; faces[i * 3 + 1] = f.nodes[1]; faces[i * 3 + 2] = f.nodes[2]; });
+  return { points, faces, size: [mesh.size.x, mesh.size.y, mesh.size.z] };
 }
 
 export function unpack(data: PackedSolve): Solved {
-  const s = data.results.solidResult;
+  const s = data.results?.solidResult;
   let solidResult: SolidResult | null = null;
   if (s) {
     const n = s.displacementVectors.length / 3;
@@ -99,7 +123,13 @@ export function unpack(data: PackedSolve): Solved {
       size: new THREE.Vector3(...size),
     };
   }
-  return { results: { ...data.results, solidResult }, mesh, meshInfo: data.meshInfo };
+  let modal: Solved['modal'];
+  if (data.modal) {
+    const size = mesh ? mesh.nodes.length * 3 : 0;
+    const shapes = size ? Array.from({ length: data.modal.frequencies.length }, (_, k) => data.modal!.shapes.slice(k * size, (k + 1) * size)) : [];
+    modal = { frequencies: data.modal.frequencies, shapes, mass: data.modal.mass };
+  }
+  return { results: data.results ? { ...data.results, solidResult } : null, mesh, meshInfo: data.meshInfo, ...(modal ? { modal } : {}) };
 }
 
 /** Typed arrays the message can move instead of copy. */
@@ -108,6 +138,7 @@ export function transferables(data: PackedSolve): ArrayBuffer[] {
   const add = (a: { buffer: ArrayBufferLike } | undefined | null) => { if (a && a.buffer instanceof ArrayBuffer && !out.includes(a.buffer)) out.push(a.buffer); };
   add(data.mesh?.points);
   add(data.mesh?.faces);
-  add(data.results.solidResult?.displacementVectors);
+  add(data.results?.solidResult?.displacementVectors);
+  add(data.modal?.shapes);
   return out;
 }

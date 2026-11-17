@@ -171,7 +171,8 @@ export interface CADState {
   /** FEA result plot shown on the model instead of the bodies (null: show the bodies). */
   feaPlot: ResultPlot | null;
   /** FEA study setup to mark on the model (fixed face, load arrows); null hides the markers. */
-  feaSetupMarkers: StudySetup | null;
+  /** The study shown on the model while the FEA panel is open (fixedOnly: a modal study, no load). */
+  feaSetupMarkers: (StudySetup & { fixedOnly?: boolean }) | null;
   activeMaterial: string;
 
   // View
@@ -277,7 +278,7 @@ export interface CADActions {
   // Model, material, view
   setBodies(bodies: Body[]): void;
   setFeaPlot(plot: ResultPlot | null): void;
-  setFeaSetupMarkers(setup: StudySetup | null): void;
+  setFeaSetupMarkers(setup: (StudySetup & { fixedOnly?: boolean }) | null): void;
   setSketchPolygonSides(sides: number): void;
   setSketchOffsetDistance(distance: number): void;
   setSketchRelationKind(kind: RelationKind): void;

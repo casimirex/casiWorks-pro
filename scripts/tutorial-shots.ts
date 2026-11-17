@@ -563,6 +563,17 @@ const SHOTS: Shot[] = [
       await sleep(400);
       await p.screenshot('30b-fea-probes');
       await p.eval(`document.querySelector('.fea-clear-probes')?.click()`);
+      // Modal: natural frequencies, the second mode's shape
+      await pick(p, '.fea-analysis', 'modal');
+      await pick(p, '.fea-mesh-quality', 'coarse');
+      await sleep(300);
+      await p.eval(`[...document.querySelectorAll('.fea-panel button')].find(b => b.textContent.trim() === 'Solve').click()`);
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.fea-mode').length || null`), 'modes', 60000);
+      await p.eval(`document.querySelectorAll('.fea-mode')[1].click()`);
+      await sleep(800);
+      await p.screenshot('30c-fea-modal');
+      await pick(p, '.fea-analysis', 'static');
+      await pick(p, '.fea-mesh-quality', 'medium');
       await feaPanel(p, false);
     },
   },

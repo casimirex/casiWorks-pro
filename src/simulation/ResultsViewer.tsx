@@ -1,5 +1,6 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useCADStore } from '../store/cadStore.ts';
 import { ELEMENT_TYPES } from './FEAEngine.ts';
@@ -25,8 +26,13 @@ export default function ResultsViewer() {
   const documentRevision = useCADStore(s => s.documentRevision);
 
   const [load, setLoad] = useState(5000); // 5000 N
+  // Static: stress under the load. Modal: natural frequencies and mode shapes with the fixed face held
+  const [analysis, setAnalysis] = useState<'static' | 'modal'>('static');
+  const [modeIndex, setModeIndex] = useState(0);
   const [solved, setSolved] = useState<{
-    results: FEAResults;
+    results: FEAResults | null;
+    modal?: { frequencies: number[]; shapes: Float64Array[]; mass: number };
+    analysis: 'static' | 'modal';
     mesh: PlotMesh | null;
     meshInfo?: MeshInfo;
     // What the results were computed for
@@ -51,24 +57,39 @@ export default function ResultsViewer() {
 
   // Results of another document are dropped; results of an earlier state of this
   // model (geometry, material, load or element type changed) are shown as stale
-  const results = solved && solved.documentRevision === documentRevision ? solved.results : null;
-  const stale = !!results && !!solved && (solved.geometry !== bodies[0]?.geometry || solved.material !== activeMaterial
-    || solved.load !== load || solved.elementType !== elementType || solved.quality !== quality
-    || solved.setup.fixedFace !== setup.fixedFace || solved.setup.loadFace !== setup.loadFace || solved.setup.loadDirection !== setup.loadDirection);
+  const current = solved && solved.documentRevision === documentRevision ? solved : null;
+  const results = current?.analysis === 'static' ? current.results : null;
+  const modal = current?.analysis === 'modal' ? current.modal ?? null : null;
+  const stale = !!current && (current.geometry !== bodies[0]?.geometry || current.material !== activeMaterial
+    || current.elementType !== elementType || current.quality !== quality || current.setup.fixedFace !== setup.fixedFace
+    || current.analysis !== analysis
+    || (current.analysis === 'static' && (current.load !== load || current.setup.loadFace !== setup.loadFace || current.setup.loadDirection !== setup.loadDirection)));
 
   // Show the fixed face and the load on the model while the panel is open
   useEffect(() => {
-    setFeaSetupMarkers(minimized ? null : setup);
-  }, [minimized, setup, setFeaSetupMarkers]);
+    setFeaSetupMarkers(minimized ? null : analysis === 'modal' ? { ...setup, fixedOnly: true } : setup);
+  }, [minimized, setup, analysis, setFeaSetupMarkers]);
   useEffect(() => () => setFeaSetupMarkers(null), [setFeaSetupMarkers]);
 
   // The plot is shown only for current results (never for an older model state)
   const plotMesh = solved?.mesh ?? null;
   const solidResult = results?.solidResult ?? null;
-  const plotVisible = showPlot && !stale && !!plotMesh && !!solidResult;
+  // A mode shape plots like a displacement (relative: its size has no meaning)
+  const modeShape = useMemo(() => {
+    const shape = modal?.shapes[modeIndex];
+    if (!shape) return null;
+    const n = shape.length / 3;
+    return {
+      nodalVonMisesMPa: new Float32Array(n),
+      displacementVectors: Array.from({ length: n }, (_, i) => new THREE.Vector3(shape[i * 3], shape[i * 3 + 1], shape[i * 3 + 2])),
+    };
+  }, [modal, modeIndex]);
+  const plotVisible = showPlot && !stale && !!plotMesh && (!!solidResult || !!modeShape);
   useEffect(() => {
-    setFeaPlot(plotVisible && plotMesh && solidResult ? buildResultPlot(plotMesh, solidResult, { quantity, deformed }) : null);
-  }, [plotVisible, plotMesh, solidResult, quantity, deformed, setFeaPlot]);
+    if (!plotVisible || !plotMesh) { setFeaPlot(null); return; }
+    if (modeShape) setFeaPlot(buildResultPlot(plotMesh, modeShape, { quantity: 'displacement', deformed: true }));
+    else if (solidResult) setFeaPlot(buildResultPlot(plotMesh, solidResult, { quantity, deformed }));
+  }, [plotVisible, plotMesh, solidResult, modeShape, quantity, deformed, setFeaPlot]);
   // Free the plot's GPU buffers when it is replaced
   useEffect(() => () => feaPlot?.geometry.dispose(), [feaPlot]);
 
@@ -89,14 +110,14 @@ export default function ResultsViewer() {
       useCADStore.getState().setStatus('FEA: create a 3D solid body first');
       return;
     }
-    const problems = setupProblems(setup);
+    const problems = analysis === 'modal' ? [] : setupProblems(setup);
     if (problems.length) {
       useCADStore.getState().setStatus(`FEA: ${problems[0]}`);
       return;
     }
     const mat = materialLibrary.getMaterial(activeMaterial);
     // What this solve is for: compared with the current state to mark results stale
-    const input = { geometry, material: activeMaterial, load, elementType, quality, setup, documentRevision };
+    const input = { geometry, material: activeMaterial, load, elementType, quality, setup, documentRevision, analysis };
     const handle = startSolve({
       geometry,
       elementType,
@@ -106,15 +127,21 @@ export default function ResultsViewer() {
       poissonRatio: mat.poissonsRatio ?? 0.3,
       quality,
       setup,
+      analysis,
+      density: mat.density,
+      modes: 6,
     }, setPhase);
     solveRef.current = handle;
     setPhase('meshing');
     try {
-      const { results: res, mesh, meshInfo } = await handle.promise;
+      const { results: res, modal: modes, mesh, meshInfo } = await handle.promise;
       useCADStore.getState().clearFeaProbes(); // probes belong to the previous results
-      setSolved({ results: res, mesh, meshInfo, ...input });
+      setSolved({ results: res, modal: modes, mesh, meshInfo, ...input });
+      setModeIndex(0);
       setShowPlot(true);
-      useCADStore.getState().setStatus(`FEA solved: max von Mises ${res.maxStressMPa.toFixed(1)} MPa`);
+      useCADStore.getState().setStatus(modes
+        ? `Modal: first natural frequency ${modes.frequencies[0]?.toFixed(1) ?? '—'} Hz`
+        : `FEA solved: max von Mises ${res!.maxStressMPa.toFixed(1)} MPa`);
     } catch (err) {
       if (err instanceof CancelledError) {
         useCADStore.getState().setStatus('FEA solve cancelled');
@@ -266,6 +293,19 @@ export default function ResultsViewer() {
           </div>
 
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Analysis:</span>
+            <select
+              className="fea-analysis"
+              value={analysis}
+              onChange={(e) => setAnalysis(e.target.value as 'static' | 'modal')}
+              title="Static: stress and deflection under the load. Modal: natural frequencies and mode shapes"
+              style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
+            >
+              <option value="static">Static (stress)</option>
+              <option value="modal">Modal (frequencies)</option>
+            </select>
+          </div>
+          <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Mesh Size:</span>
             <select
               className="fea-mesh-quality"
@@ -291,6 +331,7 @@ export default function ResultsViewer() {
               {FACES.map(f => <option key={f} value={f}>{FACE_LABELS[f]}</option>)}
             </select>
           </div>
+          {analysis === 'static' && (<>
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Load On:</span>
             <select
@@ -326,10 +367,36 @@ export default function ResultsViewer() {
               /> N
             </div>
           </div>
+          </>)}
 
           {phase && (
             <div className="fea-solving" style={{ fontSize: 11, color: '#fbbf24', marginBottom: 6 }}>
               {phase === 'meshing' ? 'Meshing the part…' : 'Solving…'} (the app stays usable; Cancel stops it)
+            </div>
+          )}
+
+          {modal && (
+            <div className="fea-modal" style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 3, opacity: stale ? 0.55 : 1 }}>
+              {stale && <div className="fea-stale" style={{ color: '#fbbf24', fontWeight: 600 }}>Out of date — the model or study changed. Press Solve to update.</div>}
+              <div style={{ color: '#94a3b8' }}>Natural frequencies (fixed: {FACE_LABELS[current!.setup.fixedFace]}); click a mode to see its shape:</div>
+              {modal.frequencies.map((f, i) => (
+                <button
+                  key={i}
+                  className={`fea-mode ${i === modeIndex ? 'active' : ''}`}
+                  onClick={() => setModeIndex(i)}
+                  style={{ display: 'flex', justifyContent: 'space-between', background: i === modeIndex ? '#1e3a5f' : 'transparent', border: '1px solid #333', borderRadius: 3, color: '#fff', padding: '2px 6px', fontSize: 11, cursor: 'pointer' }}
+                >
+                  <span>Mode {i + 1}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{f >= 1000 ? `${(f / 1000).toFixed(3)} kHz` : `${f.toFixed(1)} Hz`}</span>
+                </button>
+              ))}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', marginTop: 2 }}>
+                <input type="checkbox" className="fea-show-plot" checked={showPlot} onChange={(e) => setShowPlot(e.target.checked)} /> Show the mode shape
+              </label>
+              {plotVisible && <div className="fea-mode-shape" style={{ fontSize: 10, color: '#60a5fa' }}>Showing mode {modeIndex + 1} at {modal.frequencies[modeIndex]?.toFixed(1)} Hz on the model</div>}
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                Shapes are drawn exaggerated; their size has no meaning, only their form. Mass {(modal.mass * 1000).toFixed(1)} g.
+              </div>
             </div>
           )}
 

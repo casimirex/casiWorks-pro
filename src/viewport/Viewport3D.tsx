@@ -403,7 +403,7 @@ function MeasurePanel({ picks }: { picks: MeasurePick[] }) {
  * Sketch Canvas Overlay inside 3D Viewport
  */
 /** FEA study setup on the model: the fixed face in green, load arrows in red. */
-function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup; geometry: THREE.BufferGeometry }) {
+function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup & { fixedOnly?: boolean }; geometry: THREE.BufferGeometry }) {
   const markers = useMemo(() => {
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
@@ -421,7 +421,7 @@ function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup; geometry: THR
 
     const dir = new THREE.Vector3(...DIRECTION_VECTORS[setup.loadDirection]);
     const len = diag * 0.18;
-    const arrows = arrowAnchors(box, setup.loadFace, 3).map(p => {
+    const arrows = setup.fixedOnly ? [] : arrowAnchors(box, setup.loadFace, 3).map(p => {
       // Arrow ends on the face, pointing the way the load acts
       const tip = new THREE.Vector3(...p);
       return new THREE.ArrowHelper(dir, tip.clone().addScaledVector(dir, -len), len, 0xef4444, len * 0.3, len * 0.15);

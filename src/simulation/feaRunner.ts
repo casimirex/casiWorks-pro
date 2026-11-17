@@ -29,6 +29,9 @@ export interface StudyInput {
   poissonRatio: number;
   quality?: SolveRequest['quality'];
   setup?: SolveRequest['setup'];
+  analysis?: SolveRequest['analysis'];
+  density?: number;
+  modes?: number;
 }
 
 function requestFor(input: StudyInput): SolveRequest {
@@ -45,6 +48,9 @@ function requestFor(input: StudyInput): SolveRequest {
     poissonRatio: input.poissonRatio,
     quality: input.quality,
     setup: input.setup,
+    analysis: input.analysis,
+    density: input.density,
+    modes: input.modes,
   };
 }
 

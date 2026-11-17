@@ -863,6 +863,19 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
       <figure class="shot"><img loading="lazy" src="img/30b-fea-probes.webp" alt="FEA plot with probes"><figcaption>Probes on the displacement plot, listed in the panel.</figcaption></figure>
     </div>
   </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 13.3</span><h4>Natural frequencies: will it resonate?</h4><div class="specs"><span>Modal analysis</span><span>Mode shapes</span></div></div>
+    <div class="example-body">
+      <p>A part bolted to a motor, fan or vehicle is shaken. If the shaking matches one of its <b>natural frequencies</b>, small vibrations grow large. A modal analysis finds those frequencies and the shape the part vibrates in at each.</p>
+      <ol class="steps">
+        <li>In the FEA panel set <b>Analysis</b> to <b>Modal (frequencies)</b>. The load rows disappear: a modal study needs only the material and the <b>Fixed Face</b>.</li>
+        <li>Pick <b>Coarse</b> mesh with <b>Tet10</b> for a quick, accurate answer (on a 100 mm steel cantilever it is within 1% of the textbook beam formula), then click <b>Solve</b>.</li>
+        <li>The panel lists the six lowest frequencies. Click a mode to see its shape on the model. The shape is drawn exaggerated; only its form matters, not its size.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/30c-fea-modal.webp" alt="Modal analysis: six natural frequencies and the second mode shape"><figcaption>The L-bracket's first six natural frequencies; mode 2 is shown.</figcaption></figure>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Keep clear of the excitation</b><p>A common rule is to keep the first natural frequency at least √2 (about 1.4) times above the highest shaking frequency, ideally 2–3 times. To raise it, make the part stiffer (thicker, ribs, a shorter overhang) or lighter. From code: <code>api.model.naturalFrequencies({ fixedFace: 'zMin', modes: 3 })</code>.</p></div></div>
+    </div>
+  </div>
   <h3>Reading the numbers like an engineer</h3>
   <div class="cards">
     <div class="card"><b>Safety factor</b><p>Yield strength ÷ peak stress: 276 ÷ 99.1 ≈ 2.79. Most machine parts aim for 1.5–3, so this bracket passes with margin.</p></div>
@@ -903,7 +916,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.13</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.14</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -946,7 +959,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code> (number or <code>'wall * 2'</code>, 1.12), <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
-    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5), <code>interference()</code> (since 1.13)</td></tr>
     <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5)</td></tr>

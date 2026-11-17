@@ -220,7 +220,8 @@ const CHECKS: Check[] = [
       await at(0.3, 0.5); await at(0.25, 0.5); await note();
       await p.click('Mirror: click the mirror line, then the entities to mirror'); await at(0.45, 0.5); await at(0.38, 0.75); await note();
       await p.click('Spline: click points; click the last again to finish, or the first to close (S)');
-      await at(0.7, 0.3); await at(0.8, 0.4); await at(0.75, 0.6); await at(0.75, 0.6); await note();
+      // (kept above the FEA panel in the lower right)
+      await at(0.7, 0.3); await at(0.8, 0.4); await at(0.75, 0.52); await at(0.75, 0.52); await note();
       await esc();
       await p.screenshot('02c-sketch-edit');
       const expected = [/^Line extended by /, /^Line trimmed$/, /^Line trimmed$/, /^Closed chain of 4 offset 3 mm$/, /^Mirrored 1 entity$/, /^Spline through 3 points$/];
@@ -664,6 +665,39 @@ const CHECKS: Check[] = [
       await sleep(1500);
       assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
       return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works; ${meshReport}); plot legend "${dispLegend}"; probe ${probe}; report ${(report.length / 1024).toFixed(0)} KB with plot image; marked out of date after a change, cleared by New`;
+    },
+  },
+  {
+    name: 'modal analysis lists natural frequencies and plots the chosen mode shape',
+    async run(p) {
+      const pick = (cls: string, value: string) => p.eval(`(() => {
+        const sel = document.querySelector('.${cls}');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(value)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await pick('fea-analysis', 'modal');
+      await pick('fea-mesh-quality', 'coarse');
+      await sleep(200);
+      const loadRowHidden = !(await p.eval<boolean>(`!!document.querySelector('.fea-load-face')`));
+      await p.click('Solve', 300);
+      const modes = await waitFor(async () => {
+        const n = await p.eval<number>(`document.querySelectorAll('.fea-mode').length`);
+        return n > 0 ? n : null;
+      }, 'mode list', 60000);
+      const first = await status(p);
+      await p.eval(`document.querySelectorAll('.fea-mode')[1].click()`);
+      await sleep(400);
+      const active = await p.eval<string>(`document.querySelector('.fea-mode.active')?.textContent ?? ''`);
+      const plotted = await p.eval<string>(`document.querySelector('.fea-mode-shape')?.textContent ?? ''`);
+      await p.screenshot('04d-fea-modal');
+      // The API gives the same first frequency (same mesh preset and element)
+      const api = await p.eval<number>(`window.casiworks.model.naturalFrequencies({ modes: 1 }).frequencies[0]`);
+      const shown = Number(/([\d.]+) Hz/.exec(first)?.[1]);
+      assert(loadRowHidden && modes === 6 && /^Mode 2/.test(active) && /^Showing mode 2/.test(plotted) && /Modal: first natural frequency [\d.]+ Hz/.test(first)
+        && Math.abs(api - shown) < 0.1, `hidden load ${loadRowHidden}, modes ${modes}, active "${active}", plot "${plotted}", status "${first}", api ${api}`);
+      await pick('fea-analysis', 'static');
+      await pick('fea-mesh-quality', 'medium');
+      return `${modes} modes; ${first}; mode 2 shape plotted; API agrees (${api.toFixed(1)} Hz)`;
     },
   },
   {

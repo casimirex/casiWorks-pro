@@ -24,6 +24,8 @@ import { buildBom } from '../assembly/bom.ts';
 import type { Bom, BomComponent } from '../assembly/bom.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
 import { findInterferences } from '../assembly/interference.ts';
+import { naturalFrequencies } from '../simulation/modal.ts';
+import { FACES } from '../simulation/studySetup.ts';
 import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
@@ -54,7 +56,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.13.0';
+export const API_VERSION = '1.14.0';
 
 // =====================================================================
 // Public types
@@ -291,6 +293,12 @@ export interface ModelAPI {
    * @example api.model.measure({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 12 }, { normalA: { x: 0, y: 0, z: -1 }, normalB: { x: 0, y: 0, z: 1 } }).gap // 12
    */
   measure(a: Point3D, b: Point3D, options?: { normalA?: Point3D; normalB?: Point3D }): Measurement;
+  /**
+   * Modal analysis: the part's natural frequencies (Hz, lowest first) in its material,
+   * with one face held fixed. Meshes with Tet10 coarse unless told otherwise. Since 1.14.
+   * @example api.model.naturalFrequencies({ fixedFace: 'zMin', modes: 3 }).frequencies // [813.6, 813.6, 4874.7]
+   */
+  naturalFrequencies(options?: { fixedFace?: 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax'; modes?: number; elementType?: 'tet10' | 'tet4'; quality?: 'coarse' | 'medium' | 'fine' }): { frequencies: number[]; mass: number; elements: number };
 }
 
 /** A point or direction in model space (mm). */
@@ -1190,6 +1198,17 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       if (!geometry) return null;
       const material = materialLibrary.getMaterial(get().activeMaterial);
       return clone(geometryEngine.computeMassProperties(geometry, material) as MassProperties);
+    },
+    naturalFrequencies(options = {}) {
+      const geometry = currentGeometry();
+      if (!geometry) fail('OPERATION_FAILED', 'There is no body to analyse');
+      const o = options as { fixedFace?: string; modes?: number; elementType?: string; quality?: string };
+      if (o.fixedFace !== undefined && !FACES.includes(o.fixedFace as never)) fail('INVALID_ARGUMENT', `fixedFace must be one of ${FACES.join(', ')}`);
+      if (o.modes !== undefined && !(Number.isInteger(o.modes) && o.modes >= 1 && o.modes <= 20)) fail('INVALID_ARGUMENT', 'modes must be a whole number from 1 to 20');
+      if (o.elementType !== undefined && o.elementType !== 'tet10' && o.elementType !== 'tet4') fail('INVALID_ARGUMENT', "elementType must be 'tet10' or 'tet4'");
+      if (o.quality !== undefined && !['coarse', 'medium', 'fine'].includes(o.quality)) fail('INVALID_ARGUMENT', "quality must be 'coarse', 'medium' or 'fine'");
+      const r = naturalFrequencies(geometry!, materialLibrary.getMaterial(get().activeMaterial), options);
+      return { frequencies: r.frequencies, mass: r.mass, elements: r.elements };
     },
     boundingBox() {
       const geometry = currentGeometry();

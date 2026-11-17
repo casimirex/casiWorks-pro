@@ -7,6 +7,10 @@ import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
 import { findInterferences } from '../assembly/interference.ts';
+import { naturalFrequencies } from '../simulation/modal.ts';
+import { rebuildModel } from '../features/rebuildModel.ts';
+import { FACES } from '../simulation/studySetup.ts';
+import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { RELATIONS, dimensionConstraint, measureForDimension } from '../kernel/sketchSolve.ts';
 import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
@@ -496,6 +500,23 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     run: ({ state }) => {
       state().setActiveTool(TOOLS.MEASURE);
       state().setStatus('Measure: click a point on the model (corners snap)');
+    },
+  },
+  {
+    id: 'simulation.modal', label: 'Natural frequencies', category: 'Simulation', record: false,
+    description: "Modal analysis of the part in its material with one face held. args: { fixedFace?: 'xMin'…'zMax' (default zMin), modes?: 1–20 (default 6), elementType?: 'tet10' | 'tet4', quality?: 'coarse' | 'medium' | 'fine' }. Returns { frequencies (Hz, lowest first), mass (kg), elements }",
+    run: ({ state }, args?: { fixedFace?: string; modes?: number; elementType?: string; quality?: string }) => {
+      const a = args ?? {};
+      if (a.fixedFace !== undefined && !FACES.includes(a.fixedFace as never)) throw new CommandError('INVALID_ARGUMENT', `fixedFace must be one of ${FACES.join(', ')}`);
+      if (a.modes !== undefined && !(Number.isInteger(a.modes) && a.modes >= 1 && a.modes <= 20)) throw new CommandError('INVALID_ARGUMENT', 'modes must be a whole number from 1 to 20');
+      if (a.elementType !== undefined && a.elementType !== 'tet10' && a.elementType !== 'tet4') throw new CommandError('INVALID_ARGUMENT', "elementType must be 'tet10' or 'tet4'");
+      if (a.quality !== undefined && !['coarse', 'medium', 'fine'].includes(a.quality)) throw new CommandError('INVALID_ARGUMENT', "quality must be 'coarse', 'medium' or 'fine'");
+      if (state().needsRebuild) rebuildModel({ getState: state });
+      const geometry = state().bodies.find(b => b.visible !== false && b.geometry)?.geometry;
+      if (!geometry) throw new CommandError('NOT_AVAILABLE', 'Create a 3D solid body first');
+      const r = naturalFrequencies(geometry, materialLibrary.getMaterial(state().activeMaterial), a as never);
+      state().setStatus(`Natural frequencies: ${r.frequencies.slice(0, 3).map(f => `${f.toFixed(1)} Hz`).join(', ')}${r.frequencies.length > 3 ? '…' : ''}`);
+      return { frequencies: r.frequencies, mass: r.mass, elements: r.elements };
     },
   },
   { id: 'evaluate.clearMeasure', label: 'Clear measurement', category: 'Evaluate', record: false, run: ({ state }) => state().clearMeasure() },

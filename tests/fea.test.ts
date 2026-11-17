@@ -150,10 +150,10 @@ test('FEA transfer: packed results rebuild into the same plot (worker round trip
   const direct = new FEAEngine();
   autoMesh(direct, box, ELEMENT_TYPES.TET10, 'coarse');
   const expected = direct.solve(1000, 250e6, E, 0.3);
-  near(results.maxStressMPa, expected.maxStressMPa, 1e-12, 'max stress');
-  near(results.maxDisplacementMM, expected.maxDisplacementMM, 1e-12, 'max displacement');
+  near(results!.maxStressMPa, expected.maxStressMPa, 1e-12, 'max stress');
+  near(results!.maxDisplacementMM, expected.maxDisplacementMM, 1e-12, 'max displacement');
 
-  const a = buildResultPlot(mesh!, results.solidResult!, { quantity: 'displacement', deformed: true });
+  const a = buildResultPlot(mesh!, results!.solidResult!, { quantity: 'displacement', deformed: true });
   const b = buildResultPlot(direct.solidMesh!, expected.solidResult!, { quantity: 'displacement', deformed: true });
   assert.deepEqual(Array.from(a.geometry.getAttribute('position').array), Array.from(b.geometry.getAttribute('position').array));
   assert.deepEqual(Array.from(a.geometry.getAttribute('color').array), Array.from(b.geometry.getAttribute('color').array));
