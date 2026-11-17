@@ -16,7 +16,7 @@ import { EXPORT_FORMATS, JobRunner } from './jobs.ts';
 import type { ExportFormat } from './jobs.ts';
 import { Webhooks } from './webhooks.ts';
 
-export const SERVER_API_VERSION = '1.1.0';
+export const SERVER_API_VERSION = '1.2.0';
 const MAX_BODY = 25 * 1024 * 1024;
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -125,7 +125,7 @@ export function createLocalServer(options: ServerOptions): LocalServer {
       handler: ({ params }) => library.getDocument(params.id) },
     { method: 'PATCH', path: '/documents/{id}', tag: 'Documents', summary: 'Rename a document', request: 'Rename', response: 'Document',
       handler: async ({ params, body }) => library.renameDocument(params.id, (await body()).name) },
-    { method: 'DELETE', path: '/documents/{id}', tag: 'Documents', summary: 'Delete a document and all its versions', status: 204,
+    { method: 'DELETE', path: '/documents/{id}', tag: 'Documents', summary: 'Delete a document and all its versions (409 IN_USE while an assembly\'s newest version uses it)', status: 204,
       handler: ({ params }) => { library.deleteDocument(params.id); return null; } },
 
     // ------------------------------------------------------------ versions and revisions
@@ -160,6 +160,9 @@ export function createLocalServer(options: ServerOptions): LocalServer {
         if (document.state !== before) webhooks.emit('document.state_changed', { document, from: before, event: library.listLifecycle(params.id)[0] });
         return version;
       } },
+
+    { method: 'GET', path: '/documents/{id}/where-used', tag: 'Documents', summary: 'The assemblies that use this part (current users first)', response: 'WhereUsedList',
+      handler: ({ params }) => ({ usedBy: library.whereUsed(params.id) }) },
 
     // ------------------------------------------------------------ lifecycle
     { method: 'GET', path: '/documents/{id}/lifecycle', tag: 'Lifecycle', summary: 'The lifecycle state history, newest first', response: 'LifecycleList',
@@ -381,7 +384,10 @@ const SCHEMAS: Record<string, unknown> = {
   Health: obj({ ok: { type: 'boolean' }, apiVersion: s }),
   Index: obj({ name: s, apiVersion: s, description: s, links: { type: 'object', additionalProperties: s } }),
   Session: obj({ token: s }),
-  Document: obj({ id: s, name: s, createdAt: s, updatedAt: s, headVersion: i, latestRevision: nullable(s), state: { enum: LIFECYCLE_STATES } }),
+  Document: obj({ id: s, name: s, createdAt: s, updatedAt: s, headVersion: i, latestRevision: nullable(s), state: { enum: LIFECYCLE_STATES }, kind: { enum: ['part', 'assembly'] } }),
+  WhereUsed: obj({ document: obj({ id: s, name: s, headVersion: i, state: { enum: LIFECYCLE_STATES } }), versions: { type: 'array', items: i }, current: { type: 'boolean' },
+    pinnedVersion: nullable(i), count: i }),
+  WhereUsedList: list('usedBy', 'WhereUsed'),
   DocumentList: list('documents', 'Document'),
   Version: obj({ documentId: s, number: i, message: s, createdAt: s, size: i, sha256: s, revision: nullable(s), releasedAt: nullable(s) }),
   VersionList: list('versions', 'Version'),

@@ -28,6 +28,7 @@ import type { ApiStore, CasiWorksAPI, CasiWorksAPIOptions } from './CasiWorksAPI
 import { useCADStore } from '../store/cadStore.ts';
 import { commands, macroRecorder } from '../commands/index.ts';
 import { PluginManager } from '../plugins/PluginManager.ts';
+import { apiWorkspace } from '../workspace/index.ts';
 
 export * from './CasiWorksAPI.ts';
 /** Types for writing plugins (add-ins); see `api.plugins`. */
@@ -61,7 +62,7 @@ export function createHeadlessAPI(): CasiWorksAPI {
   // The plugin manager hands plugins this API, created right after it
   const self: { api?: CasiWorksAPI } = {};
   const plugins = new PluginManager(commands, () => self.api!);
-  self.api = createCasiWorksAPI(useCADStore, { commands, macros: macroRecorder, plugins });
+  self.api = createCasiWorksAPI(useCADStore, { commands, macros: macroRecorder, plugins, workspace: apiWorkspace });
   return self.api;
 }
 

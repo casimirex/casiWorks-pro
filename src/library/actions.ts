@@ -18,6 +18,8 @@ interface Store {
   getState(): LibraryState;
   /** When given, opening waits for the rebuild so its own message is not replaced by the rebuild's. */
   subscribe?(listener: (state: LibraryState) => void): () => void;
+  /** When given, opened documents go here (the workspace: a new tab) instead of replacing the store's document. */
+  open?(content: string, ref: LibraryRef): void;
 }
 
 /** Show a message once the model has rebuilt (keeping a rebuild warning next to it). */
@@ -76,8 +78,11 @@ export async function openFromLibrary(store: Store, documentId: string, name: st
   const head = doc.headVersion;
   const number = version === 'latest' ? head : version;
   const content = await library.content(documentId, number);
-  store.getState().loadProject(content);
-  store.getState().setLibraryRef({ documentId, name, version: head, opened: number, state: doc.state }, true);
+  const ref = { documentId, name, version: head, opened: number, state: doc.state };
+  // Beside the open documents (in the app); scripts and tests without a workspace load into the store
+  if (store.open) store.open(content, ref);
+  else store.getState().loadProject(content);
+  store.getState().setLibraryRef(ref, true);
   const opened = number === head
     ? `Opened ${name} version ${number} from the library`
     : `Opened ${name} version ${number} (the newest is ${head}); saving makes version ${head + 1}`;

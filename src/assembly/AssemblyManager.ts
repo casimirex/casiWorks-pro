@@ -140,11 +140,25 @@ export function safeQuaternionFromVectors(vFrom: THREE.Vector3 | null | undefine
   return q;
 }
 
+/** The angle from `a` to `b` turning about `axis` (radians, −π…π), both projected onto the plane across the axis. */
+export function signedAngleAbout(a: THREE.Vector3, b: THREE.Vector3, axis: THREE.Vector3): number {
+  const pa = a.clone().sub(axis.clone().multiplyScalar(a.dot(axis)));
+  const pb = b.clone().sub(axis.clone().multiplyScalar(b.dot(axis)));
+  if (pa.lengthSq() < 1e-12 || pb.lengthSq() < 1e-12) return 0;
+  return Math.atan2(pa.clone().cross(pb).dot(axis), pa.dot(pb));
+}
+
+/** An angle brought into −π…π. */
+export function wrapAngle(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
 export class AssemblyComponent {
   id: string;
   name: string;
-  baseGeometry: THREE.BufferGeometry;
-  geometry: THREE.BufferGeometry;
+  private _base!: THREE.BufferGeometry;
+  private _box: THREE.Box3 | null = null;
+  private _world: THREE.BufferGeometry | null = null;
   isFixed: boolean;
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
@@ -155,7 +169,6 @@ export class AssemblyComponent {
     this.id = id || generateId('comp');
     this.name = name || 'Component';
     this.baseGeometry = geometry ? geometry.clone() : new THREE.BoxGeometry(20, 20, 20);
-    this.geometry = this.baseGeometry.clone();
     this.isFixed = !!isFixed;
 
     this.position = new THREE.Vector3(0, 0, 0);
@@ -165,12 +178,38 @@ export class AssemblyComponent {
     this.updateMatrix();
   }
 
+  /** The shape in the component's own coordinates. Replacing it (a referenced part changed) keeps the placement. */
+  get baseGeometry(): THREE.BufferGeometry { return this._base; }
+  set baseGeometry(g: THREE.BufferGeometry) {
+    this._base = g;
+    this._box = null;
+    this._world = null;
+  }
+
+  /** The bounding box of the shape in its own coordinates (cached). */
+  localBox(): THREE.Box3 {
+    if (!this._box) {
+      this._base.computeBoundingBox();
+      this._box = this._base.boundingBox?.clone() ?? new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
+    }
+    return this._box;
+  }
+
+  /** The shape placed in the assembly. Made when first asked for after a move, so the solver's many small moves stay cheap. */
+  get geometry(): THREE.BufferGeometry {
+    if (!this._world) {
+      const g = this._base.clone();
+      g.applyMatrix4(this.matrix);
+      g.computeVertexNormals();
+      g.computeBoundingBox();
+      this._world = g;
+    }
+    return this._world;
+  }
+
   updateMatrix(): void {
     this.matrix.compose(this.position, this.quaternion, this.scale);
-    this.geometry = this.baseGeometry.clone();
-    this.geometry.applyMatrix4(this.matrix);
-    this.geometry.computeVertexNormals();
-    this.geometry.computeBoundingBox();
+    this._world = null;
   }
 
   /**
@@ -196,12 +235,7 @@ export class AssemblyComponent {
       return { point: p, normal: n };
     }
 
-    if (!this.baseGeometry) {
-      return { point: this.position.clone(), normal: new THREE.Vector3(0, 1, 0) };
-    }
-
-    this.baseGeometry.computeBoundingBox();
-    const box = this.baseGeometry.boundingBox || new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
+    const box = this.localBox();
     const center = new THREE.Vector3();
     box.getCenter(center);
 
@@ -270,12 +304,7 @@ export class AssemblyComponent {
    * @returns {{ point: THREE.Vector3, axis: THREE.Vector3, radius: number }}
    */
   getAxisReference(axisRef: MateRef = 'z'): AxisFrame {
-    if (!this.baseGeometry) {
-      return { point: this.position.clone(), axis: new THREE.Vector3(0, 0, 1), radius: 10 };
-    }
-
-    this.baseGeometry.computeBoundingBox();
-    const box = this.baseGeometry.boundingBox || new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
+    const box = this.localBox();
     const center = new THREE.Vector3();
     box.getCenter(center);
 
@@ -596,6 +625,18 @@ export class AssemblyManager {
 
             const targetDeg = mate.angle !== undefined ? mate.angle : (mate.offset || 0);
             const targetRad = (targetDeg * Math.PI) / 180;
+
+            // About a given axis (in the first component's coordinates): a signed angle, so a drive can turn all the way round
+            if (mate.axis) {
+              const axis = new THREE.Vector3(mate.axis.x ?? 0, mate.axis.y ?? 0, mate.axis.z ?? 0);
+              if (axis.lengthSq() > 1e-12) {
+                axis.normalize().applyQuaternion(c1.quaternion);
+                const delta = wrapAngle(targetRad - signedAngleAbout(f1.normal, f2.normal, axis));
+                if (Math.abs(delta) > maxError) maxError = Math.abs(delta);
+                this._applyRotationDelta(c1, c2, new THREE.Quaternion().setFromAxisAngle(axis, delta), w1, w2);
+                break;
+              }
+            }
             const rawAngle = f1.normal.angleTo(f2.normal);
             const currentAngle = Number.isFinite(rawAngle) ? rawAngle : 0;
 

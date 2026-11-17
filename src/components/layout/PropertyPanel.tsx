@@ -37,6 +37,7 @@ import { debounce } from '../../utils/debounce.ts';
 import { evaluateExpression, evaluateVariables } from '../../features/equations.ts';
 import { CLEARANCE_FITS, METRIC_SIZES, standardHole } from '../../features/holeStandards.ts';
 import type { ClearanceFit, MetricSize } from '../../features/holeStandards.ts';
+import { ExplodeStepsCard, MateFacesPanel, MotionPanel } from './AssemblyPanels.tsx';
 
 /** Fields the panel reads from what it was opened with (a feature being edited, or a tool's defaults). */
 interface PanelContentFields {
@@ -243,6 +244,8 @@ export default function PropertyPanel() {
   if (!propertyPanelOpen || !propertyPanelContent) return null;
 
   const featureType = propertyPanelContent.type;
+  if (featureType === 'mate_faces') return <MateFacesPanel />;
+  if (featureType === 'assembly_motion') return <MotionPanel />;
   // What the panel is for, as its title and its name for screen readers
   const typeLabel = featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   const panelTitle = propertyPanelContent.isEditing && propertyPanelContent.name ? `Edit ${propertyPanelContent.name}` : typeLabel;
@@ -487,6 +490,13 @@ export default function PropertyPanel() {
               {assemblyComponents.length < 2 && (
                 <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 6 }}>Insert at least two components to explode.</div>
               )}
+            </div>
+          </div>
+        )}
+        {featureType === 'exploded_view' && assemblyComponents.length >= 2 && <ExplodeStepsCard />}
+        {featureType === 'exploded_view' && (
+          <div className="property-card">
+            <div className="property-card-body">
               {explodedView && (
                 <button
                   className="segment-btn explode-collapse"

@@ -726,13 +726,14 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
 <section class="chapter" id="ch10" data-title="Assemblies & mates" data-part="advanced" data-n="10">
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 10 · about 15 min</span></div>
   <h2 class="title">Assemblies and mates</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li><li>List the parts in a bill of materials and export it</li><li>Find parts that overlap with interference detection</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly document</li><li>Assemble your own parts, which the assembly follows when they change</li><li>Mate real faces by clicking them, and read what the mates leave free</li><li>Move parts along their mates (motion) and build an exploded view in steps</li><li>List the parts in a bill of materials and find overlaps with interference detection</li></ul></div>
+  <p>Parts and assemblies are separate documents, each in its own tab under the ribbon. <b>New part</b> and <b>New assembly</b> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd>) sit at the end of the tabs. A part document has the Features and Sketch tabs; an assembly has the Assembly tab. Click a tab to switch: each document keeps its unsaved changes and its undo history while you work on another, and all of them come back after a reload.</p>
   <div class="example">
     <div class="example-head"><span class="tag">Example 10.1</span><h4>Pin a shaft into a base plate</h4><div class="specs"><span>Base plate 50 × 12 × 50</span><span>Alignment pin</span><span>Concentric mate</span></div></div>
     <div class="example-body">
       <ol class="steps">
-        <li>Start a new part and open the <b>Assembly</b> tab.</li>
-        <li>Under <b>Components</b>, click <b>Plate</b> and then <b>Pin</b>. Both are inserted at their default positions, so the pin stands beside the plate.</li>
+        <li>Click <b>New assembly</b> at the end of the document tabs. The ribbon opens on the <b>Assembly</b> tab.</li>
+        <li>Under <b>Components</b>, click the built-in <b>Plate</b> and then <b>Pin</b>. Both are inserted at their default positions, so the pin stands beside the plate.</li>
         <li>Under <b>Mates</b>, click <b>Concentric</b>. The pin's axis is lined up with the plate's centre, and the pin moves onto the plate.</li>
         <li>Click <b>Solve</b> (Actions) to solve all the mates together. The status bar shows the leftover error, for example <i>residual 0.00000</i>.</li>
         <li>Click <b>Explode</b>. Set <b>Explode Distance</b> to 40 mm, leave <b>Leader Lines</b> on, and click <b>OK</b>. The pin slides up its shared axis, away from the plate, and a dashed yellow line joins it to where it really sits.</li>
@@ -745,6 +746,47 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
         <figure class="shot"><img loading="lazy" src="img/25-exploded-panel.webp" alt="Exploded view settings"><figcaption>Step 5: the Exploded View settings.</figcaption></figure>
         <figure class="shot"><img loading="lazy" src="img/25-exploded.webp" alt="Exploded assembly with a leader line"><figcaption>Step 5: exploded 40 mm, with a leader line.</figcaption></figure>
       </div>
+    </div>
+  </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 10.2</span><h4>Assemble your own parts</h4><div class="specs"><span>Plate 60 × 40 × 10 with a Ø10 hole</span><span>Pin Ø10 × 30</span><span>Mates on real faces</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Make two parts, each with <b>New part</b>: a 60 × 40 mm plate, 10 mm thick, with a Ø10 hole 10 mm right of centre (call it <i>Plate</i>), and a Ø10 × 30 pin (<i>Pin</i>). Give them materials.</li>
+        <li>Click <b>New assembly</b>. On the Assembly tab click <b>Part…</b>: the dialog lists the parts that are open, and the parts in the library when it is running. Insert <b>Plate</b>, then <b>Pin</b>. Each component <i>refers</i> to its part; nothing is copied.</li>
+        <li>Click <b>Mate</b> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>). Click the side of the pin, then the wall of the hole. Both are recognised as Ø10 cylinders, and the panel offers <b>Concentric</b>. Click <b>Add mate</b>: the pin lines up with the hole.</li>
+        <li>The Mate tool stays on. Click the end face of the pin, then the front face of the plate, and add the <b>Coincident</b> mate. The two faces now touch, with the parts on either side of them: the pin stands on the hole like a peg on its seat. Press <kbd>Esc</kbd>.</li>
+        <li>Look at the tree: <b>(f) Plate</b> is fixed and <b>(-) Pin</b> is under defined. Hover it: it is still free to <i>turn about Z</i>, which is right for a round pin in a round hole. The line above the components sums it up.</li>
+        <li>Click the <b>Plate</b> tab and make the plate 16 mm thick. Click the <b>Fixture</b> tab: the plate is thicker, and the pin has moved up with the face it is mated to.</li>
+        <li>Add an <b>Angle</b> mate between two flat faces (or from a script, as below) and click <b>Motion</b>. Pick the mate, set <b>From</b> and <b>To</b>, and click <b>Play</b>: the mate's value changes frame by frame and everything mated to the moving part follows.</li>
+        <li>Click <b>Explode</b>. Select the pin, choose <b>+Z</b> and 45 mm, and click <b>Add step</b>. Steps play in order with <b>Play the steps</b>, or drag <b>Show</b>. <b>From auto</b> turns the automatic explode into steps you can edit.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/38-insert-part.webp" alt="The Insert part dialog listing the open parts Plate and Pin"><figcaption>Step 2: open parts (and library parts) to insert.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/39-assembly-parts.webp" alt="The plate and pin inserted into the assembly, both linked"><figcaption>Step 2: both parts in, marked <i>linked</i> in the tree.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/40-mate-faces.webp" alt="The pin side and the hole wall highlighted, with Concentric offered in the Mate panel"><figcaption>Step 3: two cylinders picked; Concentric is offered first.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/41-assembly-dof.webp" alt="The assembly tree: Plate fixed, Pin under defined with one degree of freedom"><figcaption>Step 5: one degree of freedom left, the pin's turn.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/42-motion.webp" alt="The Motion panel driving the angle mate"><figcaption>Step 7: driving the angle mate.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/43-explode-steps.webp" alt="An explode step moving the pin 45 mm along +Z, with its leader line"><figcaption>Step 8: one explode step, played.</figcaption></figure>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>In the tree</th><th>Means</th></tr>
+        <tr><td><b>(f)</b></td><td>Fixed in place (the first component, unless you change it).</td></tr>
+        <tr><td><b>(-)</b></td><td>Under defined: the mates leave it free to move. The tooltip says how: <i>slide along X</i>, <i>turn about Z</i>…</td></tr>
+        <tr><td>(nothing)</td><td>Fully defined: the mates hold it completely.</td></tr>
+        <tr><td><b>(+)</b></td><td>Over defined: its mates conflict and cannot all hold. The conflicting mates are shown in red.</td></tr>
+        <tr><td><i>linked</i> · <i>library</i> · <i>cached copy</i></td><td>Where the part's shape came from: an open document, the library, or (when neither can be reached) the copy saved inside the assembly. Open the part or start the library and click <b>Update</b>.</td></tr>
+      </table></div>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">How the degrees of freedom are found</b><p>Each mate is turned into equations that are zero when it holds. Moving each part a tiny step along its six possible motions (three slides, three turns) and watching those equations change shows which motions the mates stop and which they leave. A mate that cannot be satisfied with the others is reported as a conflict.</p></div></div>
+      <div class="code"><span class="lang">Console</span><button type="button">Copy</button><pre>const asm = api.workspace.newAssembly('Fixture');
+const plate = api.assembly.insert({ part: plateDocumentId });
+const pin = api.assembly.insert({ part: pinDocumentId });
+api.assembly.mate({ type: 'concentric',
+  component1: plate, ref1: api.assembly.faceAt(plate, { x: 15, y: 0, z: 5 }),
+  component2: pin, ref2: api.assembly.faceAt(pin, pinSidePoint) });
+api.assembly.dof();            <span class="tok-c">// { status: 'under-defined', components: [...] }</span>
+api.assembly.mate({ type: 'angle', component1: plate, ref1: 'right', component2: pin, ref2: 'right', angle: 0, axis: { x: 0, y: 0, z: 1 } });
+api.assembly.drive(api.assembly.mates().at(-1).id, 90);   <span class="tok-c">// turn the pin 90°</span></pre></div>
     </div>
   </div>
   <div class="table-wrap"><table>
@@ -1070,7 +1112,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
         <li>Load the L-bracket example. Click <b>Library</b> in the top bar, type <i>First cut for the motor mount</i> as the message and click <b>Save to library</b>. The title bar now shows <b>v1</b>.</li>
         <li>Make the base 30 mm deep and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>: version 2.</li>
         <li>Open the Library again (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>), pick <b>Version 1</b> and click <b>Release</b>: it becomes <b>Rev A</b>. A released version never changes, so it is safe to send to a supplier.</li>
-        <li>Pick version 1 and click <b>Open version 1</b> to go back to it. Saving then makes version 3: older versions are kept as they were.</li>
+        <li>Pick version 1 and click <b>Open version 1</b> to go back to it. It opens in a tab of its own; saving then makes version 3: older versions are kept as they were.</li>
       </ol>
       <figure class="shot"><img loading="lazy" src="img/36-library.webp" alt="The Library dialog with two versions, version 1 released as revision A"><figcaption>Two versions of the bracket; version 1 is released as revision A.</figcaption></figure>
       <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Two windows, one document</b><p>If the same document is saved from another window after you opened it, your save is refused rather than silently replacing that work. Your changes stay open: <b>Save as new document</b> keeps them, or open the newest version and redo them.</p></div></div>
@@ -1097,6 +1139,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
       <div class="callout tip"><span class="ic">💡</span><div><b class="label">Not on its own?</b><p>When review means something to you, use it. When it doesn't, <b>Release version N</b> works straight from Draft. Scripts can do the same with <code>POST /api/v1/documents/{id}/lifecycle</code> and <code>{"state": "released", "note": "…"}</code>, and a <code>document.state_changed</code> webhook fires on every change.</p></div></div>
     </div>
   </div>
+  <div class="callout check"><span class="ic">✓</span><div><b class="label">Where used</b><p>Save an assembly to the library and its library parts are recorded. Pick a part in the Library to see <b>Used in</b>: each assembly, how many times, and whether it follows the part's newest version or is pinned to one (a version chosen when inserting it from the library). A part that an assembly's newest version uses cannot be deleted. Scripts: <code>GET /api/v1/documents/{id}/where-used</code>.</p></div></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 18.3</span><h4>Export a revision from a script</h4><div class="specs"><span>REST API v1</span><span>API key</span></div></div>
     <div class="example-body split single">
@@ -1137,6 +1180,7 @@ curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
     <tr><td><kbd>S</kbd></td><td>Spline (in a sketch)</td><td><kbd>T</kbd></td><td>Trim (in a sketch)</td></tr>
     <tr><td><kbd>M</kbd></td><td>Measure</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> · <kbd>F1</kbd></td><td>Command palette</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Save to library</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td><td>Library</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd></td><td>New assembly</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd></td><td>Mate (pick faces)</td></tr>
   </table></div>
   <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
   <h3>Working without a mouse</h3>
@@ -1163,6 +1207,7 @@ curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
     <tr><td>Surfaces and sheet metal</td><td>Not available: there are no surface or sheet-metal tools.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
     <tr><td>Drawing sheet</td><td>Views, dimensions and GD&amp;T are placed for you; no section views or your own dimensions.</td><td>Export DXF and add these in a 2D CAD program.</td></tr>
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
+    <tr><td>Mates on faces</td><td>Flat faces and cylinders (holes, shafts) are recognised; edges, cones and spheres are not.</td><td>Mate the flat or round face next to the edge, or use a bounding-box face from a script.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
   </table></div>
   <p>All of these come from the triangle-mesh kernel: it has triangles, not exact edges and faces. An exact geometry kernel is not planned, so treat these as lasting limits and use the workarounds.</p>

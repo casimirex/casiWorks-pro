@@ -32,7 +32,8 @@ export function downloadProject(store: StoreHandle<ProjectFileState>): void {
   state.setStatus(`Saved ${filename}`);
 }
 
-export function openProject(store: StoreHandle<ProjectFileState>): void {
+/** Ask for a project file and load it (`open` decides where: by default it replaces the store's document). */
+export function openProject(store: StoreHandle<ProjectFileState>, open: (content: string) => void = (c) => store.getState().loadProject(c)): void {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = OPENABLE_EXTENSIONS.join(',');
@@ -46,7 +47,8 @@ export function openProject(store: StoreHandle<ProjectFileState>): void {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === 'string') store.getState().loadProject(reader.result);
+      if (typeof reader.result !== 'string') return;
+      try { open(reader.result); } catch (e) { store.getState().setStatus(`Cannot open "${file.name}": ${e instanceof Error ? e.message : String(e)}`); }
     };
     reader.onerror = () => store.getState().setStatus(`Failed to read "${file.name}"`);
     reader.readAsText(file);

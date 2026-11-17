@@ -24,9 +24,29 @@ import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import type { FeatureData, PlaneFrame, ReferenceFeature, SketchEntity, SketchPlane } from '../types/cad.ts';
 import { generateId } from '../utils/math.ts';
 import { CAD_EXAMPLES } from '../utils/examples.ts';
-import { downloadProject, newProject, openProject } from '../utils/projectFile.ts';
+import { downloadProject, openProject } from '../utils/projectFile.ts';
+import { workspace, updateReferences } from '../workspace/index.ts';
+import { partShape } from '../assembly/partGeometry.ts';
+import { mateRefOf, matesFor } from '../assembly/facePick.ts';
+import { library } from '../library/client.ts';
+import type { ExplodeStep } from '../store/cadStore.ts';
 
 const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'] as const;
+
+/** An explode direction: '+X' … '-Z' or a vector (made unit length). */
+function directionOf(d: unknown, i: number): { x: number; y: number; z: number } {
+  if (typeof d === 'string') {
+    const m = /^([+-]?)([XYZ])$/i.exec(d.trim());
+    if (!m) throw new CommandError('INVALID_ARGUMENT', `step ${i + 1}: direction must be +X, -X, +Y, -Y, +Z, -Z or a vector`);
+    const s = m[1] === '-' ? -1 : 1, axis = m[2].toUpperCase();
+    return { x: axis === 'X' ? s : 0, y: axis === 'Y' ? s : 0, z: axis === 'Z' ? s : 0 };
+  }
+  const v = d as { x?: unknown; y?: unknown; z?: unknown } | null;
+  const x = Number(v?.x ?? 0), y = Number(v?.y ?? 0), z = Number(v?.z ?? 0);
+  const len = Math.hypot(x, y, z);
+  if (!Number.isFinite(len) || len < 1e-9) throw new CommandError('INVALID_ARGUMENT', `step ${i + 1}: direction must not be zero`);
+  return { x: x / len, y: y / len, z: z / len };
+}
 
 /** The variables as the active configuration sees them. */
 const activeVariables = (s: CADStore) => effectiveVariables(s.variables, s.configurations.find(c => c.name === s.activeConfiguration));
@@ -147,10 +167,40 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     // Replayed without the "discard changes?" question
     record: (_args, _result, state) => (state.features.length === 0 ? { command: 'document.new' } : null),
     // Browsers reserve plain Ctrl+N for a new window
-    description: 'Start a new part (asks before discarding unsaved changes)',
-    run: ({ state }) => newProject({ getState: state }),
+    description: 'Open a new part beside the open documents',
+    run: () => workspace.newDocument('part'),
   },
-  { id: 'file.open', label: 'Open…', category: 'File', shortcuts: ['Ctrl+O'], requiresUI: true, run: ({ state }) => openProject({ getState: state }) },
+  {
+    id: 'workspace.newPart', label: 'New part document', category: 'File', record: false,
+    description: 'args?: { name? } — a new part beside the open documents, made active. Returns its document id',
+    run: (_ctx, args?: { name?: string }) => workspace.newDocument('part', args?.name),
+  },
+  {
+    id: 'workspace.newAssembly', label: 'New assembly', category: 'File', shortcuts: ['Ctrl+Alt+A'], record: false,
+    description: 'args?: { name? } — a new, empty assembly beside the open documents, made active. Returns its document id',
+    run: (_ctx, args?: { name?: string }) => workspace.newDocument('assembly', args?.name),
+  },
+  {
+    id: 'workspace.activate', label: 'Switch document', category: 'File', record: false,
+    description: 'args: { id } — make an open document the active one',
+    run: (_ctx, args: { id: string }) => {
+      if (!workspace.list().some(d => d.id === args?.id)) throw new CommandError('INVALID_ARGUMENT', `No open document ${JSON.stringify(args?.id)}`);
+      workspace.activate(args.id);
+    },
+  },
+  {
+    id: 'workspace.close', label: 'Close document', category: 'File', record: false,
+    description: 'args?: { id?, discard? } — close a document (default the active one). Refuses unsaved changes unless discard is true',
+    run: ({ state }, args?: { id?: string; discard?: boolean }) => {
+      const id = args?.id ?? state().documentId;
+      const doc = workspace.list().find(d => d.id === id);
+      if (!doc) throw new CommandError('INVALID_ARGUMENT', `No open document ${JSON.stringify(id)}`);
+      if (doc.modified && !args?.discard) throw new CommandError('NOT_AVAILABLE', `${doc.name} has unsaved changes: save it, or close with discard: true`);
+      workspace.close(id);
+    },
+  },
+  { id: 'workspace.list', label: 'Open documents (data)', category: 'File', record: false, description: 'Returns [{ id, name, type, modified, active }]', run: () => workspace.list().map(({ libraryRef: _l, ...d }) => d) },
+  { id: 'file.open', label: 'Open…', category: 'File', shortcuts: ['Ctrl+O'], requiresUI: true, run: ({ state }) => openProject({ getState: state }, (content) => { workspace.open(content); }) },
   { id: 'file.save', label: 'Save', category: 'File', shortcuts: ['Ctrl+S'], requiresUI: true, description: 'Download the project file', run: ({ state }) => downloadProject({ getState: state }) },
   {
     id: 'library.open', label: 'Library…', category: 'File', shortcuts: ['Ctrl+Shift+O'], requiresUI: true, record: false,
@@ -169,6 +219,8 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     run: ({ state }, args: { id: string }) => {
       const ex = CAD_EXAMPLES.find(e => e.id === args?.id);
       if (!ex) throw new CommandError('INVALID_ARGUMENT', `Unknown example "${args?.id}" (known: ${CAD_EXAMPLES.map(e => e.id).join(', ')})`);
+      // Examples are parts: in an assembly, open one beside it
+      if (state().documentType === 'assembly') workspace.newDocument('part');
       state().loadExampleModel(ex.create());
     },
   },
@@ -612,17 +664,154 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   { id: 'assembly.solve', label: 'Solve mates', category: 'Assembly', run: ({ state }) => state().solveAssembly() },
+  {
+    id: 'assembly.insertPartDialog', label: 'Insert part…', category: 'Assembly', requiresUI: true, record: false,
+    description: 'Choose an open part or a library part to insert',
+    run: ({ state, ui }) => {
+      if (state().documentType !== 'assembly') throw new CommandError('NOT_AVAILABLE', 'Parts are inserted into an assembly document: create one with New assembly');
+      ui().openDialog('insertPart');
+    },
+  },
+  {
+    id: 'assembly.motion', label: 'Motion…', category: 'Assembly', record: false,
+    description: 'Open the Motion panel: drive a distance or angle mate',
+    run: ({ state }) => state().openPropertyPanel({ type: 'assembly_motion' }),
+  },
+  {
+    id: 'assembly.mateTool', label: 'Mate (pick faces)', category: 'Assembly', shortcuts: ['Ctrl+Alt+M'], record: false,
+    description: 'Pick a face on each of two components, then choose the mate',
+    run: ({ state }) => {
+      if (state().assemblyComponents.length < 2) throw new CommandError('NOT_AVAILABLE', 'Insert at least two components to mate');
+      state().setActiveTool(TOOLS.ASSEMBLY_MATE);
+    },
+  },
+  {
+    id: 'assembly.addFaceMate', label: 'Add mate between the picked faces', category: 'Assembly', record: false,
+    description: 'args: { type, offset? (mm), angle? (degrees) } — mate the two faces picked with the Mate tool',
+    run: ({ state }, args: { type: MateType; offset?: number; angle?: number }) => {
+      const s = state();
+      const [a, b] = s.matePicks;
+      if (!a || !b) throw new CommandError('NOT_AVAILABLE', 'Pick a face on each of two components first');
+      const allowed = matesFor(a.face, b.face);
+      if (!allowed.includes(args?.type)) throw new CommandError('INVALID_ARGUMENT', `A ${args?.type} mate does not suit these faces (use ${allowed.join(', ')})`);
+      let [p1, p2] = [a, b];
+      // The solver takes the cylinder first in a tangent mate
+      if (args.type === 'tangent' && p1.face.kind === 'plane') [p1, p2] = [p2, p1];
+      const extra: { angle?: number; axis?: { x: number; y: number; z: number } } = {};
+      if (args.type === 'angle') {
+        extra.angle = args.angle ?? 90;
+        // Measured about the line where the two faces' planes meet (in the first component's coordinates)
+        const c1 = s.assemblyComponents.find(c => c.id === p1.componentId)!;
+        const c2 = s.assemblyComponents.find(c => c.id === p2.componentId)!;
+        const f1 = c1.getFaceReference(mateRefOf(p1.face)), f2 = c2.getFaceReference(mateRefOf(p2.face));
+        const axis = f1.normal.clone().cross(f2.normal);
+        if (axis.lengthSq() > 1e-6) {
+          axis.normalize().applyQuaternion(c1.quaternion.clone().invert());
+          extra.axis = { x: axis.x, y: axis.y, z: axis.z };
+        }
+      }
+      s.addAssemblyMate(args.type, p1.componentId, mateRefOf(p1.face), p2.componentId, mateRefOf(p2.face), args.offset ?? (args.type === 'distance' ? 10 : 0), extra);
+      s.clearMatePicks();
+      s.closePropertyPanel();
+    },
+  },
+  {
+    id: 'assembly.insertDocument', label: 'Insert part document', category: 'Assembly',
+    description: 'args: { documentId, name? } — insert an open part document as a component that follows the part (a reference, not a copy). Returns the component id',
+    run: ({ state }, args: { documentId: string; name?: string }) => {
+      const s = state();
+      if (s.documentType !== 'assembly') throw new CommandError('NOT_AVAILABLE', 'Parts are inserted into an assembly document: create one with New assembly');
+      const doc = workspace.list().find(d => d.id === args?.documentId);
+      if (!doc) throw new CommandError('INVALID_ARGUMENT', `No open document ${JSON.stringify(args?.documentId)}`);
+      if (doc.type !== 'part') throw new CommandError('INVALID_ARGUMENT', `${doc.name} is an assembly; insert parts`);
+      const content = workspace.contentOf(doc.id)!;
+      let shape;
+      try { shape = partShape(content); } catch (e) { throw new CommandError('FAILED', (e as Error).message); }
+      return s.insertPartComponent(shape, {
+        documentId: doc.id, name: doc.name, snapshot: content, linked: 'workspace',
+        ...(doc.libraryRef ? { library: { documentId: doc.libraryRef.documentId, version: null } } : {}),
+      }, args.name);
+    },
+  },
+  {
+    id: 'assembly.insertFromLibrary', label: 'Insert part from the library', category: 'Assembly',
+    description: 'args: { documentId, version? } — insert a library part (version: a number pins it, default follows the newest). Resolves to the component id',
+    run: async ({ state }, args: { documentId: string; version?: number }) => {
+      if (state().documentType !== 'assembly') throw new CommandError('NOT_AVAILABLE', 'Parts are inserted into an assembly document: create one with New assembly');
+      if (typeof args?.documentId !== 'string') throw new CommandError('INVALID_ARGUMENT', 'documentId is required');
+      if (args.version !== undefined && !(Number.isInteger(args.version) && args.version > 0)) throw new CommandError('INVALID_ARGUMENT', 'version must be a positive whole number');
+      let content: string;
+      try { content = await library.content(args.documentId, args.version ?? 'latest'); } catch (e) {
+        throw new CommandError('NOT_AVAILABLE', (e as Error).message);
+      }
+      let shape;
+      try { shape = partShape(content); } catch (e) { throw new CommandError('FAILED', (e as Error).message); }
+      const partId = (JSON.parse(content) as { documentId?: string }).documentId ?? `lib_${args.documentId}`;
+      return state().insertPartComponent(shape, {
+        documentId: partId, name: shape.name, snapshot: content, linked: 'library',
+        library: { documentId: args.documentId, version: args.version ?? null },
+      });
+    },
+  },
+  {
+    id: 'assembly.updateReferences', label: 'Update parts', category: 'Assembly', record: false,
+    description: 'Bring part components up to date from open documents and the library. Resolves to { workspace, library, cached } counts',
+    run: () => updateReferences(),
+  },
+  {
+    id: 'assembly.removeComponent', label: 'Remove component', category: 'Assembly',
+    description: 'args: { id } — remove a component and its mates',
+    run: ({ state }, args: { id: string }) => {
+      if (!state().assemblyComponents.some(c => c.id === args?.id)) throw new CommandError('INVALID_ARGUMENT', `No component ${JSON.stringify(args?.id)}`);
+      state().removeAssemblyComponent(args.id);
+    },
+  },
+  {
+    id: 'assembly.drive', label: 'Drive mate', category: 'Assembly',
+    description: 'args: { mate, value } — set a distance (mm) or angle (degrees) mate and solve, moving what it holds. Returns { converged, error }',
+    run: ({ state }, args: { mate: string; value: number }) => {
+      const m = state().mates.find(x => x.id === args?.mate);
+      if (!m) throw new CommandError('INVALID_ARGUMENT', `No mate ${JSON.stringify(args?.mate)}`);
+      if (m.type !== 'distance' && m.type !== 'angle') throw new CommandError('INVALID_ARGUMENT', `A ${m.type} mate has no value to drive; use a distance or angle mate`);
+      if (typeof args.value !== 'number' || !Number.isFinite(args.value)) throw new CommandError('INVALID_ARGUMENT', 'value must be a number');
+      return state().driveMate(m.id, args.value);
+    },
+  },
+  {
+    id: 'assembly.dof', label: 'Degrees of freedom (data)', category: 'Assembly', record: false,
+    description: 'Returns { dof, status, components: [{ id, name, status, dof, motions }], conflicts, redundant } or null for an empty assembly',
+    run: ({ state }) => state().assemblyDof,
+  },
+  {
+    id: 'assembly.setExplodeSteps', label: 'Set explode steps', category: 'Assembly',
+    description: 'args: { steps: [{ components: string[], direction: { x, y, z } | "+X" … "-Z", distance }] } — replaces the steps ([] for the automatic explode)',
+    run: ({ state }, args: { steps: Array<{ components: string[]; direction: unknown; distance: number }> }) => {
+      if (!Array.isArray(args?.steps)) throw new CommandError('INVALID_ARGUMENT', 'steps must be a list');
+      const ids = new Set(state().assemblyComponents.map(c => c.id));
+      const steps: ExplodeStep[] = args.steps.map((s, i) => {
+        if (!Array.isArray(s?.components) || s.components.length === 0) throw new CommandError('INVALID_ARGUMENT', `step ${i + 1}: components must be a non-empty list`);
+        for (const c of s.components) if (!ids.has(c)) throw new CommandError('INVALID_ARGUMENT', `step ${i + 1}: no component ${JSON.stringify(c)}`);
+        if (typeof s.distance !== 'number' || !Number.isFinite(s.distance) || s.distance === 0 || Math.abs(s.distance) > 5000) {
+          throw new CommandError('INVALID_ARGUMENT', `step ${i + 1}: distance must be a number of mm, not 0, at most 5000`);
+        }
+        return { id: generateId('xstep'), componentIds: [...s.components], direction: directionOf(s.direction, i), distance: s.distance };
+      });
+      state().setExplodeSteps(steps);
+    },
+  },
   { id: 'assembly.explodedView', label: 'Exploded view', category: 'Assembly', record: false, run: ({ state }) => state().openPropertyPanel({ type: 'exploded_view' }) },
   {
     id: 'assembly.explode', label: 'Explode assembly', category: 'Assembly', record: false,
-    description: 'args: { distance? (mm, default 40), leaderLines? (default true) } — display only, positions are kept',
-    run: ({ state }, args: { distance?: number; leaderLines?: boolean } | undefined) => {
+    description: 'args: { distance? (mm, default 40), leaderLines? (default true), progress? (0–1 through the explode steps, default 1) } — display only, positions are kept',
+    run: ({ state }, args: { distance?: number; leaderLines?: boolean; progress?: number } | undefined) => {
       const distance = args?.distance ?? 40;
       if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0 || distance > 1000) {
         throw new CommandError('INVALID_ARGUMENT', 'distance must be a number of mm above 0 and at most 1000');
       }
+      const progress = args?.progress ?? 1;
+      if (typeof progress !== 'number' || !(progress >= 0 && progress <= 1)) throw new CommandError('INVALID_ARGUMENT', 'progress must be from 0 to 1');
       if (state().assemblyComponents.length < 2) throw new CommandError('NOT_AVAILABLE', 'Insert at least two components to explode');
-      state().setExplodedView({ distance, leaderLines: args?.leaderLines ?? true });
+      state().setExplodedView({ distance, leaderLines: args?.leaderLines ?? true, ...(args?.progress !== undefined ? { progress } : {}) });
     },
   },
   { id: 'assembly.collapse', label: 'Collapse exploded view', category: 'Assembly', record: false, run: ({ state }) => state().setExplodedView(null) },

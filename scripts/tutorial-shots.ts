@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findChrome, sleep, waitFor, withApp } from './browser.ts';
 import type { Page } from './browser.ts';
+import { assemblyFlow, closeAssemblyFlow } from './assemblyFlow.ts';
 
 const OUT = 'docs/tutorial/img';
 const FILTER = process.argv[2];
@@ -401,8 +402,7 @@ const SHOTS: Shot[] = [
   // ------------------------------------------------------------ Part 3: advanced
   {
     name: '22-assembly', async run(p) {
-      await fresh(p);
-      await feaPanel(p, false);
+      await run(p, 'workspace.newAssembly', undefined, 600);
       await p.click('Assembly');
       await p.click('Insert Base Mounting Plate', 600);
       await p.click('Insert Cylindrical Alignment Pin', 600);
@@ -566,6 +566,13 @@ const SHOTS: Shot[] = [
         await p.send('Page.navigate', { url: previewUrl });
         await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'back to the preview');
       }
+    },
+  },
+  {
+    name: '38-assembly-of-parts', async run(p) {
+      await fresh(p);
+      await assemblyFlow(p, (name) => p.screenshot(name));
+      await closeAssemblyFlow(p);
     },
   },
   {

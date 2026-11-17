@@ -5,6 +5,8 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { library, LibraryUnavailable, LIFECYCLE_MOVES, STATE_LABEL } from '../../library/client.ts';
 import type { LibraryDocument, LibraryVersion, LifecycleEvent, LifecycleState } from '../../library/client.ts';
 import { openFromLibrary, saveToLibrary } from '../../library/actions.ts';
+import { workspace } from '../../workspace/index.ts';
+import type { WhereUsed } from '../../library/client.ts';
 import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
@@ -46,6 +48,7 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [history, setHistory] = useState<LifecycleEvent[]>([]);
+  const [usedBy, setUsedBy] = useState<WhereUsed[]>([]);
   const [note, setNote] = useState('');
   const dialog = useDialog(isOpen, onClose, 'Library');
 
@@ -75,12 +78,13 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !selected) { setVersions([]); setHistory([]); return; }
+    if (!isOpen || !selected) { setVersions([]); setHistory([]); setUsedBy([]); return; }
     setNote('');
     void run(async () => {
-      const [v, h] = await Promise.all([library.versions(selected), library.lifecycle(selected)]);
+      const [v, h, u] = await Promise.all([library.versions(selected), library.lifecycle(selected), library.whereUsed(selected)]);
       setVersions(v);
       setHistory(h);
+      setUsedBy(u);
       setChosenVersion(v[0]?.number ?? null);
     });
   }, [isOpen, selected, run]);
@@ -98,8 +102,11 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
     setChosenVersion(v.number);
   });
   const open = () => selectedDoc && chosenVersion !== null && run(async () => {
-    if (useCADStore.getState().isModified && !window.confirm('Discard unsaved changes and open this version?')) return;
-    await openFromLibrary(useCADStore, selectedDoc.id, selectedDoc.name, chosenVersion);
+    // Opens beside the documents already open (a new tab)
+    await openFromLibrary({
+      getState: useCADStore.getState, subscribe: useCADStore.subscribe,
+      open: (content, ref) => { workspace.open(content, { libraryRef: ref }); },
+    }, selectedDoc.id, selectedDoc.name, chosenVersion);
     onClose();
   });
   const release = () => selectedDoc && chosenVersion !== null && run(async () => {
@@ -169,7 +176,10 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
                       <button key={d.id} role="option" aria-selected={d.id === selected} className="library-document" style={row(d.id === selected)} onClick={() => setSelected(d.id)}>
                         <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
                           <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
-                          <StateBadge state={d.state} />
+                          <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            {d.kind === 'assembly' && <span className="library-kind" style={{ fontSize: 10, color: '#a78bfa' }}>assembly</span>}
+                            <StateBadge state={d.state} />
+                          </span>
                         </span>
                         <span style={{ fontSize: 11, color: '#94a3b8' }}>v{d.headVersion}{d.latestRevision ? ` · rev ${d.latestRevision}` : ''} · {when(d.updatedAt)}</span>
                       </button>
@@ -206,6 +216,19 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
                 </div>
               </div>
 
+              {selectedDoc && (
+                <section className="library-where-used" aria-label={`Where ${selectedDoc.name} is used`} style={{ borderTop: '1px solid #333', paddingTop: 10, fontSize: 12 }}>
+                  <span style={{ color: '#94a3b8' }}>{selectedDoc.kind === 'assembly' ? 'Assembly' : 'Used in'}</span>{' '}
+                  {selectedDoc.kind === 'assembly' ? <span style={{ color: '#71717a' }}>(its parts are listed in its tree when opened)</span>
+                    : usedBy.length === 0 ? <span className="library-unused" style={{ color: '#71717a' }}>no assembly in the library</span>
+                      : usedBy.map((u, i) => (
+                        <span key={u.document.id} className="library-used-by" style={{ color: u.current ? '#e4e4e7' : '#71717a' }}
+                          title={u.current ? `${u.document.name} v${u.document.headVersion} uses it${u.pinnedVersion ? ` (pinned to version ${u.pinnedVersion})` : ' (follows the newest version)'}` : `Only older versions of ${u.document.name} (${u.versions.join(', ')}) use it`}>
+                          {i > 0 && ', '}{u.document.name}{u.count > 1 ? ` ×${u.count}` : ''}{u.pinnedVersion ? ` (v${u.pinnedVersion})` : ''}{u.current ? '' : ' (older versions)'}
+                        </span>
+                      ))}
+                </section>
+              )}
               {selectedDoc && (
                 <section className="library-lifecycle" aria-label={`Status of ${selectedDoc.name}`} style={{ borderTop: '1px solid #333', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

@@ -19,7 +19,7 @@ export interface UIHost {
   toggleConsole(): void;
 }
 
-export type DialogName = 'export' | 'material' | 'massProperties' | 'drawing' | 'addins' | 'bom' | 'equations' | 'configurations' | 'commandPalette' | 'library';
+export type DialogName = 'export' | 'material' | 'massProperties' | 'drawing' | 'addins' | 'bom' | 'equations' | 'configurations' | 'commandPalette' | 'library' | 'insertPart';
 
 export type CommandErrorCode = 'UNKNOWN_COMMAND' | 'DUPLICATE_COMMAND' | 'INVALID_ARGUMENT' | 'NOT_AVAILABLE' | 'FAILED';
 

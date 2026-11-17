@@ -29,6 +29,8 @@ export const TOOLS = {
   SKETCH_MIRROR: 'sketch_mirror',
   SKETCH_DIMENSION: 'sketch_dimension',
   SKETCH_CONSTRUCTION: 'sketch_construction',
+  // Assembly tools
+  ASSEMBLY_MATE: 'assembly_mate',
   // Feature tools
   EXTRUDE: 'extrude',
   EXTRUDE_CUT: 'extrude_cut',

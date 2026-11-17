@@ -97,3 +97,30 @@ test('Autosave: a failing write is reported once in the status bar', async () =>
   assert.equal(s().statusMessage, 'Ready', 'reported once');
   autosave.stop();
 });
+
+test('Autosave: every open document comes back, in tab order, with the active one active', async () => {
+  const { workspace } = await import('../src/workspace/index.ts');
+  const commands = createCommandRegistry(useCADStore);
+  const storage = memoryStorage();
+  const handle = startAutosave(useCADStore, storage, { delayMs: 5, workspace });
+  commands.execute('workspace.newPart', { name: 'Shaft' });
+  commands.execute('file.loadExample', { id: 'hex_bolt' });
+  commands.execute('workspace.newAssembly', { name: 'Jig' });
+  commands.execute('assembly.insertPart', { name: 'Block', shape: 'box' });
+  const before = workspace.list().map(d => [d.name, d.type, d.active]);
+  await new Promise(r => setTimeout(r, 30));
+  await handle.flush();
+  handle.stop();
+  const saved = JSON.parse(storage.text!) as { version: number; workspace: { documents: unknown[] } };
+  assert.equal(saved.version, 2);
+  assert.equal(saved.workspace.documents.length, before.length);
+
+  // A fresh start: close everything, then restore
+  for (const d of workspace.list().filter(x => !x.active)) workspace.close(d.id);
+  useCADStore.getState().newProject();
+  assert.equal(workspace.list().length, 1);
+  const message = await restoreAutosave(useCADStore, storage, workspace);
+  assert.match(message!, new RegExp(`Restored Jig and ${before.length - 1} other documents`));
+  assert.deepEqual(workspace.list().map(d => [d.name, d.type, d.active]), before);
+  assert.equal(useCADStore.getState().assemblyComponents.length, 1);
+});

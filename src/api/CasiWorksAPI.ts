@@ -44,6 +44,11 @@ import { generateId } from '../utils/math.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../kernel/GeometryEngine.ts';
 import { rebuildModel } from '../features/rebuildModel.ts';
+import { partShape } from '../assembly/partGeometry.ts';
+import type { PartShape } from '../assembly/partGeometry.ts';
+import { faceAt as faceOfMesh, nearestTriangle } from '../assembly/facePick.ts';
+import { Matrix4 as Matrix4Class, Vector3 as Vector3Class } from 'three';
+import type { Matrix4 } from 'three';
 import type { RebuildResult, RebuildState } from '../features/rebuildModel.ts';
 import type {
   BoundingBox,
@@ -58,7 +63,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.15.0';
+export const API_VERSION = '1.16.0';
 
 // =====================================================================
 // Public types
@@ -184,6 +189,43 @@ export interface DocumentAPI {
   toJSON(): string;
   /** Replace the current document with .casiproj JSON text or a parsed object. Throws INVALID_DOCUMENT. */
   load(project: string | object): void;
+  /** The document's id (kept in its file; assemblies refer to parts by it). Since 1.16. */
+  getId(): string;
+  /** 'part' or 'assembly'. Since 1.16. */
+  getType(): 'part' | 'assembly';
+}
+
+/** An open document. */
+export interface DocumentInfo {
+  id: string;
+  name: string;
+  type: 'part' | 'assembly';
+  modified: boolean;
+  active: boolean;
+}
+
+/**
+ * The open documents (tabs): parts and assemblies, one active at a time. The
+ * other API sections work on the active one. Since 1.16.
+ */
+export interface WorkspaceAPI {
+  /** The open documents, in tab order. */
+  list(): DocumentInfo[];
+  /** The active document's id. */
+  active(): string;
+  /** Open a new part beside the others and make it active; returns its id. */
+  newPart(name?: string): string;
+  /**
+   * Open a new, empty assembly and make it active; returns its id.
+   * @example const asm = api.workspace.newAssembly('Robot'); api.assembly.insert({ part: bracketId })
+   */
+  newAssembly(name?: string): string;
+  /** Make an open document the active one. */
+  activate(id: string): void;
+  /** Close a document. Throws NOT_AVAILABLE when it has unsaved changes, unless discard is true. */
+  close(id: string, options?: { discard?: boolean }): void;
+  /** Open .casiproj JSON as a new document (made active); returns its id. */
+  open(project: string): string;
 }
 
 /** 2D sketches on the Front, Top or Right plane; features are built from them. */
@@ -461,6 +503,20 @@ export interface CasiWorksAPIOptions {
   macros?: ApiMacroRecorder;
   /** Manager behind `api.plugins` (without one, plugins are unavailable). */
   plugins?: ApiPluginManager;
+  /** The open documents behind `api.workspace` and part components (without it they are unavailable). Since 1.16. */
+  workspace?: ApiWorkspace;
+}
+
+/** What the API needs from the workspace (src/workspace satisfies it). */
+export interface ApiWorkspace {
+  list(): Array<{ id: string; name: string; type: 'part' | 'assembly'; modified: boolean; active: boolean; libraryRef: { documentId: string } | null }>;
+  newDocument(type: 'part' | 'assembly', name?: string): string;
+  activate(id: string): void;
+  close(id: string): void;
+  open(content: string): string;
+  contentOf(id: string): string | null;
+  updateReferences(): Promise<{ workspace: number; library: number; cached: number }>;
+  libraryContent(documentId: string, version: number | null): Promise<string | null>;
 }
 
 /** A global variable as given to equations.set. */
@@ -530,18 +586,73 @@ export interface ComponentInfo {
   material: string | null;
   fixed: boolean;
   position: { x: number; y: number; z: number };
+  /**
+   * For a part document (not a built-in shape): the part it references and how its shape was
+   * last found ('workspace' open document, 'library', or only the 'cached' copy). Since 1.16.
+   */
+  part: { documentId: string; name: string; linked: 'workspace' | 'library' | 'cached'; library: { documentId: string; version: number | null } | null } | null;
 }
+
+/** A face of a component, as a mate reference (component coordinates). Since 1.16. */
+export interface FaceRef {
+  kind: 'plane' | 'cylinder';
+  point: { x: number; y: number; z: number };
+  /** Plane normal (for a cylinder, its axis). */
+  normal: { x: number; y: number; z: number };
+  /** Cylinders only. */
+  axis?: { x: number; y: number; z: number };
+  radius?: number;
+}
+
+/** A mate as data. Since 1.16. */
+export interface MateInfo {
+  id: string;
+  type: MateType;
+  component1: string;
+  component2: string;
+  /** mm (distance) */
+  offset: number;
+  /** degrees (angle) */
+  angle: number;
+}
+
+/** What the mates leave each component free to do. Since 1.16. */
+export interface DofInfo {
+  /** Motions left in the whole assembly. */
+  dof: number;
+  status: 'fully-defined' | 'under-defined' | 'over-defined';
+  components: Array<{ id: string; name: string; status: 'fixed' | 'fully-defined' | 'under-defined' | 'over-defined'; dof: number; motions: string[] }>;
+  /** Mates that conflict with the others (they do not hold). */
+  conflicts: string[];
+  redundant: number;
+}
+
+/** One explode step. Since 1.16. */
+export interface ExplodeStepSpec {
+  components: string[];
+  /** '+X' … '-Z' or a vector in model coordinates. */
+  direction: '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z' | { x: number; y: number; z: number };
+  /** mm */
+  distance: number;
+}
+
+/** A mate reference as the store takes it: a face name or explicit geometry. */
+type MateRefInput = string | { point?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; axis?: { x: number; y: number; z: number }; radius?: number };
 
 /** A mate between two components. */
 export interface MateSpec {
   type: MateType;
   component1: string;
   component2: string;
-  /** Face or axis references; default per mate type (e.g. concentric: 'y' / 'y'). */
-  ref1?: string;
-  ref2?: string;
+  /** Face or axis references: a bounding-box face name ('top', 'y', …) or a real face from faceAt(). Default per mate type. */
+  ref1?: string | FaceRef;
+  ref2?: string | FaceRef;
   /** mm (distance mates). */
   offset?: number;
+  /** degrees (angle mates). Since 1.16. */
+  angle?: number;
+  /** Angle mates: measure the angle about this axis (first component's coordinates), so drive() can turn it all the way round. Since 1.16. */
+  axis?: { x: number; y: number; z: number };
 }
 
 /** The assembly: components, mates, materials and the bill of materials. Since 1.5. */
@@ -549,10 +660,34 @@ export interface AssemblyAPI {
   /** Every component. */
   list(): ComponentInfo[];
   /**
-   * Insert a component; returns its id. The first is fixed.
+   * Insert a component; returns its id. The first is fixed. A built-in shape, or (since 1.16)
+   * an open part document by id, which the component then follows (a reference, not a copy).
    * @example api.assembly.insert({ name: 'Pin_Shaft', shape: 'pin' })
+   * @example api.assembly.insert({ part: bracketDocumentId })
    */
-  insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] }): string;
+  insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] } | { part: string; name?: string }): string;
+  /** Insert a part from the local library (version pins it; default follows the newest). Since 1.16. */
+  insertFromLibrary(documentId: string, options?: { version?: number }): Promise<string>;
+  /** Bring part components up to date from open documents and the library. Since 1.16. */
+  updateReferences(): Promise<{ workspace: number; library: number; cached: number }>;
+  /** Remove a component and its mates. Since 1.16. */
+  remove(componentId: string): void;
+  /**
+   * The face of a component nearest a point in model coordinates: a plane or a cylinder,
+   * ready to use as a mate reference. Since 1.16.
+   * @example api.assembly.mate({ type: 'concentric', component1: a, ref1: api.assembly.faceAt(a, { x: 15, y: 0, z: 6 }), component2: b, ref2: api.assembly.faceAt(b, p) })
+   */
+  faceAt(componentId: string, point: { x: number; y: number; z: number }): FaceRef;
+  /** Every mate. Since 1.16. */
+  mates(): MateInfo[];
+  /** Degrees of freedom left by the mates (null for an empty assembly). Since 1.16. */
+  dof(): DofInfo | null;
+  /** Set a distance (mm) or angle (degrees) mate and solve: the parts it holds move along. Since 1.16. */
+  drive(mateId: string, value: number): { converged: boolean; error: number };
+  /** Replace the explode steps ([] goes back to the automatic explode). Since 1.16. */
+  setExplodeSteps(steps: ExplodeStepSpec[]): void;
+  /** The explode steps. Since 1.16. */
+  explodeSteps(): ExplodeStepSpec[];
   /** Add a mate between two components (then call solve). */
   mate(spec: MateSpec): void;
   /** Solve all mates; converged is false when they conflict. */
@@ -561,8 +696,8 @@ export interface AssemblyAPI {
   setMaterial(componentIds: string[], material: string | null): void;
   /** The bill of materials (identical parts grouped, masses in kg, volumes in mm³). */
   bom(): Bom;
-  /** Show the exploded view (display only). */
-  explode(options?: { distance?: number; leaderLines?: boolean }): void;
+  /** Show the exploded view (display only). With explode steps, progress (0–1) plays through them. */
+  explode(options?: { distance?: number; leaderLines?: boolean; progress?: number }): void;
   /** End the exploded view. */
   collapse(): void;
   /** Remove all components and mates. */
@@ -608,6 +743,8 @@ export interface CasiWorksAPI {
   readonly units: ApiUnits;
   /** The open part document. */
   readonly document: DocumentAPI;
+  /** Open documents. Since 1.16. */
+  readonly workspace: WorkspaceAPI;
   /** 2D sketches. */
   readonly sketches: SketchesAPI;
   /** The feature tree. */
@@ -706,12 +843,25 @@ export interface ApiStoreState extends RebuildState {
   assemblyComponents: Array<DrawingComponent & BomComponent & {
     isFixed: boolean;
     position: { x: number; y: number; z: number };
+    baseGeometry: BufferGeometry;
+    matrix: Matrix4;
+    source?: { documentId: string; name: string; linked: 'workspace' | 'library' | 'cached'; library?: { documentId: string; version: number | null } };
   }>;
   insertAssemblyPart(name: string, shape?: ComponentShape, dims?: ComponentInfo['dimensions']): void;
-  addAssemblyMate(type: MateType, comp1Id: string, ref1: string, comp2Id: string, ref2: string, offset?: number): void;
+  addAssemblyMate(type: MateType, comp1Id: string, ref1: MateRefInput, comp2Id: string, ref2: MateRefInput, offset?: number, extra?: { angle?: number; axis?: { x: number; y: number; z: number } }): void;
+  // Since 1.16
+  documentId: string;
+  documentType: 'part' | 'assembly';
+  mates: Array<{ id: string; type: string; comp1Id: string; comp2Id: string; offset: number; angle: number }>;
+  explodeSteps: Array<{ id: string; componentIds: string[]; direction: { x: number; y: number; z: number }; distance: number }>;
+  assemblyDof: DofInfo | null;
+  insertPartComponent(shape: PartShape, source: { documentId: string; name: string; snapshot: string; linked: 'workspace' | 'library' | 'cached'; library?: { documentId: string; version: number | null } }, name?: string): string;
+  removeAssemblyComponent(componentId: string): void;
+  driveMate(mateId: string, value: number): { converged: boolean; error: number };
+  setExplodeSteps(steps: Array<{ id: string; componentIds: string[]; direction: { x: number; y: number; z: number }; distance: number }>): void;
   solveAssembly(): void;
   setComponentMaterial(componentIds: string[], material: string | null): void;
-  setExplodedView(settings: { distance: number; leaderLines: boolean } | null): void;
+  setExplodedView(settings: { distance: number; leaderLines: boolean; progress?: number } | null): void;
   clearAssembly(): void;
   drawingOptions: DrawingOptionsInfo;
   setDrawingOptions(options: Partial<DrawingOptionsInfo>): void;
@@ -923,6 +1073,8 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       get().loadProject(data);
       if (/^Error loading project/.test(get().statusMessage)) fail('INVALID_DOCUMENT', get().statusMessage);
     },
+    getId: () => get().documentId,
+    getType: () => get().documentType,
   });
 
   // ------------------------------------------------------------------ sketch editing (since 1.5)
@@ -1529,6 +1681,24 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     if (typeof id !== 'string' || !get().assemblyComponents.some(c => c.id === id)) fail('NOT_FOUND', `No component ${JSON.stringify(id)}`);
     return id as string;
   };
+  const ws = (): ApiWorkspace => options.workspace ?? fail('OPERATION_FAILED', 'There is no workspace here (open documents are an app feature)');
+  const requireAssemblyDoc = () => { if (get().documentType !== 'assembly') fail('OPERATION_FAILED', 'Parts are inserted into an assembly document: create one with api.workspace.newAssembly()'); };
+  const faceRefInput = (ref: unknown, what: string): MateRefInput | undefined => {
+    if (ref === undefined || typeof ref === 'string') return ref as string | undefined;
+    const o = requireObject(ref, what);
+    const vec = (v: unknown, n: string) => {
+      const r = requireObject(v, `${what}.${n}`);
+      return { x: requireNumber(r.x, `${what}.${n}.x`), y: requireNumber(r.y, `${what}.${n}.y`), z: requireNumber(r.z, `${what}.${n}.z`) };
+    };
+    return {
+      point: vec(o.point, 'point'),
+      ...(o.normal !== undefined ? { normal: vec(o.normal, 'normal') } : {}),
+      ...(o.axis !== undefined ? { axis: vec(o.axis, 'axis') } : {}),
+      ...(o.radius !== undefined ? { radius: requireNumber(o.radius, `${what}.radius`, { positive: true }) } : {}),
+    };
+  };
+  const stepOut = (s: { componentIds: string[]; direction: { x: number; y: number; z: number }; distance: number }): ExplodeStepSpec =>
+    ({ components: [...s.componentIds], direction: { ...s.direction }, distance: s.distance });
   const assembly: AssemblyAPI = Object.freeze({
     list() {
       return clone(get().assemblyComponents.map(c => ({
@@ -1539,10 +1709,23 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
         material: c.material ?? null,
         fixed: !!c.isFixed,
         position: { x: c.position.x, y: c.position.y, z: c.position.z },
+        part: c.source ? { documentId: c.source.documentId, name: c.source.name, linked: c.source.linked, library: c.source.library ? { ...c.source.library } : null } : null,
       })));
     },
-    insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] }) {
+    insert(spec: { name: string; shape: ComponentShape; dimensions?: ComponentInfo['dimensions'] } | { part: string; name?: string }) {
       const o = requireObject(spec, 'spec');
+      if (o.part !== undefined) {
+        requireAssemblyDoc();
+        const doc = ws().list().find(d => d.id === o.part) ?? fail('NOT_FOUND', `No open document ${JSON.stringify(o.part)}`);
+        if (doc.type !== 'part') fail('INVALID_ARGUMENT', `${doc.name} is an assembly; insert parts`);
+        const content = ws().contentOf(doc.id)!;
+        let shape: PartShape;
+        try { shape = partShape(content); } catch (e) { fail('OPERATION_FAILED', (e as Error).message); }
+        return get().insertPartComponent(shape, {
+          documentId: doc.id, name: doc.name, snapshot: content, linked: 'workspace',
+          ...(doc.libraryRef ? { library: { documentId: doc.libraryRef.documentId, version: null } } : {}),
+        }, optionalName(o.name));
+      }
       const name = optionalName(o.name) ?? fail('INVALID_ARGUMENT', 'name is required');
       if (!SHAPES.includes(o.shape as ComponentShape)) fail('INVALID_ARGUMENT', `shape must be one of ${SHAPES.join(', ')}`);
       const dims = (o.dimensions ?? {}) as ComponentInfo['dimensions'];
@@ -1551,35 +1734,105 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       const all = get().assemblyComponents;
       return all[all.length - 1].id;
     },
+    async insertFromLibrary(documentId: string, opts: { version?: number } = {}) {
+      requireAssemblyDoc();
+      if (typeof documentId !== 'string' || !documentId) fail('INVALID_ARGUMENT', 'documentId is required');
+      const version = opts.version === undefined ? null : requireNumber(opts.version, 'version', { positive: true });
+      if (version !== null && !Number.isInteger(version)) fail('INVALID_ARGUMENT', 'version must be a whole number');
+      const content = await ws().libraryContent(documentId, version) ?? fail('OPERATION_FAILED', 'The library is not running (npm run server)');
+      let shape: PartShape;
+      try { shape = partShape(content); } catch (e) { fail('OPERATION_FAILED', (e as Error).message); }
+      const partId = (JSON.parse(content) as { documentId?: string }).documentId ?? `lib_${documentId}`;
+      return get().insertPartComponent(shape, { documentId: partId, name: shape.name, snapshot: content, linked: 'library', library: { documentId, version } });
+    },
+    updateReferences: () => ws().updateReferences(),
+    remove(componentId: string) {
+      get().removeAssemblyComponent(requireComponent(componentId));
+    },
+    faceAt(componentId: string, point: { x: number; y: number; z: number }) {
+      const c = get().assemblyComponents.find(x => x.id === requireComponent(componentId))!;
+      const p = requireObject(point, 'point');
+      const world = new Vector3Class(requireNumber(p.x, 'point.x'), requireNumber(p.y, 'point.y'), requireNumber(p.z, 'point.z'));
+      const local = world.applyMatrix4(new Matrix4Class().copy(c.matrix).invert());
+      const tri = nearestTriangle(c.baseGeometry, local);
+      const face = tri >= 0 ? faceOfMesh(c.baseGeometry, tri) : null;
+      if (!face) fail('NOT_FOUND', 'No face there');
+      return face.kind === 'plane'
+        ? { kind: 'plane' as const, point: face.point, normal: face.normal }
+        : { kind: 'cylinder' as const, point: face.point, normal: face.axis, axis: face.axis, radius: face.radius };
+    },
     mate(spec: MateSpec) {
       const o = requireObject(spec, 'spec');
       if (!MATES.includes(o.type as MateType)) fail('INVALID_ARGUMENT', `type must be one of ${MATES.join(', ')}`);
       const d = MATE_DEFAULTS[o.type as MateType] ?? { ref1: 'top', ref2: 'bottom', offset: 0 };
       const offset = o.offset === undefined ? d.offset : requireNumber(o.offset, 'offset');
-      get().addAssemblyMate(
-        o.type as MateType,
-        requireComponent(o.component1), typeof o.ref1 === 'string' ? o.ref1 : d.ref1,
-        requireComponent(o.component2), typeof o.ref2 === 'string' ? o.ref2 : d.ref2,
-        offset,
-      );
+      let c1 = requireComponent(o.component1), c2 = requireComponent(o.component2);
+      let r1 = faceRefInput(o.ref1, 'ref1') ?? d.ref1, r2 = faceRefInput(o.ref2, 'ref2') ?? d.ref2;
+      // A tangent mate takes the cylinder first
+      const isCyl = (r: MateRefInput) => typeof r === 'object' && !!r.axis;
+      if (o.type === 'tangent' && !isCyl(r1) && isCyl(r2)) { [c1, c2] = [c2, c1]; [r1, r2] = [r2, r1]; }
+      const extra: { angle?: number; axis?: { x: number; y: number; z: number } } = {};
+      if (o.angle !== undefined) extra.angle = requireNumber(o.angle, 'angle');
+      if (o.axis !== undefined) {
+        const a = requireObject(o.axis, 'axis');
+        extra.axis = { x: requireNumber(a.x, 'axis.x'), y: requireNumber(a.y, 'axis.y'), z: requireNumber(a.z, 'axis.z') };
+      }
+      get().addAssemblyMate(o.type as MateType, c1, r1, c2, r2, offset, extra);
+      if (/^Mate not added/.test(get().statusMessage)) fail('OPERATION_FAILED', get().statusMessage);
     },
-    solve() {
-      get().solveAssembly();
-      const message = get().statusMessage;
-      return { converged: message.startsWith('Assembly solved'), message };
+    mates() {
+      return get().mates.map(m => ({ id: m.id, type: m.type as MateType, component1: m.comp1Id, component2: m.comp2Id, offset: m.offset, angle: m.angle }));
     },
+    dof: () => clone(get().assemblyDof),
+    drive(mateId: string, value: number) {
+      const m = get().mates.find(x => x.id === mateId) ?? fail('NOT_FOUND', `No mate ${JSON.stringify(mateId)}`);
+      if (m.type !== 'distance' && m.type !== 'angle') fail('INVALID_ARGUMENT', `A ${m.type} mate has no value to drive; use a distance or angle mate`);
+      return get().driveMate(m.id, requireNumber(value, 'value'));
+    },
+    setExplodeSteps(steps: ExplodeStepSpec[]) {
+      if (!Array.isArray(steps)) fail('INVALID_ARGUMENT', 'steps must be a list');
+      const ids = new Set(get().assemblyComponents.map(c => c.id));
+      get().setExplodeSteps(steps.map((s, i) => {
+        const o = requireObject(s, `steps[${i}]`);
+        if (!Array.isArray(o.components) || o.components.length === 0) fail('INVALID_ARGUMENT', `steps[${i}].components must be a non-empty list`);
+        for (const c of o.components as unknown[]) if (typeof c !== 'string' || !ids.has(c)) fail('NOT_FOUND', `steps[${i}]: no component ${JSON.stringify(c)}`);
+        const distance = requireNumber(o.distance, `steps[${i}].distance`);
+        if (distance === 0 || Math.abs(distance) > 5000) fail('INVALID_ARGUMENT', `steps[${i}].distance must not be 0 and at most 5000 mm`);
+        let dir: { x: number; y: number; z: number };
+        if (typeof o.direction === 'string') {
+          const m = /^([+-]?)([XYZ])$/i.exec(o.direction.trim()) ?? fail('INVALID_ARGUMENT', `steps[${i}].direction must be +X, -X, +Y, -Y, +Z, -Z or a vector`);
+          const sgn = m[1] === '-' ? -1 : 1, ax = m[2].toUpperCase();
+          dir = { x: ax === 'X' ? sgn : 0, y: ax === 'Y' ? sgn : 0, z: ax === 'Z' ? sgn : 0 };
+        } else {
+          const v = requireObject(o.direction, `steps[${i}].direction`);
+          const x = requireNumber(v.x ?? 0, 'x'), y = requireNumber(v.y ?? 0, 'y'), z = requireNumber(v.z ?? 0, 'z');
+          const len = Math.hypot(x, y, z);
+          if (len < 1e-9) fail('INVALID_ARGUMENT', `steps[${i}].direction must not be zero`);
+          dir = { x: x / len, y: y / len, z: z / len };
+        }
+        return { id: `xstep_${i}_${Date.now().toString(36)}`, componentIds: [...(o.components as string[])], direction: dir, distance };
+      }));
+    },
+    explodeSteps: () => get().explodeSteps.map(stepOut),
     setMaterial(componentIds: string[], material: string | null) {
       if (!Array.isArray(componentIds) || componentIds.length === 0) fail('INVALID_ARGUMENT', 'componentIds must be a non-empty list');
       componentIds.forEach(requireComponent);
       if (material !== null && !(material in MATERIALS)) fail('NOT_FOUND', `Unknown material ${JSON.stringify(material)}`);
       get().setComponentMaterial(componentIds, material);
     },
+    solve() {
+      get().solveAssembly();
+      const message = get().statusMessage;
+      return { converged: message.startsWith('Assembly solved'), message };
+    },
     bom: () => clone(buildBom(get().assemblyComponents, get().activeMaterial)),
-    explode(options: { distance?: number; leaderLines?: boolean } = {}) {
-      const distance = options.distance === undefined ? 40 : requireNumber(options.distance, 'distance', { positive: true });
+    explode(opts: { distance?: number; leaderLines?: boolean; progress?: number } = {}) {
+      const distance = opts.distance === undefined ? 40 : requireNumber(opts.distance, 'distance', { positive: true });
       if (distance > 1000) fail('INVALID_ARGUMENT', 'distance must be at most 1000 mm');
+      const progress = opts.progress === undefined ? undefined : requireNumber(opts.progress, 'progress');
+      if (progress !== undefined && !(progress >= 0 && progress <= 1)) fail('INVALID_ARGUMENT', 'progress must be from 0 to 1');
       if (get().assemblyComponents.length < 2) fail('OPERATION_FAILED', 'Insert at least two components to explode');
-      get().setExplodedView({ distance, leaderLines: options.leaderLines ?? true });
+      get().setExplodedView({ distance, leaderLines: opts.leaderLines ?? true, ...(progress !== undefined ? { progress } : {}) });
     },
     collapse: () => get().setExplodedView(null),
     clear: () => get().clearAssembly(),
@@ -1588,6 +1841,26 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       const out = found.map(f => ({ a: f.a, b: f.b, aName: f.aName, bName: f.bName, volume: f.volume }));
       for (const f of found) f.geometry.dispose();
       return out;
+    },
+  });
+
+  const workspaceApi: WorkspaceAPI = Object.freeze({
+    list: () => ws().list().map(d => ({ id: d.id, name: d.name, type: d.type, modified: d.modified, active: d.active })),
+    active: () => get().documentId,
+    newPart: (name?: string) => ws().newDocument('part', optionalName(name)),
+    newAssembly: (name?: string) => ws().newDocument('assembly', optionalName(name)),
+    activate(id: string) {
+      if (!ws().list().some(d => d.id === id)) fail('NOT_FOUND', `No open document ${JSON.stringify(id)}`);
+      ws().activate(id);
+    },
+    close(id: string, opts: { discard?: boolean } = {}) {
+      const d = ws().list().find(x => x.id === id) ?? fail('NOT_FOUND', `No open document ${JSON.stringify(id)}`);
+      if (d.modified && !opts.discard) fail('OPERATION_FAILED', `${d.name} has unsaved changes: save it, or close with { discard: true }`);
+      ws().close(id);
+    },
+    open(project: string) {
+      if (typeof project !== 'string') fail('INVALID_ARGUMENT', 'project must be .casiproj JSON text');
+      try { return ws().open(project); } catch (e) { fail('INVALID_DOCUMENT', (e as Error).message); }
     },
   });
 
@@ -1632,6 +1905,7 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     equations,
     configurations,
     assembly,
+    workspace: workspaceApi,
     drawings,
     version: API_VERSION,
     units: Object.freeze({ system: 'MMGS', length: 'mm', angle: 'deg', mass: 'kg', density: 'kg/m^3' } as const),

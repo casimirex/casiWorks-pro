@@ -319,6 +319,10 @@ export interface ExampleModel {
 /** The .casiproj file format (version 2). */
 export interface ProjectFile {
   version: string;
+  /** Identifies the document so assemblies can reference it (absent in older files). */
+  documentId?: string;
+  /** 'part' or 'assembly' (absent in older files). */
+  documentType?: 'part' | 'assembly';
   documentName: string;
   appMode: AppMode;
   features: FeatureData[];
@@ -335,5 +339,7 @@ export interface ProjectFile {
   /** Configurations (design table) and the active one; absent in older files. */
   configurations?: Array<{ name: string; values: Record<string, string> }>;
   activeConfiguration?: string | null;
+  /** Exploded view steps (assemblies). */
+  explodeSteps?: unknown[];
   timestamp: number;
 }

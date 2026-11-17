@@ -11,7 +11,7 @@ import { generateId, referencePlaneFrame } from '../utils/math.ts';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES, MATERIALS } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
-import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
+import type { AssemblyComponent, MateOptions, MateRef } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
 import { effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
@@ -20,6 +20,12 @@ import type { RelationKind } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { FeaProbe } from '../simulation/resultPlot.ts';
 import type { Interference } from '../assembly/interference.ts';
+import { analyzeDof } from '../assembly/dof.ts';
+import type { DofReport } from '../assembly/dof.ts';
+import { partShape } from '../assembly/partGeometry.ts';
+import { remapRef } from '../assembly/facePick.ts';
+import type { PickedFace } from '../assembly/facePick.ts';
+import type { PartShape } from '../assembly/partGeometry.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
@@ -56,10 +62,44 @@ export interface PrimitiveDims {
   radius?: number;
 }
 
+/** A part document or an assembly document. */
+export type DocumentType = 'part' | 'assembly';
+
+/**
+ * Where a component's shape comes from when it is a part document (not a built-in shape).
+ * The component holds a reference; `snapshot` is the part's content when it was last
+ * resolved, used only when the part cannot be reached (then `linked` is 'cached').
+ */
+export interface PartSource {
+  /** The part document's id (the same in its file, the workspace and the library copy of it). */
+  documentId: string;
+  /** The part's name when last resolved. */
+  name: string;
+  /** The library document it comes from; version null follows the newest version. */
+  library?: { documentId: string; version: number | null };
+  snapshot: string;
+  /** partFingerprint of the snapshot. */
+  fingerprint: string;
+  /** How the shape was last resolved: an open document, the library, or only the cached copy. */
+  linked: 'workspace' | 'library' | 'cached';
+}
+
+/** One step of an exploded view: these components move this far along this direction. */
+export interface ExplodeStep {
+  id: string;
+  componentIds: string[];
+  /** Unit direction in model coordinates. */
+  direction: { x: number; y: number; z: number };
+  /** mm */
+  distance: number;
+}
+
 /** An assembly component as held by the store (primitive metadata added for save/load). */
 export type StoreAssemblyComponent = AssemblyComponent & {
   geometryType?: PrimitiveShape;
   dimensions?: PrimitiveDims;
+  /** Set when the component is a part document rather than a built-in shape. */
+  source?: PartSource;
   /** Material key (MATERIALS); unset means the document material. */
   material?: string;
 };
@@ -88,6 +128,8 @@ export interface ExplodedViewSettings {
   distance: number;
   /** Draw a dashed line from each component's real position to its exploded one. */
   leaderLines: boolean;
+  /** How far through the explode steps (0 collapsed … 1 fully exploded); only with steps. Default 1. */
+  progress?: number;
 }
 
 /** A component as written to a project file. */
@@ -101,6 +143,7 @@ interface SerializedComponent {
   geometryType: PrimitiveShape;
   dimensions: PrimitiveDims;
   material?: string;
+  source?: Omit<PartSource, 'linked'>;
 }
 
 /** Something selected in the viewport or tree. */
@@ -147,6 +190,9 @@ export interface CADState {
   appMode: AppMode;
 
   // Document
+  /** Identifies the document (kept in its file), so assemblies can reference parts. */
+  documentId: string;
+  documentType: DocumentType;
   documentName: string;
   isModified: boolean;
   /** The library document and version this was opened from or last saved as (local server), if any. */
@@ -223,6 +269,12 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /** Faces picked with the Mate tool (at most two). Not saved. */
+  matePicks: Array<{ componentId: string; face: PickedFace }>;
+  /** The explode steps (saved with the document); empty uses the automatic explode. */
+  explodeSteps: ExplodeStep[];
+  /** Degrees of freedom after the last assembly change (null for an empty assembly). */
+  assemblyDof: DofReport | null;
   /**
    * The last interference check: the overlaps (with their solids, for display) and
    * the component list it was made for. It is out of date when the assembly changes.
@@ -331,7 +383,20 @@ export interface CADActions {
 
   // Assembly
   insertAssemblyPart(name: string, shapeType?: PrimitiveShape, dims?: PrimitiveDims): void;
-  addAssemblyMate(type: MateType, comp1Id: string, ref1: string, comp2Id: string, ref2: string, offset?: number, extra?: Record<string, unknown>): void;
+  /** Insert a part document as a component (by reference); returns the component id. */
+  insertPartComponent(shape: PartShape, source: Omit<PartSource, 'fingerprint'>, name?: string): string;
+  /** Give referenced components their part's current shape (placement and mates kept), then solve. */
+  updatePartComponents(updates: Array<{ componentId: string; shape: PartShape | null; source: PartSource }>): void;
+  removeAssemblyComponent(componentId: string): void;
+  /** Set a distance (mm) or angle (degrees) mate's value and solve: motion along the mates. */
+  driveMate(mateId: string, value: number): { converged: boolean; error: number };
+  setExplodeSteps(steps: ExplodeStep[]): void;
+  /** Add a face picked with the Mate tool; the second opens the mate panel. */
+  addMatePick(pick: { componentId: string; face: PickedFace }): void;
+  clearMatePicks(): void;
+  /** A part document or an empty assembly document. */
+  setDocumentType(type: DocumentType): void;
+  addAssemblyMate(type: MateType, comp1Id: string, ref1: MateRef, comp2Id: string, ref2: MateRef, offset?: number, extra?: MateOptions): void;
   removeAssemblyMate(mateId: string): void;
   solveAssembly(): void;
   clearAssembly(): void;
@@ -545,9 +610,37 @@ function insertFeature(state: Draft<CADStore>, feature: Feature): number {
   return index;
 }
 
+/** The degrees of freedom of the assembly singleton (null when empty; skipped for very large assemblies). */
+function dofNow(): DofReport | null {
+  const comps = assemblyManager.components;
+  if (comps.length === 0 || comps.filter(c => !c.isFixed).length > 40) return null;
+  try { return analyzeDof(comps, assemblyManager.mates); } catch { return null; }
+}
+
+/** Copy the assembly singleton into the store and refresh its degrees of freedom. */
+function syncAssembly(state: Draft<CADStore>): void {
+  state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
+  state.mates = [...assemblyManager.mates] as Draft<AssemblyMate>[];
+  state.assemblyDof = dofNow() as Draft<DofReport> | null;
+}
+
+/** The status line after a solve. */
+function solveMessage(res: { converged: boolean; error: number }): string {
+  return res.converged
+    ? `Assembly solved (residual: ${(res.error ?? 0).toFixed(5)})`
+    : `Mates not satisfied — they may conflict (largest error: ${(res.error ?? 0).toFixed(3)})`;
+}
+
+/** A placeholder shape for a referenced part that cannot be rebuilt (so the assembly still opens). */
+function missingPartGeometry(): THREE.BufferGeometry {
+  return new THREE.BoxGeometry(20, 20, 20);
+}
+
 function initialState(): CADState {
   return {
     appMode: APP_MODES.PART,
+    documentId: generateId('doc'),
+    documentType: 'part',
     documentName: 'Untitled Part',
     isModified: false,
     libraryRef: null,
@@ -595,6 +688,9 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     explodedView: null,
+    explodeSteps: [],
+    matePicks: [],
+    assemblyDof: null,
     measurePicks: [],
     interference: null,
     sketchSolveState: null,
@@ -627,14 +723,17 @@ export const useCADStore = create<CADStore>()(
 
     // ==================== TOOLS AND SELECTION ====================
     setActiveTool: (tool) => set(state => {
-      if (state.activeTool !== tool) state.measurePicks = [];
+      if (state.activeTool !== tool) { state.measurePicks = []; state.matePicks = []; }
       state.activeTool = tool;
-      state.statusMessage = `Tool: ${tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+      state.statusMessage = tool === TOOLS.ASSEMBLY_MATE
+        ? 'Mate: pick a face on the first component'
+        : `Tool: ${tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
     }),
 
     cancelTool: () => set(state => {
       state.activeTool = TOOLS.SELECT;
       state.measurePicks = [];
+      state.matePicks = [];
       state.propertyPanelOpen = false;
       state.propertyPanelContent = null;
       state.statusMessage = 'Ready';
@@ -1069,8 +1168,142 @@ export const useCADStore = create<CADStore>()(
         comp.position.x = state.assemblyComponents.length * 35;
         comp.updateMatrix();
       }
-      state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
+      syncAssembly(state);
+      state.isModified = true;
       state.statusMessage = `Inserted "${comp.name}" into assembly`;
+    }),
+
+    insertPartComponent: (shape, source, name) => {
+      let id = '';
+      set(state => {
+        const count = assemblyManager.components.filter(c => (c as StoreAssemblyComponent).source?.documentId === source.documentId).length;
+        const comp = assemblyManager.insertComponent(name || (count ? `${shape.name}<${count + 1}>` : shape.name), shape.geometry) as StoreAssemblyComponent;
+        comp.source = { ...source, fingerprint: shape.fingerprint };
+        comp.material = shape.material in MATERIALS ? shape.material : undefined;
+        if (!comp.material) delete comp.material;
+        if (assemblyManager.components.length > 1) {
+          // Beside the others, so it can be seen and picked
+          const box = new THREE.Box3();
+          for (const c of assemblyManager.components) if (c !== comp) box.union(c.geometry.boundingBox ?? new THREE.Box3());
+          const size = comp.localBox().getSize(new THREE.Vector3());
+          comp.position.x = (box.isEmpty() ? 0 : box.max.x) + size.x / 2 + 20 - comp.localBox().getCenter(new THREE.Vector3()).x;
+          comp.updateMatrix();
+        }
+        id = comp.id;
+        syncAssembly(state);
+        state.isModified = true;
+        state.statusMessage = `Inserted "${comp.name}" (${source.linked === 'library' ? 'from the library' : 'linked to the part'})`;
+      });
+      return id;
+    },
+
+    updatePartComponents: (updates) => set(state => {
+      let changed = 0;
+      for (const u of updates) {
+        const comp = assemblyManager.components.find(c => c.id === u.componentId) as StoreAssemblyComponent | undefined;
+        if (!comp) continue;
+        if (u.shape && u.shape.fingerprint !== comp.source?.fingerprint) {
+          comp.baseGeometry = u.shape.geometry;
+          changed++;
+          // Faces picked on the old shape: find them again on the new one
+          assemblyManager.mates = assemblyManager.mates.map(m => {
+            const fix = (ref: MateRef) => (ref && typeof ref === 'object' ? remapRef(ref as Parameters<typeof remapRef>[0], comp.baseGeometry) ?? ref : ref);
+            if (m.comp1Id !== comp.id && m.comp2Id !== comp.id) return m;
+            return {
+              ...m,
+              ...(m.comp1Id === comp.id ? { ref1: fix(m.ref1) } : {}),
+              ...(m.comp2Id === comp.id ? { ref2: fix(m.ref2) } : {}),
+            };
+          });
+        }
+        comp.source = { ...u.source, ...(u.shape ? { fingerprint: u.shape.fingerprint } : {}) };
+        comp.updateMatrix();
+      }
+      if (changed) {
+        const res = assemblyManager.solve();
+        state.isModified = true;
+        state.statusMessage = `Updated ${changed} component${changed === 1 ? '' : 's'} from ${changed === 1 ? 'its part' : 'their parts'} · ${solveMessage(res)}`;
+      }
+      syncAssembly(state);
+    }),
+
+    removeAssemblyComponent: (componentId) => set(state => {
+      const comp = assemblyManager.components.find(c => c.id === componentId);
+      if (!comp) return;
+      const wasFixed = comp.isFixed;
+      assemblyManager.removeComponent(componentId);
+      // Keep one component fixed so the assembly does not float
+      if (wasFixed && assemblyManager.components.length && !assemblyManager.components.some(c => c.isFixed)) assemblyManager.components[0].isFixed = true;
+      state.explodeSteps = state.explodeSteps
+        .map(s => ({ ...s, componentIds: s.componentIds.filter(id => id !== componentId) }))
+        .filter(s => s.componentIds.length > 0);
+      syncAssembly(state);
+      state.isModified = true;
+      state.statusMessage = `Removed "${comp.name}" and its mates`;
+    }),
+
+    driveMate: (mateId, value) => {
+      const i = assemblyManager.mates.findIndex(m => m.id === mateId);
+      if (i < 0) throw new Error(`No mate ${JSON.stringify(mateId)}`);
+      // The store keeps (frozen) copies of the mates: replace this one rather than change it
+      const mate = String(assemblyManager.mates[i].type) === 'angle'
+        ? { ...assemblyManager.mates[i], angle: value }
+        : { ...assemblyManager.mates[i], offset: value };
+      assemblyManager.mates[i] = mate;
+      const res = assemblyManager.solve();
+      set(state => {
+        syncAssembly(state);
+        state.isModified = true;
+        state.statusMessage = `${mate.type === 'angle' ? `${value.toFixed(1)}°` : `${value.toFixed(2)} mm`} · ${solveMessage(res)}`;
+      });
+      return { converged: res.converged, error: res.error };
+    },
+
+    addMatePick: (pick) => set(state => {
+      const picks = state.matePicks.length >= 2 ? [] : [...state.matePicks];
+      // A second face on the same component replaces the first
+      if (picks.length === 1 && picks[0].componentId === pick.componentId) picks.pop();
+      picks.push(pick);
+      state.matePicks = picks as Draft<typeof state.matePicks>;
+      const comp = assemblyManager.components.find(c => c.id === pick.componentId);
+      const what = pick.face.kind === 'plane' ? 'flat face' : `cylinder Ø${(pick.face.radius * 2).toFixed(2)} mm`;
+      if (picks.length === 1) {
+        state.statusMessage = `${comp?.name ?? 'Component'}: ${what}. Pick a face on another component`;
+      } else {
+        state.statusMessage = `${comp?.name ?? 'Component'}: ${what}. Choose the mate`;
+        state.propertyPanelOpen = true;
+        state.propertyPanelContent = { type: 'mate_faces' };
+      }
+    }),
+
+    clearMatePicks: () => set(state => {
+      state.matePicks = [];
+    }),
+
+    setExplodeSteps: (steps) => set(state => {
+      const ids = new Set(assemblyManager.components.map(c => c.id));
+      state.explodeSteps = steps
+        .map(s => ({ ...s, componentIds: s.componentIds.filter(id => ids.has(id)) }))
+        .filter(s => s.componentIds.length > 0) as Draft<ExplodeStep>[];
+      state.isModified = true;
+    }),
+
+    setDocumentType: (type) => set(state => {
+      state.documentType = type;
+      if (type === 'assembly') {
+        state.features = [];
+        state.sketchEntities = {};
+        state.sketchConstraints = {};
+        state.sketchDimensions = {};
+        state.rollbackIndex = -1;
+        state.activeFeatureIndex = -1;
+        state.needsRebuild = true;
+        state.activeCommandTab = 'Assembly';
+        state.drawingOptions.subject = 'assembly';
+      } else {
+        state.activeCommandTab = 'Features';
+        state.drawingOptions.subject = 'part';
+      }
     }),
 
     addAssemblyMate: (type, comp1Id, ref1, comp2Id, ref2, offset = 0, extra = {}) => set(state => {
@@ -1081,24 +1314,22 @@ export const useCADStore = create<CADStore>()(
         state.statusMessage = `Mate not added: ${err instanceof Error ? err.message : String(err)}`;
         return;
       }
-      state.mates = [...assemblyManager.mates] as Draft<AssemblyMate>[];
-      state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
-      state.statusMessage = `Added ${type} mate between components`;
+      syncAssembly(state);
+      state.isModified = true;
+      state.statusMessage = `Added ${type} mate · ${state.assemblyDof?.status === 'over-defined' ? 'over defined: the mates conflict' : state.assemblyDof ? `${state.assemblyDof.dof} degree${state.assemblyDof.dof === 1 ? '' : 's'} of freedom left` : 'solved'}`;
     }),
 
     removeAssemblyMate: (mateId) => set(state => {
       assemblyManager.removeMate(mateId);
-      state.mates = [...assemblyManager.mates] as Draft<AssemblyMate>[];
-      state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
+      syncAssembly(state);
+      state.isModified = true;
       state.statusMessage = 'Removed mate';
     }),
 
     solveAssembly: () => set(state => {
       const res = assemblyManager.solve();
-      state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
-      state.statusMessage = res?.converged
-        ? `Assembly solved (residual: ${(res.error ?? 0).toFixed(5)})`
-        : `Mates not satisfied — they may conflict (largest error: ${(res?.error ?? 0).toFixed(3)})`;
+      syncAssembly(state);
+      state.statusMessage = solveMessage(res);
     }),
 
     setComponentMaterial: (componentIds, material) => set(state => {
@@ -1120,14 +1351,17 @@ export const useCADStore = create<CADStore>()(
       state.assemblyComponents = [];
       state.mates = [];
       state.explodedView = null;
+      state.explodeSteps = [];
+      state.assemblyDof = null;
+      state.isModified = true;
       state.statusMessage = 'Cleared assembly';
     }),
 
     setExplodedView: (settings) => set(state => {
       state.explodedView = settings ? { ...settings } : null;
-      state.statusMessage = settings
-        ? `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`
-        : 'Exploded view collapsed';
+      state.statusMessage = !settings ? 'Exploded view collapsed'
+        : state.explodeSteps.length ? `Exploded view: ${state.explodeSteps.length} step${state.explodeSteps.length === 1 ? '' : 's'}${(settings.progress ?? 1) < 1 ? ` (${Math.round((settings.progress ?? 1) * 100)}%)` : ''}`
+          : `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`;
     }),
 
     setInterference: (results) => set(state => {
@@ -1205,10 +1439,13 @@ export const useCADStore = create<CADStore>()(
         geometryType: comp.geometryType || 'box',
         dimensions: comp.dimensions || {},
         ...(comp.material ? { material: comp.material } : {}),
+        ...(comp.source ? { source: (({ linked: _linked, ...rest }) => rest)(comp.source) } : {}),
       }));
 
       const project: ProjectFile = {
         version: '2.0.0',
+        documentId: state.documentId,
+        documentType: state.documentType,
         documentName: state.documentName,
         appMode: state.appMode,
         features: state.features,
@@ -1222,6 +1459,7 @@ export const useCADStore = create<CADStore>()(
         settings: state.settings,
         assemblyComponents,
         mates: state.mates,
+        ...(state.explodeSteps.length ? { explodeSteps: state.explodeSteps } : {}),
         timestamp: Date.now(),
       };
       return JSON.stringify(project, null, 2);
@@ -1240,6 +1478,13 @@ export const useCADStore = create<CADStore>()(
         }
 
         const features = ensureFeatureGraph(project.features || []);
+        state.documentId = typeof project.documentId === 'string' && project.documentId ? project.documentId : generateId('doc');
+        const components0 = Array.isArray(project.assemblyComponents) ? project.assemblyComponents : [];
+        // Older files have no type: an assembly when it holds components and no features
+        state.documentType = project.documentType === 'assembly' || project.documentType === 'part'
+          ? project.documentType
+          : components0.length > 0 && features.length === 0 ? 'assembly' : 'part';
+        state.drawingOptions.subject = state.documentType === 'assembly' ? 'assembly' : 'part';
         state.documentName = project.documentName || 'Imported Part';
         state.appMode = project.appMode || APP_MODES.PART;
         state.features = features as Draft<Feature>[];
@@ -1262,31 +1507,43 @@ export const useCADStore = create<CADStore>()(
 
         // Restore assembly components
         const components = Array.isArray(project.assemblyComponents) ? project.assemblyComponents as SerializedComponent[] : [];
+        assemblyManager.components = [];
+        assemblyManager.mates = [];
         if (components.length > 0) {
-          assemblyManager.components = [];
           for (const c of components) {
             const dims = c.dimensions || {};
             const shape = c.geometryType || 'box';
-            const comp = assemblyManager.insertComponent(c.name, primitiveGeometry(shape, dims), c.isFixed) as StoreAssemblyComponent;
+            // A part reference starts from its cached copy; the workspace or library brings the live part after loading
+            let geometry: THREE.BufferGeometry;
+            let partOk = true;
+            if (c.source && typeof c.source.snapshot === 'string') {
+              try { geometry = partShape(c.source.snapshot).geometry; } catch { geometry = missingPartGeometry(); partOk = false; }
+            } else {
+              geometry = primitiveGeometry(shape, dims);
+            }
+            const comp = assemblyManager.insertComponent(c.name, geometry, c.isFixed) as StoreAssemblyComponent;
             comp.id = c.id;
-            comp.geometryType = shape;
-            comp.dimensions = dims;
+            if (c.source && typeof c.source.snapshot === 'string') {
+              comp.source = { ...c.source, linked: 'cached' };
+              if (!partOk) comp.source.fingerprint = 'missing';
+            } else {
+              comp.geometryType = shape;
+              comp.dimensions = dims;
+            }
             if (typeof c.material === 'string' && c.material in MATERIALS) comp.material = c.material;
             if (c.position) comp.position.set(c.position.x, c.position.y, c.position.z);
             if (c.quaternion) comp.quaternion.set(c.quaternion.x, c.quaternion.y, c.quaternion.z, c.quaternion.w);
             if (c.scale) comp.scale.set(c.scale.x, c.scale.y, c.scale.z);
             comp.updateMatrix();
           }
-          state.assemblyComponents = [...assemblyManager.components] as Draft<StoreAssemblyComponent>[];
         }
 
         state.explodedView = null;
-
         // Restore assembly mates
-        if (Array.isArray(project.mates)) {
-          assemblyManager.mates = [...project.mates] as AssemblyMate[];
-          state.mates = [...project.mates] as Draft<AssemblyMate>[];
-        }
+        if (Array.isArray(project.mates)) assemblyManager.mates = [...project.mates] as AssemblyMate[];
+        state.explodeSteps = (Array.isArray(project.explodeSteps) ? project.explodeSteps : []) as Draft<ExplodeStep>[];
+        syncAssembly(state);
+        state.interference = null;
 
         state.undoStack = [];
         state.redoStack = [];

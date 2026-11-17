@@ -92,6 +92,7 @@ casiworks/
     ├── drawingEngine.test.ts     # Projections, hidden lines, sheets, SVG/DXF
     ├── store.test.ts             # Store: examples, load/save, undo/redo, new document
     ├── massProperties.test.ts    # Mass properties in SI units
+    ├── workspace.test.ts         # Documents, parts by reference, face mates, DOF, motion, explode steps
     ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
     ├── api.test.ts               # Public API (headless)
@@ -157,7 +158,12 @@ export writes faceted (triangulated) geometry.
     - `Width`: Symmetrically centers a tab component between two boundary reference faces.
     - `Path`: Restrains a component's reference point along a 3D guide curve polyline.
 - **Multi-Body Solver**: 6-DOF satisfaction loop using quaternion rotation (`setFromUnitVectors`, `slerp`) and translation relaxation with weighted mass distribution for unpinned bodies.
-- **Exploded View Generator**: Configurable exploded distances along kinematic motion axes with 3D polyline leader lines.
+- **Exploded View Generator**: Configurable exploded distances along kinematic motion axes with 3D polyline leader lines; or **explode steps** (`src/assembly/explodeSteps.ts`): chosen components, a direction and a distance per step, played in order.
+- **Documents** (`src/workspace/`): parts and assemblies are separate documents, open side by side as tabs; each keeps its unsaved changes and undo history, and autosave brings all of them back.
+- **Parts by reference** (`src/assembly/partGeometry.ts`, `src/workspace/references.ts`): a component refers to a part document (open in the workspace, or in the library, following its newest version or pinned to one). When the part changes, the component is rebuilt from it, keeping its placement; faces picked for mates are found again on the new shape. The assembly file keeps a copy of each part, used only when the part cannot be reached (shown as *cached copy*).
+- **Mates on real faces** (`src/assembly/facePick.ts`): a click finds the flat face (all coplanar triangles) or cylinder (least-squares circle fit through the triangles round one axis) under the cursor; holes and shafts mate concentric by their real axis and radius.
+- **Degrees of freedom** (`src/assembly/dof.ts`): every mate as residual equations; a numerical Jacobian over each free component's six motions, and its null space (Jacobi eigen-decomposition), give the motions left per component (*turn about Z*, …), shown in the tree as (f) fixed, (-) under defined, (+) over defined (conflicting mates).
+- **Motion along mates**: driving a distance or angle mate (an angle mate can measure about an axis, so it turns all the way round) re-solves the assembly each frame.
 
 ### 5. 3D Solid Linear Static FEA Simulation
 - **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.ts`):
@@ -457,7 +463,10 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
    - Component insertion and coordinate transformation.
    - Standard mates: Coincident, Distance, Concentric, Parallel, Perpendicular, Angle.
    - Advanced mates: Tangent, Width, Path.
-   - Exploded view generation with 3D leader lines.
+   - Exploded view generation with 3D leader lines, or explode steps.
+   - Parts and assemblies as separate documents (tabs); real part documents as components, by reference.
+   - Mates picked on real faces (planes and cylinders); degrees of freedom per component; motion by driving a mate.
+   - Where used: the library records which assemblies use each part (`GET /api/v1/documents/{id}/where-used`).
 
 8. **Export & Import**:
    - Export: **STEP AP214 (faceted)**, **STL (binary & ASCII)**, **OBJ** and **DXF R12** and **IGES 5.3** from the Export dialog; native project files.

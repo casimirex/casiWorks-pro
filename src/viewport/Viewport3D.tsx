@@ -33,6 +33,9 @@ import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
 import { plotPositionOf, probeAt } from '../simulation/resultPlot.ts';
 import type { FeaProbe, ResultPlot } from '../simulation/resultPlot.ts';
+import { stepOffsets, stepPaths } from '../assembly/explodeSteps.ts';
+import { faceAt, faceGeometry } from '../assembly/facePick.ts';
+import type { PickedFace } from '../assembly/facePick.ts';
 
 // <line> is the SVG element in JSX typings; register three's Line under its own tag
 extend({ ThreeLine: THREE.Line });
@@ -208,6 +211,8 @@ interface CADBodyMeshProps {
   materialKey: string;
   /** While measuring, clicks become picks instead of selections. */
   onMeasure?: (pick: MeasurePick) => void;
+  /** With the Mate tool: the clicked triangle (index in the mesh). */
+  onFacePick?: (triangle: number) => void;
 }
 
 /** How close (as a share of the camera distance, ≈ 10 px) a click must be to a corner to snap to it. */
@@ -224,7 +229,7 @@ function pickFromEvent(e: ThreeEvent<MouseEvent>): MeasurePick | null {
   return snapPick(e.point, corners, normal, e.distance * MEASURE_SNAP);
 }
 
-function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, edgeDisplay, materialKey, onMeasure }: CADBodyMeshProps) {
+function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, edgeDisplay, materialKey, onMeasure, onFacePick }: CADBodyMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   const material = useMemo(() => {
@@ -270,6 +275,10 @@ function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, ed
         onClick={(e: ThreeEvent<MouseEvent>) => {
           if (!selectable) return;
           e.stopPropagation();
+          if (onFacePick) {
+            if (e.faceIndex !== undefined && e.faceIndex !== null) onFacePick(e.faceIndex);
+            return;
+          }
           if (onMeasure) {
             const pick = pickFromEvent(e);
             if (pick) onMeasure(pick);
@@ -805,6 +814,42 @@ function ExplodeLeaderLines({ lines }: { lines: LeaderLine[] }) {
 }
 
 /**
+ * For browser tests: `window.__casiworksView.project(point)` gives where a model point is on
+ * the page (CSS pixels), and `camera()` the camera position, so a test can click a known face.
+ */
+function ViewProbe() {
+  const camera = useThree(s => s.camera);
+  const gl = useThree(s => s.gl);
+  useEffect(() => {
+    const w = window as unknown as { __casiworksView?: unknown };
+    w.__casiworksView = {
+      project: (p: { x: number; y: number; z: number }) => {
+        const v = new THREE.Vector3(p.x, p.y, p.z).project(camera);
+        const r = gl.domElement.getBoundingClientRect();
+        return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, visible: v.z > -1 && v.z < 1 };
+      },
+      camera: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z }),
+    };
+    return () => { delete w.__casiworksView; };
+  }, [camera, gl]);
+  return null;
+}
+
+/** A face picked with the Mate tool, drawn over its component in the highlight colour. */
+function PickedFaceMark({ pick, offset }: { pick: { componentId: string; face: PickedFace }; offset: THREE.Vector3 }) {
+  const comp = useCADStore(s => s.assemblyComponents.find(c => c.id === pick.componentId));
+  const geometry = useMemo(() => (comp ? faceGeometry(comp.baseGeometry, pick.face.triangles) : null), [comp, pick]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  if (!comp || !geometry) return null;
+  const m = comp.matrix.clone().premultiply(new THREE.Matrix4().makeTranslation(offset.x, offset.y, offset.z));
+  return (
+    <mesh geometry={geometry} matrix={m} matrixAutoUpdate={false} renderOrder={3} name="MatePick">
+      <meshBasicMaterial color="#22d3ee" transparent opacity={0.75} side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} depthTest />
+    </mesh>
+  );
+}
+
+/**
  * Main 3D Viewport Component
  */
 export default function Viewport3D() {
@@ -817,6 +862,9 @@ export default function Viewport3D() {
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const mates = useCADStore(s => s.mates);
   const explodedView = useCADStore(s => s.explodedView);
+  const explodeSteps = useCADStore(s => s.explodeSteps);
+  const matePicks = useCADStore(s => s.matePicks);
+  const addMatePick = useCADStore(s => s.addMatePick);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const setSelection = useCADStore(s => s.setSelection);
   const activeMaterial = useCADStore(s => s.activeMaterial);
@@ -1014,13 +1062,37 @@ export default function Viewport3D() {
 
   // Exploded view: where each component is drawn, recomputed when the assembly changes
   const exploded = useMemo(
-    () => (explodedView && assemblyComponents.length > 1
-      ? assemblyManager.createExplodedView({ distance: explodedView.distance, leaderLines: explodedView.leaderLines })
-      : null),
+    () => {
+      if (!explodedView || assemblyComponents.length < 2) return null;
+      if (explodeSteps.length === 0) return assemblyManager.createExplodedView({ distance: explodedView.distance, leaderLines: explodedView.leaderLines });
+      // Explode steps, played to `progress`
+      const progress = explodedView.progress ?? 1;
+      const offsets = stepOffsets(explodeSteps, progress);
+      const centres = new Map(assemblyComponents.map(c => {
+        const ctr = (c.geometry.boundingBox ?? new THREE.Box3()).getCenter(new THREE.Vector3());
+        return [c.id, { x: ctr.x, y: ctr.y, z: ctr.z }] as const;
+      }));
+      const names = new Map(assemblyComponents.map(c => [c.id, c.name]));
+      const leaderLines: LeaderLine[] = explodedView.leaderLines
+        ? stepPaths(explodeSteps, centres, progress).flatMap(p => p.points.slice(1).map((pt, i) => ({
+          componentId: p.componentId, componentName: names.get(p.componentId) ?? '',
+          start: new THREE.Vector3(p.points[i].x, p.points[i].y, p.points[i].z), end: new THREE.Vector3(pt.x, pt.y, pt.z),
+          points: [new THREE.Vector3(p.points[i].x, p.points[i].y, p.points[i].z), new THREE.Vector3(pt.x, pt.y, pt.z)],
+        })))
+        : [];
+      return {
+        distance: explodedView.distance,
+        leaderLines,
+        components: assemblyComponents.map(c => {
+          const o = offsets.get(c.id) ?? { x: 0, y: 0, z: 0 };
+          return { id: c.id, name: c.name, originalPosition: c.position.clone(), position: c.position.clone().add(new THREE.Vector3(o.x, o.y, o.z)), explosionAxis: new THREE.Vector3(), distance: 0 };
+        }),
+      };
+    },
     // The layout reads the assembly manager, which the store mirrors: its component
     // and mate arrays are replaced whenever the manager changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [explodedView, assemblyComponents, mates],
+    [explodedView, assemblyComponents, mates, explodeSteps],
   );
   const explodeOffsets = useMemo(() => new Map(
     (exploded?.components ?? []).map(c => [c.id, c.position.clone().sub(c.originalPosition)] as const),
@@ -1096,6 +1168,7 @@ export default function Viewport3D() {
         <hemisphereLight color="#ffffff" groundColor="#333333" intensity={0.4} />
 
         <ProjectionSwitch perspective={perspectiveView} />
+        <ViewProbe />
         <OrbitControls
           ref={controlsRef}
           makeDefault
@@ -1179,9 +1252,14 @@ export default function Viewport3D() {
               edgeDisplay={edgeDisplay}
               materialKey={comp.material ?? activeMaterial}
               onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : activeTool === TOOLS.SKETCH_ON_FACE ? startSketchOnFace : undefined}
+              onFacePick={activeTool === TOOLS.ASSEMBLY_MATE ? (tri) => {
+                const face = faceAt(comp.baseGeometry, tri);
+                if (face) addMatePick({ componentId: comp.id, face });
+              } : undefined}
             />
           </group>
         ))}
+        {matePicks.map((p, i) => <PickedFaceMark key={`${p.componentId}-${i}`} pick={p} offset={explodeOffsets.get(p.componentId) ?? ORIGIN} />)}
         {exploded && exploded.leaderLines.length > 0 && <ExplodeLeaderLines lines={exploded.leaderLines} />}
 
         {/* Interference: the shared volumes in red, seen through the parts (only while still current) */}

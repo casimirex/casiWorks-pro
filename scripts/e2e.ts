@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assemblyFlow, closeAssemblyFlow } from './assemblyFlow.ts';
 import { findChrome, sleep, waitFor, withApp } from './browser.ts';
 import { AUDIT } from './a11yAudit.ts';
 import type { Page } from './browser.ts';
@@ -657,7 +658,7 @@ const CHECKS: Check[] = [
   {
     name: 'exploded view moves mated components apart and collapses',
     async run(p) {
-      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`window.casiworks.commands.execute('workspace.newAssembly')`);
       await p.click('Assembly');
       await p.click('Insert Base Mounting Plate', 400);
       await p.click('Insert Cylindrical Alignment Pin', 400);
@@ -690,7 +691,7 @@ const CHECKS: Check[] = [
   {
     name: 'bill of materials: grouped rows, totals, CSV export and the assembly drawing',
     async run(p) {
-      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`window.casiworks.commands.execute('workspace.newAssembly')`);
       await p.click('Assembly');
       await p.click('Insert Base Mounting Plate', 300);
       await p.click('Insert Cylindrical Alignment Pin', 300);
@@ -731,7 +732,7 @@ const CHECKS: Check[] = [
         balloons: [...document.querySelectorAll('.drawing-sheet-view .balloon-text')].map(t => t.textContent),
         title: [...document.querySelectorAll('.drawing-sheet-view .tb-text-title')].map(t => t.textContent).join(),
       })`);
-      assert(sheet.rows === 2 && sheet.balloons.join() === '1,2' && sheet.title === 'UNTITLED PART ASSEMBLY', `assembly sheet ${JSON.stringify(sheet)}`);
+      assert(sheet.rows === 2 && sheet.balloons.join() === '1,2' && /^ASSEMBLY\d+ ASSEMBLY$/.test(sheet.title), `assembly sheet ${JSON.stringify(sheet)}`);
       await p.screenshot('08c-assembly-drawing');
       await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
       await sleep(300);
@@ -742,9 +743,26 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'assembly of real parts: insert by reference, mate by clicking faces, DOF, the part edited, motion, explode steps',
+    async run(p) {
+      const r = await assemblyFlow(p, (name) => p.screenshot(name));
+      await closeAssemblyFlow(p);
+      const near = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+      assert(r.inserted.join() === 'Plate:workspace,Pin:workspace', `inserted ${r.inserted}`);
+      assert(r.mates.join() === 'concentric,concentric,coincident', `mates ${r.mates}`);
+      assert(near(r.pinAt.x, 10) && near(r.pinAt.y, 0) && near(r.pinAt.z, 40), `pin at ${JSON.stringify(r.pinAt)} (in the hole, its end face on the plate)`);
+      assert(r.dof.status === 'under-defined' && r.dof.pin === 'under-defined' && r.dof.motions.join() === 'turn about Z', `dof ${JSON.stringify(r.dof)}`);
+      assert(r.treeTags.join('|') === '(f)Platelinked|(-)Pinlinked', `tree ${r.treeTags.join('|')}`);
+      assert(near(r.plateDepthAfterEdit, 16) && near(r.pinZAfterEdit, 46), `after the edit: plate top ${r.plateDepthAfterEdit}, pin z ${r.pinZAfterEdit}`);
+      assert(near(r.motionAngle, 90), `motion ended at ${r.motionAngle}°`);
+      assert(r.explodeSteps === 1, `explode steps ${r.explodeSteps}`);
+      return `${r.inserted.join(', ')}; mates by clicks: ${r.mates.slice(1).join(' + ')}; pin ${r.dof.pin} (${r.dof.motions.join(', ')}); plate 10 → 16 mm moved the pin to z = ${r.pinZAfterEdit.toFixed(1)}; motion played to ${r.motionAngle}°; 1 explode step`;
+    },
+  },
+  {
     name: 'interference detection: none side by side, the pin through the plate once mated',
     async run(p) {
-      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`window.casiworks.commands.execute('workspace.newAssembly')`);
       await p.click('Assembly');
       await p.click('Insert Base Mounting Plate', 300);
       await p.click('Insert Cylindrical Alignment Pin', 300);
@@ -850,10 +868,25 @@ const CHECKS: Check[] = [
 
       // Every visible control has a name, on every ribbon tab and in the dialogs
       const problems = new Set<string>();
-      for (const t of ['Features', 'Sketch', 'Assembly', 'Evaluate', 'Drawing', 'Tools', 'Add-ins']) {
+      for (const t of ['Features', 'Sketch', 'Evaluate', 'Drawing', 'Tools', 'Add-ins']) {
         await p.click(t, 250);
         for (const x of await p.eval<string[]>(AUDIT)) problems.add(`${t}: ${x}`);
       }
+      // An assembly's tab, tree and panels too
+      const partDoc = await p.eval<string>(`window.casiworks.workspace.active()`);
+      const asmDoc = await p.eval<string>(`window.casiworks.workspace.newAssembly('Audit')`);
+      await sleep(300);
+      await p.click('Assembly', 250);
+      for (const x of await p.eval<string[]>(AUDIT)) problems.add(`Assembly: ${x}`);
+      for (const cmd of ['assembly.motion', 'assembly.insertPartDialog']) {
+        await p.eval(`window.casiworks.commands.execute(${JSON.stringify(cmd)})`);
+        await sleep(400);
+        for (const x of await p.eval<string[]>(AUDIT)) problems.add(`${cmd}: ${x}`);
+        await p.key('Escape');
+        await sleep(200);
+      }
+      await p.eval(`window.casiworks.workspace.close(${JSON.stringify(asmDoc)}, { discard: true }); window.casiworks.workspace.activate(${JSON.stringify(partDoc)})`);
+      await sleep(400);
       for (const cmd of ['model.material', 'file.export', 'tools.equations', 'view.commandPalette', 'feature.extrude', 'feature.hole']) {
         await p.eval(`window.casiworks.commands.execute(${JSON.stringify(cmd)})`);
         await sleep(300);
@@ -1189,18 +1222,19 @@ const CHECKS: Check[] = [
       };
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
       await sleep(1500);
-      const before = { names: await treeNames(p), volume: await volume(p) };
+      const tabs = () => p.eval<string>(`[...document.querySelectorAll('.document-tab')].map(t => t.textContent.trim() + (t.classList.contains('active') ? '*' : '')).join(' | ')`);
+      const before = { names: await treeNames(p), volume: await volume(p), tabs: await tabs() };
       await reload();
-      const after = { names: await treeNames(p), volume: await volume(p) };
+      const after = { names: await treeNames(p), volume: await volume(p), tabs: await tabs() };
       const restored = await status(p);
-      assert(/^Restored Mounting_L_Bracket from autosave/.test(restored), `status after reload: "${restored}"`);
-      assert(after.names.join() === before.names.join() && Math.abs(after.volume - before.volume) < 1e-6,
+      assert(/^Restored Mounting_L_Bracket( and \d+ other documents?)? from autosave/.test(restored), `status after reload: "${restored}"`);
+      assert(after.names.join() === before.names.join() && Math.abs(after.volume - before.volume) < 1e-6 && after.tabs === before.tabs,
         `before ${JSON.stringify(before)}, after ${JSON.stringify(after)}`);
       await p.eval(`window.casiworks.commands.execute('document.new')`);
       await reload();
       const left = await p.eval<number>(`document.querySelectorAll('.feature-item').length`);
       assert(left === 0, `New, then reload: ${left} features (the starter part must not come back)`);
-      return `${after.names.length} features and ${after.volume.toFixed(0)} mm³ back after reload; "${restored}"; empty New stays empty`;
+      return `${after.names.length} features and ${after.volume.toFixed(0)} mm³ back after reload, with ${after.tabs.split(' | ').length} open documents; "${restored}"; empty New stays empty`;
     },
   },
 ];

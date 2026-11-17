@@ -9,6 +9,7 @@ import { commands, macroRecorder } from './commands/index.ts';
 import { pluginManager } from './plugins/index.ts';
 import { indexedDBStorage, memoryStorage, restoreAutosave, startAutosave } from './utils/autosave.ts';
 import './index.css';
+import { apiWorkspace, workspace } from './workspace/index.ts';
 
 // Remove loading splash screen once mounted
 window.addEventListener('load', () => {
@@ -22,11 +23,11 @@ window.addEventListener('load', () => {
 });
 
 // Public API for scripts, the console and embedding pages: window.casiworks
-exposeGlobalAPI(useCADStore, window, { commands, macros: macroRecorder, plugins: pluginManager });
+exposeGlobalAPI(useCADStore, window, { commands, macros: macroRecorder, plugins: pluginManager, workspace: apiWorkspace });
 
 // Bring back the document from the last session before the first render, then keep saving it
 const storage = typeof indexedDB === 'undefined' ? memoryStorage() : indexedDBStorage();
-void restoreAutosave(useCADStore, storage).then((restored) => {
+void restoreAutosave(useCADStore, storage, workspace).then((restored) => {
   if (restored) {
     // The first rebuild reports its own result; keep the restore notice in front of it
     const rebuilds = useCADStore.getState().rebuildCount;
@@ -38,7 +39,7 @@ void restoreAutosave(useCADStore, storage).then((restored) => {
       }
     });
   }
-  const autosave = startAutosave(useCADStore, storage);
+  const autosave = startAutosave(useCADStore, storage, { workspace });
   // A closing or backgrounded tab writes at once instead of waiting for the delay
   const flush = () => { void autosave.flush(); };
   window.addEventListener('pagehide', flush);

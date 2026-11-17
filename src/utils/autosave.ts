@@ -1,4 +1,4 @@
-// CasiWorks Pro - Autosave: keep the open document in the browser and bring it back after a reload
+// CasiWorks Pro - Autosave: keep the open documents in the browser and bring them back after a reload
 //
 // The document is written (as the same JSON a .casiproj file holds) shortly after
 // each change, and when the page is hidden. On start-up the app restores it, so a
@@ -13,6 +13,7 @@ export interface AutosaveStorage {
 
 /** What autosave needs from the store (CADStore satisfies it). */
 export interface AutosaveState {
+  documentId: string;
   documentName: string;
   isModified: boolean;
   statusMessage: string;
@@ -41,16 +42,32 @@ export interface AutosaveStore<S> {
 
 interface Snapshot {
   format: 'casiworks-autosave';
-  version: 1;
+  version: 1 | 2;
   savedAt: number;
   /** The unsaved-changes flag at the time, so the title bar dot survives the reload. */
   modified: boolean;
+  /** The active document. */
   project: string;
+  /** Version 2: every open document (the active one included), in tab order. */
+  workspace?: WorkspaceSnapshot;
+}
+
+/** The open documents as the workspace hands them over. */
+export interface WorkspaceSnapshot {
+  activeId: string;
+  documents: Array<{ id: string; content: string; modified: boolean; libraryRef: unknown }>;
+}
+
+/** What autosave needs from the workspace (optional: without it only the active document is kept). */
+export interface AutosaveWorkspace {
+  serialize(): WorkspaceSnapshot;
+  restoreOthers(documents: WorkspaceSnapshot['documents'], activeId: string): void;
+  subscribe(listener: () => void): () => void;
 }
 
 /** The parts of the state that are saved in a project: a change to any of them is a document change. */
 const DOCUMENT_KEYS = [
-  'documentName', 'features', 'sketchEntities', 'sketchConstraints', 'sketchDimensions',
+  'documentId', 'documentName', 'features', 'sketchEntities', 'sketchConstraints', 'sketchDimensions',
   'rollbackIndex', 'activeMaterial', 'settings', 'assemblyComponents', 'mates', 'variables', 'configurations', 'activeConfiguration',
 ] as const satisfies ReadonlyArray<keyof AutosaveState>;
 
@@ -63,8 +80,11 @@ function parseSnapshot(text: string | null): Snapshot | null {
   if (!text) return null;
   try {
     const s = JSON.parse(text) as Partial<Snapshot>;
-    if (s.format !== 'casiworks-autosave' || s.version !== 1 || typeof s.project !== 'string') return null;
-    return { format: s.format, version: 1, savedAt: Number(s.savedAt) || 0, modified: s.modified === true, project: s.project };
+    if (s.format !== 'casiworks-autosave' || (s.version !== 1 && s.version !== 2) || typeof s.project !== 'string') return null;
+    const ws = s.workspace && Array.isArray(s.workspace.documents) && typeof s.workspace.activeId === 'string'
+      ? { activeId: s.workspace.activeId, documents: s.workspace.documents.filter(d => d && typeof d.id === 'string' && typeof d.content === 'string') }
+      : undefined;
+    return { format: s.format, version: s.version, savedAt: Number(s.savedAt) || 0, modified: s.modified === true, project: s.project, ...(ws ? { workspace: ws } : {}) };
   } catch {
     return null;
   }
@@ -77,7 +97,7 @@ const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-dig
  * status bar), or null when nothing was restored.
  * A snapshot that cannot be read or loaded is removed, so a bad one cannot block start-up again.
  */
-export async function restoreAutosave<S extends AutosaveState>(store: AutosaveStore<S>, storage: AutosaveStorage): Promise<string | null> {
+export async function restoreAutosave<S extends AutosaveState>(store: AutosaveStore<S>, storage: AutosaveStorage, workspace?: AutosaveWorkspace): Promise<string | null> {
   let snapshot: Snapshot | null;
   try {
     snapshot = parseSnapshot(await storage.read());
@@ -94,7 +114,10 @@ export async function restoreAutosave<S extends AutosaveState>(store: AutosaveSt
     return null;
   }
   store.setState({ isModified: snapshot.modified } as Partial<S>);
-  const message = `Restored ${store.getState().documentName} from autosave (${clock(snapshot.savedAt)})`;
+  // The other open documents come back as tabs
+  const others = snapshot.workspace && workspace ? snapshot.workspace.documents.filter(d => d.id !== snapshot.workspace!.activeId) : [];
+  if (others.length && workspace) workspace.restoreOthers(snapshot.workspace!.documents, snapshot.workspace!.activeId);
+  const message = `Restored ${store.getState().documentName}${others.length ? ` and ${others.length} other document${others.length === 1 ? '' : 's'}` : ''} from autosave (${clock(snapshot.savedAt)})`;
   store.getState().setStatus(message);
   return message;
 }
@@ -109,7 +132,7 @@ export interface AutosaveHandle {
 export function startAutosave<S extends AutosaveState>(
   store: AutosaveStore<S>,
   storage: AutosaveStorage,
-  { delayMs = 1000, now = Date.now }: { delayMs?: number; now?: () => number } = {},
+  { delayMs = 1000, now = Date.now, workspace }: { delayMs?: number; now?: () => number; workspace?: AutosaveWorkspace } = {},
 ): AutosaveHandle {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending = false;
@@ -121,7 +144,9 @@ export function startAutosave<S extends AutosaveState>(
     if (!pending) return;
     pending = false;
     const state = store.getState();
-    const snapshot: Snapshot = { format: 'casiworks-autosave', version: 1, savedAt: now(), modified: state.isModified, project: state.saveProject() };
+    const snapshot: Snapshot = workspace
+      ? { format: 'casiworks-autosave', version: 2, savedAt: now(), modified: state.isModified, project: state.saveProject(), workspace: workspace.serialize() }
+      : { format: 'casiworks-autosave', version: 1, savedAt: now(), modified: state.isModified, project: state.saveProject() };
     try {
       await storage.write(JSON.stringify(snapshot));
       failed = false;
@@ -131,18 +156,24 @@ export function startAutosave<S extends AutosaveState>(
     }
   };
 
-  const unsubscribe = store.subscribe((state, prev) => {
-    // The unsaved-changes flag alone (e.g. after Save) also updates the snapshot
-    if (!documentChanged(state, prev) && state.isModified === prev.isModified) return;
+  const schedule = () => {
     pending = true;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => { void write(); }, delayMs);
+  };
+  const unsubscribe = store.subscribe((state, prev) => {
+    // The unsaved-changes flag alone (e.g. after Save) also updates the snapshot
+    if (!documentChanged(state, prev) && state.isModified === prev.isModified) return;
+    schedule();
   });
+  // Opening, closing and switching documents too
+  const unsubscribeWorkspace = workspace?.subscribe(schedule);
 
   return {
     flush: write,
     stop: () => {
       unsubscribe();
+      unsubscribeWorkspace?.();
       if (timer) clearTimeout(timer);
       timer = null;
     },

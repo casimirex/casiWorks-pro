@@ -3,6 +3,7 @@ import CommandManager from './CommandManager.tsx';
 import FeatureTree from './FeatureTree.tsx';
 import PropertyPanel from './PropertyPanel.tsx';
 import StatusBar from './StatusBar.tsx';
+import DocumentTabs from './DocumentTabs.tsx';
 import Viewport3D from '../../viewport/Viewport3D.tsx';
 import ErrorBoundary from '../common/ErrorBoundary.tsx';
 import ScriptConsole from '../../console/ScriptConsole.tsx';
@@ -26,6 +27,7 @@ export default function MainLayout({ treeOpen, onCloseTree, consoleOpen, onClose
   return (
     <div className="app-container">
       <CommandManager />
+      <DocumentTabs />
 
       <div className="workspace-middle">
         {/* Mobile backdrop for FeatureTree drawer */}

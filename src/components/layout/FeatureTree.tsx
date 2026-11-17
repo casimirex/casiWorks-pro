@@ -11,6 +11,7 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { runCommand } from '../../commands/index.ts';
 import { FEATURE_TYPES } from '../../utils/constants.ts';
 import type { Feature } from '../../types/cad.ts';
+import AssemblyTree from './AssemblyTree.tsx';
 
 interface FeatureTreeProps {
   onMaterialClick(): void;
@@ -20,6 +21,8 @@ interface FeatureTreeProps {
 }
 
 export default function FeatureTree({ onMaterialClick, isOpen, onClose }: FeatureTreeProps) {
+  const isAssembly = useCADStore(s => s.documentType === 'assembly');
+  const hasComponents = useCADStore(s => s.assemblyComponents.length > 0);
   const documentName = useCADStore(s => s.documentName);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const features = useCADStore(s => s.features);
@@ -160,11 +163,11 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   );
 
   return (
-    <aside className={`feature-tree-panel ${isOpen ? 'open' : ''}`}>
+    <aside aria-label={isAssembly ? 'Assembly tree' : 'Feature tree'} className={`feature-tree-panel ${isOpen ? 'open' : ''}`}>
       <div className="panel-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Layers size={14} color="#38bdf8" />
-          <span>Feature Tree</span>
+          <span>{isAssembly ? 'Assembly Tree' : 'Feature Tree'}</span>
         </div>
         {onClose && (
           <button className="icon-btn mobile-close-btn" onClick={onClose} title="Close tree">
@@ -194,6 +197,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
             <Box size={13} color="#38bdf8" />
           </div>
           <span className="tree-node-label" style={{ fontWeight: 600 }}>{documentName}</span>
+          {isAssembly && <span style={{ fontSize: 10, color: '#a78bfa', marginLeft: 'auto' }}>assembly</span>}
         </div>
 
         {/* Material Node */}
@@ -228,6 +232,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
         )}
 
         <div className="tree-divider" />
+
+        {(isAssembly || hasComponents) && <AssemblyTree filter={filterText} />}
 
         {/* Dynamic Feature List: one tab stop (the selected feature), arrows within */}
         <div role="tree" aria-label="Features" className="feature-tree-list">

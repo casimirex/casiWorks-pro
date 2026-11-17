@@ -21,6 +21,7 @@ import { feaReportHtml } from './report.ts';
 import { downloadBlob } from '../utils/download.ts';
 
 export default function ResultsViewer() {
+  const documentType = useCADStore(s => s.documentType);
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const documentRevision = useCADStore(s => s.documentRevision);
@@ -159,6 +160,9 @@ export default function ResultsViewer() {
   };
 
   const cancelSolve = () => solveRef.current?.cancel();
+
+  // Simulation runs on a part; an assembly document has no body of its own
+  if (documentType === 'assembly') return null;
 
   return (
     <>

@@ -22,6 +22,22 @@ export interface DocumentRecord {
   latestRevision: string | null;
   /** Where the document is in its lifecycle. */
   state: LifecycleState;
+  /** A part or an assembly (from its newest version). */
+  kind: 'part' | 'assembly';
+}
+
+/** An assembly that uses a part. */
+export interface WhereUsedRecord {
+  /** The assembly document. */
+  document: { id: string; name: string; headVersion: number; state: LifecycleState };
+  /** Versions of the assembly that contain the part (newest first). */
+  versions: number[];
+  /** True when the assembly's newest version uses it. */
+  current: boolean;
+  /** The part version the newest using version pins, or null when it follows the newest. */
+  pinnedVersion: number | null;
+  /** How many components in that version are this part. */
+  count: number;
 }
 
 /**
@@ -142,7 +158,34 @@ const SCHEMA = [
      from_state TEXT, to_state TEXT NOT NULL, version INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
    );
    CREATE INDEX lifecycle_events_document ON lifecycle_events(document_id, id);`,
+  // version 3: parts and assemblies, and which assembly versions use which library parts
+  `ALTER TABLE documents ADD COLUMN kind TEXT NOT NULL DEFAULT 'part';
+   CREATE TABLE part_references (
+     parent_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE, parent_version INTEGER NOT NULL,
+     child_id TEXT NOT NULL, child_version INTEGER, count INTEGER NOT NULL
+   );
+   CREATE INDEX part_references_child ON part_references(child_id);
+   CREATE INDEX part_references_parent ON part_references(parent_id, parent_version);`,
 ];
+
+/** What a project file says about itself: part or assembly, and the library parts its components use. */
+export function analyzeContent(content: string): { kind: 'part' | 'assembly'; references: Array<{ documentId: string; version: number | null; count: number }> } {
+  let p: { documentType?: string; features?: unknown[]; assemblyComponents?: Array<{ source?: { library?: { documentId?: unknown; version?: unknown } } }> };
+  try { p = JSON.parse(content); } catch { return { kind: 'part', references: [] }; }
+  const comps = Array.isArray(p.assemblyComponents) ? p.assemblyComponents : [];
+  const kind = p.documentType === 'assembly' || (p.documentType === undefined && comps.length > 0 && (!Array.isArray(p.features) || p.features.length === 0)) ? 'assembly' : 'part';
+  const refs = new Map<string, { documentId: string; version: number | null; count: number }>();
+  for (const c of comps) {
+    const lib = c?.source?.library;
+    if (!lib || typeof lib.documentId !== 'string') continue;
+    const version = Number.isInteger(lib.version) ? lib.version as number : null;
+    const key = `${lib.documentId}@${version ?? ''}`;
+    const r = refs.get(key) ?? { documentId: lib.documentId, version, count: 0 };
+    r.count++;
+    refs.set(key, r);
+  }
+  return { kind, references: [...refs.values()] };
+}
 
 type Row = Record<string, unknown>;
 
@@ -166,9 +209,29 @@ export class Library {
     for (let v = at; v < SCHEMA.length; v++) {
       this.transaction(() => {
         this.db.exec(SCHEMA[v]);
+        if (v === 2) this.backfillReferences();
         this.db.exec(`PRAGMA user_version = ${v + 1}`);
       });
     }
+  }
+
+  /** Version 3: read every saved version once for its kind and the parts it uses. */
+  private backfillReferences(): void {
+    const versions = this.db.prepare('SELECT v.document_id, v.number, v.sha256, d.head_version FROM versions v JOIN documents d ON d.id = v.document_id').all() as Row[];
+    for (const v of versions) {
+      let content: string;
+      try { content = readFileSync(join(this.dir, 'blobs', String(v.sha256)), 'utf8'); } catch { continue; }
+      this.recordContent(String(v.document_id), Number(v.number), content, Number(v.number) === Number(v.head_version));
+    }
+  }
+
+  /** Note a version's kind (when it is the newest) and the library parts it uses. */
+  private recordContent(documentId: string, version: number, content: string, isHead: boolean): void {
+    const { kind, references } = analyzeContent(content);
+    if (isHead) this.db.prepare('UPDATE documents SET kind = ? WHERE id = ?').run(kind, documentId);
+    this.db.prepare('DELETE FROM part_references WHERE parent_id = ? AND parent_version = ?').run(documentId, version);
+    const ins = this.db.prepare('INSERT INTO part_references (parent_id, parent_version, child_id, child_version, count) VALUES (?, ?, ?, ?, ?)');
+    for (const r of references) ins.run(documentId, version, r.documentId, r.version, r.count);
   }
 
   private transaction<T>(fn: () => T): T {
@@ -214,6 +277,7 @@ export class Library {
       id: String(r.id), name: String(r.name), createdAt: String(r.created_at), updatedAt: String(r.updated_at),
       headVersion: Number(r.head_version), latestRevision: (r.latest_revision as string | null) ?? null,
       state: String(r.state) as LifecycleState,
+      kind: r.kind === 'assembly' ? 'assembly' : 'part',
     };
   }
 
@@ -249,6 +313,7 @@ export class Library {
       this.db.prepare('INSERT INTO documents (id, name, created_at, updated_at, head_version) VALUES (?, ?, ?, ?, 1)').run(id, n, t, t);
       this.db.prepare('INSERT INTO versions (document_id, number, message, created_at, size, sha256) VALUES (?, 1, ?, ?, ?, ?)').run(id, String(message), t, size, sha);
       this.recordMove(id, null, 'draft', 1, 'Created', t);
+      this.recordContent(id, 1, c, true);
     });
     return { document: this.getDocument(id), version: this.getVersion(id, 1) };
   }
@@ -262,9 +327,14 @@ export class Library {
 
   deleteDocument(id: string): void {
     this.getDocument(id);
+    const users = this.whereUsed(id).filter(u => u.current);
+    if (users.length) {
+      throw new LibraryError(409, 'IN_USE', `Used by ${users.map(u => u.document.name).join(', ')}: remove it from ${users.length === 1 ? 'that assembly' : 'those assemblies'} first`);
+    }
     this.transaction(() => {
       this.db.prepare('DELETE FROM versions WHERE document_id = ?').run(id);
       this.db.prepare('DELETE FROM lifecycle_events WHERE document_id = ?').run(id);
+      this.db.prepare('DELETE FROM part_references WHERE parent_id = ?').run(id);
       this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
     });
     this.collectBlobs();
@@ -324,6 +394,7 @@ export class Library {
       const t = now();
       this.db.prepare('INSERT INTO versions (document_id, number, message, created_at, size, sha256) VALUES (?, ?, ?, ?, ?, ?)').run(documentId, head + 1, msg, t, size, sha);
       this.db.prepare(`UPDATE documents SET head_version = ?, updated_at = ?, state = 'draft' WHERE id = ?`).run(head + 1, t, documentId);
+      this.recordContent(documentId, head + 1, c, true);
       // Changing a released document starts work on its next revision
       if (state === 'released') this.recordMove(documentId, 'released', 'draft', head + 1, `Version ${head + 1} saved: work on the next revision`, t);
       return head + 1;
@@ -352,6 +423,31 @@ export class Library {
       }
       return this.getVersion(documentId, number);
     });
+  }
+
+  // ---------------------------------------------------------------- where used
+  /** The assemblies that use this part (any of their versions), the ones using it now first. */
+  whereUsed(partId: string): WhereUsedRecord[] {
+    this.getDocument(partId);
+    const rows = this.db.prepare(`SELECT r.parent_id, r.parent_version, r.child_version, r.count, d.name, d.head_version, d.state
+      FROM part_references r JOIN documents d ON d.id = r.parent_id WHERE r.child_id = ? ORDER BY r.parent_version DESC`).all(partId) as Row[];
+    const by = new Map<string, WhereUsedRecord>();
+    for (const r of rows) {
+      const id = String(r.parent_id);
+      let u = by.get(id);
+      if (!u) {
+        u = { document: { id, name: String(r.name), headVersion: Number(r.head_version), state: String(r.state) as LifecycleState }, versions: [], current: false, pinnedVersion: null, count: 0 };
+        by.set(id, u);
+      }
+      const pv = Number(r.parent_version);
+      if (!u.versions.includes(pv)) u.versions.push(pv);
+      if (pv === u.versions[0]) {
+        u.pinnedVersion = r.child_version === null ? null : Number(r.child_version);
+        u.count = Math.max(u.count, Number(r.count));
+      }
+      if (pv === u.document.headVersion) u.current = true;
+    }
+    return [...by.values()].sort((a, b) => Number(b.current) - Number(a.current) || a.document.name.localeCompare(b.document.name));
   }
 
   // ---------------------------------------------------------------- lifecycle

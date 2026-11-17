@@ -112,14 +112,14 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [x] **3.8** Configurations (design tables): named versions that override variable values. Tools ▸ Configs table, quick switcher on the ribbon, badge in the title bar; switching is an undo step; saved with the project; `configurations.*` commands and `api.configurations`
 - [x] **3.9** Measure tool (Evaluate ▸ Measure, key M: two picks on the model, corners snap; distance, dX/dY/dZ, angle between faces, gap between parallel faces; `api.model.measure` in API 1.6). Section view: the existing cross-section toggle; exact-geometry sections are not planned (mesh kernel)
 
-## Phase 4 — Assemblies
+## Phase 4 — Assemblies (complete)
 
-- [ ] **4.1** Multi-document workspace: parts and assemblies as separate documents
-- [ ] **4.2** Insert real part documents as components (with references, not copies)
-- [ ] **4.3** Mates picked on real faces/edges; under/over-defined feedback
+- [x] **4.1** Multi-document workspace: parts and assemblies as separate documents (document tabs, New part / New assembly; each keeps its unsaved changes and undo history; File ▸ Open and the library open beside the others; autosave keeps every open document; `api.workspace`, API 1.16)
+- [x] **4.2** Insert real part documents as components (with references, not copies) (Assembly ▸ Part…: open parts or library parts, newest or pinned version; an edited part updates the assembly with placements and mates kept, picked faces found again on the new shape; a cached copy in the assembly file is used only when the part cannot be reached, and says so)
+- [x] **4.3** Mates picked on real faces/edges; under/over-defined feedback (Mate tool: click two faces, flat or cylindrical, recognised from the mesh; suitable mates offered. Degrees of freedom from the mates' Jacobian: (f) / (-) / (+) in the tree with the free motions named, conflicting mates in red. Edges, cones and spheres are not recognised: the mesh kernel has no edges)
 - [x] **4.4** Interference detection (Assembly ▸ Interference: every pair at its assembled position, shared volume by solid intersection, shown in red with a results card that notices when the assembly changed; touching parts are not reported; `api.assembly.interference`, API 1.13)
 - [x] **4.5** Bill of materials (BOM button on the Assembly tab: identical parts grouped with quantities, exact masses, a material per component (picked in the BOM, shown in the viewport, saved with the project; unset follows the document material), CSV export; `assembly.bom` / `assembly.setMaterial` from scripts)
-- [ ] **4.6** Exploded views with steps; motion along mates
+- [x] **4.6** Exploded views with steps; motion along mates (explode steps: components, direction, distance, in order, played or scrubbed, saved; Motion panel drives a distance or angle mate and solves each frame; angle mates about an axis turn a full circle)
 
 ## Phase 5 — Drawings
 
@@ -148,7 +148,7 @@ The "experience platform" layer: data management and a server-side API.
 - [x] **7.5** Webhooks (document saved, revision released) — plus job finished; HMAC-signed, retried, every attempt logged
 - [ ] **7.6** Sharing, permissions, comments on models
 - [ ] **7.7** Real-time co-viewing; later, co-editing
-- [ ] **7.8** Lifecycle: check-in/out, release states, where-used — *release states done (local): Draft → In review → Released → Obsolete with history; in review/obsolete lock saving, saving a released document starts the next revision. Where-used waits for 4.2 (components that reference library parts); check-in/out is for several people*
+- [ ] **7.8** Lifecycle: check-in/out, release states, where-used — *release states done (local): Draft → In review → Released → Obsolete with history; in review/obsolete lock saving, saving a released document starts the next revision. where-used done with 4.2 (the library records the parts each assembly version uses: Library dialog *Used in*, `GET /documents/{id}/where-used`, a used part cannot be deleted); check-in/out is for several people*
 
 ## Phase 8 — Production readiness
 

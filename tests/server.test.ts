@@ -211,6 +211,65 @@ test('Lifecycle: draft, in review, released, obsolete; saves locked or reopening
   }
 });
 
+test('Where used: assemblies that use a library part, pinned or following; a used part cannot be deleted', async () => {
+  const s = await start();
+  try {
+    const part = await s.call('POST', '/documents', { name: 'Bracket', content: projectOf('l_bracket') });
+    const partId = part.data.document.id as string;
+    assert.equal(part.data.document.kind, 'part');
+    const assembly = (refs: Array<{ version: number | null }>) => JSON.stringify({
+      documentType: 'assembly', documentName: 'Frame', features: [], sketchEntities: {}, mates: [],
+      assemblyComponents: refs.map((r, i) => ({ id: `c${i}`, name: 'Bracket', source: { documentId: 'doc_x', name: 'Bracket', snapshot: '{}', fingerprint: 'f', library: { documentId: partId, version: r.version } } })),
+    });
+    const frame = await s.call('POST', '/documents', { name: 'Frame', content: assembly([{ version: null }, { version: null }]) });
+    const frameId = frame.data.document.id as string;
+    assert.equal(frame.data.document.kind, 'assembly');
+    // A second assembly pins version 1
+    await s.call('POST', '/documents', { name: 'Stand', content: assembly([{ version: 1 }]) });
+
+    let used = (await s.call('GET', `/documents/${partId}/where-used`)).data.usedBy as Array<{ document: { name: string }; current: boolean; pinnedVersion: number | null; count: number; versions: number[] }>;
+    assert.deepEqual(used.map(u => [u.document.name, u.current, u.pinnedVersion, u.count]), [['Frame', true, null, 2], ['Stand', true, 1, 1]]);
+
+    // A used part is not deleted
+    const refused = await s.call('DELETE', `/documents/${partId}`);
+    assert.equal(refused.status, 409);
+    assert.equal(refused.data.error.code, 'IN_USE');
+    assert.match(refused.data.error.message, /Frame, Stand/);
+
+    // Frame's newest version drops the part: it still shows, as used by an older version only
+    await s.call('POST', `/documents/${frameId}/versions`, { content: assembly([]) });
+    used = (await s.call('GET', `/documents/${partId}/where-used`)).data.usedBy;
+    assert.deepEqual(used.map(u => [u.document.name, u.current, u.versions]), [['Stand', true, [1]], ['Frame', false, [1]]]);
+    assert.equal((await s.call('GET', '/documents/nope/where-used')).status, 404);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('A version 2 library is upgraded: kinds and part references are read from the saved versions', async () => {
+  const s = await start();
+  const dir = s.dir;
+  let partId = '';
+  try {
+    partId = (await s.call('POST', '/documents', { name: 'Pin', content: projectOf('hex_bolt') })).data.document.id;
+    await s.call('POST', '/documents', { name: 'Kit', content: JSON.stringify({ documentType: 'assembly', features: [], assemblyComponents: [{ id: 'c', name: 'Pin', source: { library: { documentId: partId, version: null } } }] }) });
+  } finally {
+    await s.app.close();
+  }
+  // Turn it back into a version 2 database
+  const db = new DatabaseSync(join(dir, 'library.db'));
+  db.exec('DROP TABLE part_references; ALTER TABLE documents DROP COLUMN kind; PRAGMA user_version = 2;');
+  db.close();
+  const lib = new Library(dir);
+  try {
+    assert.deepEqual(lib.listDocuments().map(d => [d.name, d.kind]).sort(), [['Kit', 'assembly'], ['Pin', 'part']]);
+    assert.deepEqual(lib.whereUsed(partId).map(u => u.document.name), ['Kit']);
+  } finally {
+    lib.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('A version 1 library is upgraded: documents whose newest version is released start released', () => {
   const dir = mkdtempSync(join(tmpdir(), 'casiworks-migrate-'));
   try {

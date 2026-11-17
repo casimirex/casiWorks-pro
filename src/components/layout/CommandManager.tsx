@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d, Search, LibraryBig
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d, Search, LibraryBig, Package
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { RELATIONS } from '../../kernel/sketchSolve.ts';
@@ -51,11 +51,18 @@ export default function CommandManager() {
   const addinGroups = [...new Set(addinButtons.map(b => b.pluginId))].map(id => addinButtons.filter(b => b.pluginId === id));
   const [examplesOpen, setExamplesOpen] = useState(false);
   const drawingOptions = useCADStore(s => s.drawingOptions);
+  const documentType = useCADStore(s => s.documentType);
+  const hasComponents = useCADStore(s => s.assemblyComponents.length > 0);
+  const linkedParts = useCADStore(s => s.assemblyComponents.some(c => c.source));
 
+  // Parts have modelling tabs, assemblies the assembly tab (an older file holding both keeps both)
+  const isAssembly = documentType === 'assembly';
   const tabList = [
-    { id: 'Features', label: 'Features', icon: <Box size={14} /> },
-    { id: 'Sketch', label: 'Sketch', icon: <PenTool size={14} /> },
-    { id: 'Assembly', label: 'Assembly', icon: <Cpu size={14} /> },
+    ...(!isAssembly ? [
+      { id: 'Features', label: 'Features', icon: <Box size={14} /> },
+      { id: 'Sketch', label: 'Sketch', icon: <PenTool size={14} /> },
+    ] : []),
+    ...(isAssembly || hasComponents ? [{ id: 'Assembly', label: 'Assembly', icon: <Cpu size={14} /> }] : []),
     { id: 'Evaluate', label: 'Evaluate', icon: <Scale size={14} /> },
     { id: 'Drawing', label: 'Drawing', icon: <FileText size={14} /> },
     { id: 'Tools', label: 'Tools', icon: <Play size={14} /> },
@@ -653,6 +660,14 @@ export default function CommandManager() {
               <div className="tool-group">
                 <div className="tool-group-buttons">
                   <button
+                    className="ribbon-btn assembly-insert-part"
+                    onClick={() => runCommand('assembly.insertPartDialog')}
+                    title="Insert a part: an open part document or one from the library (the component follows the part)"
+                  >
+                    <Package size={19} color="#4ade80" />
+                    <span>Part…</span>
+                  </button>
+                  <button
                     className="ribbon-btn"
                     onClick={() => runCommand('assembly.insertPart', { name: 'Base_Plate', shape: 'box', dims: { width: 50, height: 12, depth: 50 } })}
                     title="Insert Base Mounting Plate"
@@ -691,6 +706,15 @@ export default function CommandManager() {
               {/* ASSEMBLY MATES */}
               <div className="tool-group">
                 <div className="tool-group-buttons">
+                  <button
+                    className={`ribbon-btn assembly-mate-tool ${activeTool === TOOLS.ASSEMBLY_MATE ? 'active' : ''}`}
+                    onClick={() => runCommand('assembly.mateTool')}
+                    title="Mate: pick a face on each of two components, then choose how they fit (Ctrl+Alt+M)"
+                    aria-pressed={activeTool === TOOLS.ASSEMBLY_MATE}
+                  >
+                    <Link2 size={19} color="#22d3ee" />
+                    <span>Mate</span>
+                  </button>
                   <button
                     className="ribbon-btn"
                     onClick={() => runCommand('assembly.mate', { type: 'coincident' })}
@@ -778,6 +802,24 @@ export default function CommandManager() {
                     <Move size={19} color="#38bdf8" />
                     <span>Explode</span>
                   </button>
+                  <button
+                    className="ribbon-btn assembly-motion"
+                    onClick={() => runCommand('assembly.motion')}
+                    title="Motion: move parts along their mates by driving a distance or angle mate"
+                  >
+                    <RotateCw size={19} color="#c084fc" />
+                    <span>Motion</span>
+                  </button>
+                  {linkedParts && (
+                    <button
+                      className="ribbon-btn assembly-update-parts"
+                      onClick={() => runCommand('assembly.updateReferences')}
+                      title="Update the part components from their open documents and the library"
+                    >
+                      <RefreshCw size={19} color="#4ade80" />
+                      <span>Update</span>
+                    </button>
+                  )}
                   <button
                     className="ribbon-btn"
                     onClick={() => runCommand('assembly.interference')}

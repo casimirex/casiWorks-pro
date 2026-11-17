@@ -13,7 +13,8 @@ export const LIFECYCLE_MOVES: Record<LifecycleState, LifecycleState[]> = {
   released: ['draft', 'obsolete'],
   obsolete: ['draft'],
 };
-export interface LibraryDocument { id: string; name: string; createdAt: string; updatedAt: string; headVersion: number; latestRevision: string | null; state: LifecycleState }
+export interface LibraryDocument { id: string; name: string; createdAt: string; updatedAt: string; headVersion: number; latestRevision: string | null; state: LifecycleState; kind: 'part' | 'assembly' }
+export interface WhereUsed { document: { id: string; name: string; headVersion: number; state: LifecycleState }; versions: number[]; current: boolean; pinnedVersion: number | null; count: number }
 export interface LifecycleEvent { id: number; documentId: string; from: LifecycleState | null; to: LifecycleState; version: number; note: string; createdAt: string }
 export interface LibraryVersion { documentId: string; number: number; message: string; createdAt: string; size: number; sha256: string; revision: string | null; releasedAt: string | null }
 
@@ -112,6 +113,10 @@ export const library = {
   },
   release(documentId: string, version: number) {
     return call<LibraryVersion>('POST', `/documents/${encodeURIComponent(documentId)}/versions/${version}/release`);
+  },
+  /** The assemblies that use a part. */
+  async whereUsed(documentId: string): Promise<WhereUsed[]> {
+    return (await call<{ usedBy: WhereUsed[] }>('GET', `/documents/${encodeURIComponent(documentId)}/where-used`)).usedBy;
   },
   /** The lifecycle history, newest first. */
   async lifecycle(documentId: string): Promise<LifecycleEvent[]> {
