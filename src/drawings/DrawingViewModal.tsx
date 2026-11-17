@@ -1,5 +1,5 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { X, Download, Eye, FileText, Check } from 'lucide-react';
 import { drawingEngine } from './DrawingEngine.ts';
 import { buildDrawingSheet, visibleSheet } from './drawingSheet.ts';
@@ -7,6 +7,7 @@ import type { DrawingFormat } from './drawingSheet.ts';
 import { useCADStore } from '../store/cadStore.ts';
 import type { DrawingSheetSize } from '../store/cadStore.ts';
 import { commands } from '../commands/index.ts';
+import { useDialog } from '../components/common/useDialog.ts';
 
 interface DrawingViewModalProps {
   isOpen: boolean;
@@ -33,7 +34,10 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
     };
   }, []);
 
-  // Keyboard accessibility: Escape closes modal
+  // A modal dialog: focus moves in and stays in, Escape closes, focus returns after
+  const close = useCallback(() => onClose?.(), [onClose]);
+  const dialog = useDialog(isOpen, close, '2D Engineering Drawing Sheet');
+  // Escape also closes when focus is outside the sheet (e.g. on the page body)
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -80,7 +84,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
       display: 'flex',
       flexDirection: 'column',
       backdropFilter: 'blur(8px)',
-    }}>
+    }} {...dialog}>
       {/* Top Header Bar */}
       <div style={{
         height: 48,

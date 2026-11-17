@@ -283,6 +283,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Mesh Element:</span>
             <select
+              aria-label="Mesh Element"
               value={elementType}
               onChange={(e) => setElementType(e.target.value as ElementType)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
@@ -295,6 +296,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Analysis:</span>
             <select
+              aria-label="Analysis"
               className="fea-analysis"
               value={analysis}
               onChange={(e) => setAnalysis(e.target.value as 'static' | 'modal')}
@@ -308,6 +310,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Mesh Size:</span>
             <select
+              aria-label="Mesh Size"
               className="fea-mesh-quality"
               value={quality}
               onChange={(e) => setQuality(e.target.value as MeshQuality)}
@@ -323,6 +326,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Fixed Face:</span>
             <select
+              aria-label="Fixed Face"
               className="fea-fixed-face"
               value={setup.fixedFace}
               onChange={(e) => setSetup({ ...setup, fixedFace: e.target.value as BoxPlane })}
@@ -335,6 +339,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Load On:</span>
             <select
+              aria-label="Load On"
               className="fea-load-face"
               value={setup.loadFace}
               onChange={(e) => setSetup({ ...setup, loadFace: e.target.value as BoxPlane })}
@@ -346,6 +351,7 @@ export default function ResultsViewer() {
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Load Direction:</span>
             <select
+              aria-label="Load Direction"
               className="fea-load-direction"
               value={setup.loadDirection}
               onChange={(e) => setSetup({ ...setup, loadDirection: e.target.value as Direction })}
@@ -360,6 +366,7 @@ export default function ResultsViewer() {
             <span>Applied Force:</span>
             <div>
               <input
+                aria-label="Applied Force"
                 type="number"
                 value={load}
                 onChange={(e) => setLoad(parseFloat(e.target.value) || 0)}
@@ -438,7 +445,7 @@ export default function ResultsViewer() {
                 <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
                   <input type="checkbox" className="fea-show-plot" checked={showPlot} onChange={(e) => setShowPlot(e.target.checked)} /> Show on model
                 </label>
-                <select className="fea-quantity" value={quantity} onChange={(e) => setQuantity(e.target.value as PlotQuantity)} disabled={!showPlot}
+                <select className="fea-quantity" aria-label="Plotted quantity" value={quantity} onChange={(e) => setQuantity(e.target.value as PlotQuantity)} disabled={!showPlot}
                   style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '1px 3px', fontSize: 10 }}>
                   <option value="vonMises">von Mises stress</option>
                   <option value="displacement">Displacement</option>

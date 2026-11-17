@@ -5,6 +5,7 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../../kernel/GeometryEngine.ts';
 import { featureFrame, massPropertiesIn } from '../../features/coordinateSystems.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 /** Two decimals, without a minus sign on zero. */
 const mm = (v: number) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
@@ -36,17 +37,18 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
     return mp && frame ? massPropertiesIn(mp, frame) : mp;
   }, [bodies, matData, frame]);
 
+  const dialog = useDialog(isOpen, onClose, 'Mass Properties');
   if (!isOpen) return null;
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box" style={{ width: 520 }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Scale size={16} color="#4fc3f7" />
             <span>Mass Properties: {matData.name}</span>
           </div>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="dialog-body">

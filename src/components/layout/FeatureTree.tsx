@@ -57,6 +57,39 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
     }
   };
 
+  /** Keyboard in the tree: arrows move, Enter edits, Delete deletes, S suppresses, R rolls back to here. */
+  const handleItemKey = (e: React.KeyboardEvent<HTMLDivElement>, feat: Feature, index: number) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const items = [...(e.currentTarget.closest('[role="tree"]')?.querySelectorAll<HTMLElement>('.feature-item') ?? [])];
+    const at = items.indexOf(e.currentTarget);
+    const go = (i: number) => {
+      const el = items[Math.max(0, Math.min(items.length - 1, i))];
+      if (el) { el.focus(); el.click(); }
+    };
+    switch (e.key) {
+      case 'ArrowDown': go(at + 1); break;
+      case 'ArrowUp': go(at - 1); break;
+      case 'Home': go(0); break;
+      case 'End': go(items.length - 1); break;
+      case 'Enter': handleDoubleClick(feat, index); break;
+      case 'Delete': {
+        const tree = e.currentTarget.closest('[role="tree"]');
+        runCommand('feature.remove', { id: feat.id });
+        // Keep the keyboard in the tree: the item now in this place (or the last)
+        requestAnimationFrame(() => {
+          const left = [...(tree?.querySelectorAll<HTMLElement>('.feature-item') ?? [])];
+          left[Math.min(at, left.length - 1)]?.focus();
+        });
+        break;
+      }
+      case 's': case 'S': runCommand('feature.setSuppressed', { id: feat.id, suppressed: !feat.suppressed }); break;
+      case 'r': case 'R': setRollbackIndex(index === features.length - 1 ? -1 : index); break;
+      default: return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   const handleDoubleClick = (feat: Feature, index: number) => {
     // Edit-in-context: ensure rollback bar allows editing this feature without desync
     if (rollbackIndex >= 0 && index > rollbackIndex) {
@@ -108,12 +141,17 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
   const filteredFeatures = features
     .map((feat, index) => ({ feat, index }))
     .filter(({ feat }) => !filterText || (feat.name || feat.type).toLowerCase().includes(filterText.toLowerCase()));
+  // The one feature Tab reaches: the selected one when shown, else the first
+  const tabStop = filteredFeatures.some(f => f.index === activeFeatureIndex) ? activeFeatureIndex : filteredFeatures[0]?.index;
 
   const planeNode = (plane: 'Front' | 'Top' | 'Right', label: string, color: string) => (
     <div
       className="tree-node-item plane-node"
       onDoubleClick={() => { if (!isSketchActive) runCommand('sketch.new', { plane }); }}
-      title={`Double-click to sketch on the ${plane} plane`}
+      title={`Double-click (or Enter) to sketch on the ${plane} plane`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' && !isSketchActive) { e.preventDefault(); runCommand('sketch.new', { plane }); } }}
       style={{ cursor: 'pointer' }}
     >
       <Globe size={12} color={color} />
@@ -159,7 +197,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
         </div>
 
         {/* Material Node */}
-        <div className="tree-node-item" onClick={onMaterialClick} title="Click to assign material">
+        <div className="tree-node-item" onClick={onMaterialClick} title="Click to assign material" role="button" tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onMaterialClick(); } }}>
           <div className="tree-icon-badge" style={{ background: 'rgba(192, 132, 252, 0.15)' }}>
             <Sliders size={13} color="#c084fc" />
           </div>
@@ -167,7 +206,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
         </div>
 
         {/* Origin / Reference planes Folder */}
-        <div className="tree-node-item folder-node" onClick={() => setOriginExpanded(!originExpanded)}>
+        <div className="tree-node-item folder-node" onClick={() => setOriginExpanded(!originExpanded)} role="button" tabIndex={0} aria-expanded={originExpanded}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOriginExpanded(!originExpanded); } }}>
           {originExpanded ? <ChevronDown size={14} color="#94a3b8" /> : <ChevronRight size={14} color="#94a3b8" />}
           <div className="tree-icon-badge" style={{ background: 'rgba(251, 191, 36, 0.15)' }}>
             <Folder size={13} color="#fbbf24" />
@@ -189,7 +229,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
 
         <div className="tree-divider" />
 
-        {/* Dynamic Feature List */}
+        {/* Dynamic Feature List: one tab stop (the selected feature), arrows within */}
+        <div role="tree" aria-label="Features" className="feature-tree-list">
         {filteredFeatures.map(({ feat, index }) => {
           const badge = getFeatureBadge(feat.type);
           const isSelected = activeFeatureIndex === index;
@@ -201,6 +242,11 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
             <React.Fragment key={feat.id}>
               <div
                 className={`tree-node-item feature-item ${isSelected ? 'selected' : ''} ${rolledBack ? 'rolled-back' : ''}`}
+                role="treeitem"
+                aria-selected={isSelected}
+                aria-keyshortcuts="Enter Delete S R"
+                tabIndex={index === tabStop ? 0 : -1}
+                onKeyDown={(e) => handleItemKey(e, feat, index)}
                 onClick={() => setActiveFeature(index)}
                 onDoubleClick={() => handleDoubleClick(feat, index)}
                 style={{
@@ -250,6 +296,8 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                       setRollbackIndex(index === features.length - 1 ? -1 : index);
                     }}
                     title="Roll to Here"
+                    aria-label="Roll to here"
+                    tabIndex={-1}
                   >
                     <ArrowDownToLine size={12} color="#fbbf24" />
                   </button>
@@ -262,6 +310,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                       runCommand('feature.setSuppressed', { id: feat.id, suppressed: !feat.suppressed });
                     }}
                     title={feat.suppressed ? 'Unsuppress Feature' : 'Suppress Feature'}
+                    tabIndex={-1}
                   >
                     <Ban size={12} color={feat.suppressed ? '#4ade80' : '#f87171'} />
                   </button>
@@ -274,6 +323,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
                       runCommand('feature.remove', { id: feat.id });
                     }}
                     title="Delete Feature"
+                    tabIndex={-1}
                   >
                     <Trash2 size={12} color="#f87171" />
                   </button>
@@ -322,6 +372,7 @@ export default function FeatureTree({ onMaterialClick, isOpen, onClose }: Featur
             </React.Fragment>
           );
         })}
+        </div>
 
         {/* Rollback Bar at very end when not rolled back */}
         {(rollbackIndex === -1 || rollbackIndex >= features.length - 1) && features.length > 0 && (

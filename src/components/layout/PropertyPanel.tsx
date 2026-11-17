@@ -243,6 +243,9 @@ export default function PropertyPanel() {
   if (!propertyPanelOpen || !propertyPanelContent) return null;
 
   const featureType = propertyPanelContent.type;
+  // What the panel is for, as its title and its name for screen readers
+  const typeLabel = featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const panelTitle = propertyPanelContent.isEditing && propertyPanelContent.name ? `Edit ${propertyPanelContent.name}` : typeLabel;
 
   /** The parameters of the feature type being edited (and only those). */
   const featureParameters = (): Record<string, unknown> => {
@@ -309,7 +312,7 @@ export default function PropertyPanel() {
   const axisSelect = (value: AxisName, onChange: (a: AxisName) => void, label: string) => (
     <div className="property-row">
       <span className="property-label">{label}</span>
-      <select className="property-select" style={{ width: 90 }} value={value} onChange={(e) => onChange(e.target.value as AxisName)}>
+      <select aria-label={label} className="property-select" style={{ width: 90 }} value={value} onChange={(e) => onChange(e.target.value as AxisName)}>
         {AXIS_NAMES.map(a => <option key={a} value={a}>{a}</option>)}
       </select>
     </div>
@@ -366,14 +369,14 @@ export default function PropertyPanel() {
   };
 
   return (
-    <aside className="property-panel">
+    <aside className="property-panel" aria-label={panelTitle}>
       {/* Header with OK and Cancel actions */}
       <div className="property-actions-header">
         <button className="action-btn-green" onClick={handleApply} title="Apply & Close (Enter)">
           <Check size={16} strokeWidth={2.5} /> <span>OK</span>
         </button>
-        <div className="property-header-title">
-          <span>Properties</span>
+        <div className="property-header-title" title={panelTitle}>
+          <span className="property-panel-title">{panelTitle}</span>
         </div>
         <button className="action-btn-red" onClick={handleCancel} title="Cancel (Esc)">
           <X size={16} strokeWidth={2.5} /> <span>Cancel</span>
@@ -393,7 +396,7 @@ export default function PropertyPanel() {
             <div className="property-card-header">Assembly Mate Configuration</div>
             <div className="property-card-body">
               <label className="property-label">Mate Type</label>
-              <select className="property-select" value={mateType} onChange={(e) => setMateType(e.target.value as MateType)}>
+              <select aria-label="Mate type" className="property-select" value={mateType} onChange={(e) => setMateType(e.target.value as MateType)}>
                 <option value="coincident">Coincident (Contact Align)</option>
                 <option value="distance">Distance Offset</option>
                 <option value="concentric">Concentric (Axis Align)</option>
@@ -405,14 +408,14 @@ export default function PropertyPanel() {
               </select>
 
               <label className="property-label" style={{ marginTop: 8 }}>Component 1</label>
-              <select className="property-select" value={comp1Id} onChange={(e) => setComp1Id(e.target.value)}>
+              <select aria-label="Component 1" className="property-select" value={comp1Id} onChange={(e) => setComp1Id(e.target.value)}>
                 {assemblyComponents.map(c => (
                   <option key={c.id} value={c.id}>{c.name} {c.isFixed ? '(Fixed)' : ''}</option>
                 ))}
               </select>
 
               <label className="property-label" style={{ marginTop: 8 }}>Reference 1</label>
-              <select className="property-select" value={ref1} onChange={(e) => setRef1(e.target.value)}>
+              <select aria-label="Reference 1" className="property-select" value={ref1} onChange={(e) => setRef1(e.target.value)}>
                 <option value="top">Top Face</option>
                 <option value="bottom">Bottom Face</option>
                 <option value="front">Front Face</option>
@@ -424,14 +427,14 @@ export default function PropertyPanel() {
               </select>
 
               <label className="property-label" style={{ marginTop: 8 }}>Component 2</label>
-              <select className="property-select" value={comp2Id} onChange={(e) => setComp2Id(e.target.value)}>
+              <select aria-label="Component 2" className="property-select" value={comp2Id} onChange={(e) => setComp2Id(e.target.value)}>
                 {assemblyComponents.map(c => (
                   <option key={c.id} value={c.id}>{c.name} {c.isFixed ? '(Fixed)' : ''}</option>
                 ))}
               </select>
 
               <label className="property-label" style={{ marginTop: 8 }}>Reference 2</label>
-              <select className="property-select" value={ref2} onChange={(e) => setRef2(e.target.value)}>
+              <select aria-label="Reference 2" className="property-select" value={ref2} onChange={(e) => setRef2(e.target.value)}>
                 <option value="bottom">Bottom Face</option>
                 <option value="top">Top Face</option>
                 <option value="front">Front Face</option>
@@ -474,7 +477,7 @@ export default function PropertyPanel() {
               <div className="property-row switch-row">
                 <span className="property-label">Leader Lines</span>
                 <label className="custom-switch">
-                  <input type="checkbox" className="explode-leaders" checked={explodeLeaders} onChange={(e) => setExplodeLeaders(e.target.checked)} />
+                  <input aria-label="Leader Lines" type="checkbox" className="explode-leaders" checked={explodeLeaders} onChange={(e) => setExplodeLeaders(e.target.checked)} />
                   <span className="slider round" />
                 </label>
               </div>
@@ -508,7 +511,7 @@ export default function PropertyPanel() {
             <div className="property-card-header">Profile & Sketch</div>
             <div className="property-card-body">
               <label className="property-label">Selected Sketch Profile</label>
-              <select
+              <select aria-label="Profile & Sketch"
                 className="property-select"
                 value={selectedSketchId}
                 onChange={(e) => setSelectedSketchId(e.target.value)}
@@ -564,7 +567,7 @@ export default function PropertyPanel() {
                 <div className="property-row switch-row">
                   <span className="property-label">Reverse Extrude Direction</span>
                   <label className="custom-switch">
-                    <input type="checkbox" checked={flipDir} onChange={(e) => setFlipDir(e.target.checked)} />
+                    <input aria-label="Reverse Extrude Direction" type="checkbox" checked={flipDir} onChange={(e) => setFlipDir(e.target.checked)} />
                     <span className="slider round" />
                   </label>
                 </div>
@@ -576,7 +579,7 @@ export default function PropertyPanel() {
               <div className="property-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>Thin Feature</span>
                 <label className="custom-switch" style={{ width: 34, height: 18 }}>
-                  <input type="checkbox" checked={thin} onChange={(e) => setThin(e.target.checked)} />
+                  <input type="checkbox" aria-label="Thin feature" checked={thin} onChange={(e) => setThin(e.target.checked)} />
                   <span className="slider round" />
                 </label>
               </div>
@@ -603,7 +606,7 @@ export default function PropertyPanel() {
               </div>
               <div className="property-row">
                 <span className="property-label">Axis:</span>
-                <select className="property-select revolve-axis" style={{ width: 150 }} value={revolveAxis} onChange={(e) => setRevolveAxis(e.target.value)}>
+                <select aria-label="Axis" className="property-select revolve-axis" style={{ width: 150 }} value={revolveAxis} onChange={(e) => setRevolveAxis(e.target.value)}>
                   <option value="y">Sketch vertical (Y)</option>
                   <option value="x">Sketch horizontal (X)</option>
                   {(sketchEntitiesMap[selectedSketchId] ?? [])
@@ -629,13 +632,13 @@ export default function PropertyPanel() {
                 <>
                   <div className="property-row">
                     <span className="property-label">Parallel to:</span>
-                    <select className="property-select ref-direction" style={{ width: 110 }} value={refDirection} onChange={(e) => setRefDirection(e.target.value as 'X' | 'Y' | 'Z')}>
+                    <select aria-label="Parallel to" className="property-select ref-direction" style={{ width: 110 }} value={refDirection} onChange={(e) => setRefDirection(e.target.value as 'X' | 'Y' | 'Z')}>
                       {(['X', 'Y', 'Z'] as const).map(d => <option key={d} value={d}>Model {d}</option>)}
                     </select>
                   </div>
                   <div className="property-row">
                     <span className="property-label">Through:</span>
-                    <select className="property-select ref-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
+                    <select aria-label="Through" className="property-select ref-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
                       <option value="">This point</option>
                       {features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT && !f.suppressed).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
@@ -663,7 +666,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Origin at:</span>
-                <select className="property-select cs-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
+                <select aria-label="Origin at" className="property-select cs-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
                   <option value="">This point</option>
                   {features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT && !f.suppressed).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
@@ -733,13 +736,13 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Hole Type:</span>
-                <select className="property-select hole-type" style={{ width: 130 }} value={holeType} onChange={(e) => setHoleType(e.target.value as typeof holeType)}>
+                <select aria-label="Hole Type" className="property-select hole-type" style={{ width: 130 }} value={holeType} onChange={(e) => setHoleType(e.target.value as typeof holeType)}>
                   {HOLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
               <div className="property-row">
                 <span className="property-label">Standard:</span>
-                <select className="property-select hole-size" style={{ width: 130 }} value={holeSize} onChange={(e) => setHoleSize(e.target.value as MetricSize | '')}>
+                <select aria-label="Standard" className="property-select hole-size" style={{ width: 130 }} value={holeSize} onChange={(e) => setHoleSize(e.target.value as MetricSize | '')}>
                   <option value="">Custom sizes</option>
                   {METRIC_SIZES.map(sz => <option key={sz} value={sz}>ISO metric {sz}</option>)}
                 </select>
@@ -747,7 +750,7 @@ export default function PropertyPanel() {
               {holeSize && holeType !== 'tapped' && (
                 <div className="property-row">
                   <span className="property-label">Fit:</span>
-                  <select className="property-select hole-fit" style={{ width: 130 }} value={holeFit} onChange={(e) => setHoleFit(e.target.value as ClearanceFit)}>
+                  <select aria-label="Fit" className="property-select hole-fit" style={{ width: 130 }} value={holeFit} onChange={(e) => setHoleFit(e.target.value as ClearanceFit)}>
                     {CLEARANCE_FITS.map(fit => <option key={fit} value={fit}>{fit[0].toUpperCase() + fit.slice(1)} clearance</option>)}
                   </select>
                 </div>
@@ -849,7 +852,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">From plane:</span>
-                <select className="property-select ref-base" style={{ width: 110 }} value={refBase} onChange={(e) => setRefBase(e.target.value as SketchPlane)}>
+                <select aria-label="From plane" className="property-select ref-base" style={{ width: 110 }} value={refBase} onChange={(e) => setRefBase(e.target.value as SketchPlane)}>
                   {(['Front', 'Top', 'Right'] as const).map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
@@ -874,7 +877,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Mirror Plane:</span>
-                <select className="property-select" style={{ width: 110 }} value={mirrorPlane} onChange={(e) => setMirrorPlane(e.target.value as SketchPlane)}>
+                <select aria-label="Mirror Plane" className="property-select" style={{ width: 110 }} value={mirrorPlane} onChange={(e) => setMirrorPlane(e.target.value as SketchPlane)}>
                   <option value="Front">Front (XY)</option>
                   <option value="Top">Top (XZ)</option>
                   <option value="Right">Right (YZ)</option>

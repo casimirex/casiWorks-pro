@@ -4,6 +4,7 @@ import { X, Check, Sliders } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { runCommand } from '../../commands/index.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export default function MaterialDialog({ isOpen, onClose }: DialogProps) {
     if (isOpen) setSelectedKey(activeMaterial);
   }, [isOpen, activeMaterial]);
 
+  const dialog = useDialog(isOpen, onClose, 'Material Selection');
   if (!isOpen) return null;
 
   const allMaterials = materialLibrary.getAllMaterials();
@@ -38,13 +40,13 @@ export default function MaterialDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box" style={{ width: 560 }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Sliders size={16} color="#ba68c8" />
             <span>Material Selection</span>
           </div>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="dialog-body">

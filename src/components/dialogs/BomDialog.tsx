@@ -5,6 +5,7 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { MATERIALS } from '../../utils/constants.ts';
 import { buildBom } from '../../assembly/bom.ts';
 import { runCommand } from '../../commands/index.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export default function BomDialog({ isOpen, onClose }: DialogProps) {
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const bom = useMemo(() => buildBom(components, activeMaterial), [components, activeMaterial]);
 
+  const dialog = useDialog(isOpen, onClose, 'Bill of Materials');
   if (!isOpen) return null;
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid #333', whiteSpace: 'nowrap' };
@@ -26,7 +28,7 @@ export default function BomDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box bom-dialog" style={{ width: 720, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box bom-dialog" style={{ width: 720, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <FileText size={16} color="#fbbf24" />

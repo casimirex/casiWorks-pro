@@ -115,6 +115,31 @@ export class Page {
     await sleep(250);
   }
 
+  /**
+   * Press a key as the keyboard would (default actions included: Tab moves focus,
+   * Enter submits). Named keys: Tab, Enter, Escape, ArrowUp/Down/Left/Right, Home,
+   * End, Delete, F1; or a single character.
+   */
+  async key(key: string, mods: { shift?: boolean; ctrl?: boolean; alt?: boolean } = {}): Promise<void> {
+    const named: Record<string, [string, number]> = {
+      Tab: ['Tab', 9], Enter: ['Enter', 13], Escape: ['Escape', 27], ArrowLeft: ['ArrowLeft', 37], ArrowUp: ['ArrowUp', 38],
+      ArrowRight: ['ArrowRight', 39], ArrowDown: ['ArrowDown', 40], Home: ['Home', 36], End: ['End', 35], Delete: ['Delete', 46], F1: ['F1', 112],
+    };
+    const modifiers = (mods.alt ? 1 : 0) | (mods.ctrl ? 2 : 0) | (mods.shift ? 8 : 0);
+    const [code, keyCode] = named[key] ?? [/[a-z]/i.test(key) ? `Key${key.toUpperCase()}` : key, key.toUpperCase().charCodeAt(0)];
+    const text = !named[key] && !mods.ctrl && !mods.alt ? key : key === 'Enter' ? '\r' : undefined;
+    const base = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode, modifiers };
+    await this.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text ? { text, unmodifiedText: text } : {}) });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+    await sleep(60);
+  }
+
+  /** Type text into whatever has focus. */
+  async type(text: string): Promise<void> {
+    await this.send('Input.insertText', { text });
+    await sleep(100);
+  }
+
   async screenshot(name: string): Promise<void> {
     const { dir, format } = this.options.shots;
     const r = await this.send('Page.captureScreenshot', format === 'webp' ? { format, quality: 82 } : { format });

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { X, Download } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { exportEngine } from '../../kernel/ExportEngine.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export default function ExportDialog({ isOpen, onClose }: DialogProps) {
 
   const [format, setFormat] = useState('stl_binary');
 
+  const dialog = useDialog(isOpen, onClose, 'Export CAD Model');
   if (!isOpen) return null;
 
   const handleExport = () => {
@@ -54,13 +56,13 @@ export default function ExportDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box" onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Download size={16} color="#4fc3f7" />
             <span>Export CAD Model</span>
           </div>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="dialog-body">

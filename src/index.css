@@ -554,6 +554,13 @@ body, html, #root {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 6px;
 }
 
 .action-btn-green {
@@ -1333,3 +1340,28 @@ input:checked + .slider:before {
 .sketch-solve-over, .sketch-solve-failed { color: #f87171; border-color: #b91c1c; }
 
 .dim-prompt-hint { color: #94a3b8; font-size: 10px; }
+
+/* ------------------------------------------------------------------ keyboard focus
+   A clear ring wherever the keyboard is (mouse clicks do not show it). */
+:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+.tree-search-bar:focus-within {
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+.feature-item:focus-visible,
+.tab-btn:focus-visible,
+.ribbon-btn:focus-visible {
+  outline-offset: -2px;
+}
+.viewport-container:focus-visible {
+  outline-offset: -3px;
+}
+/* Shown only to screen readers */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}

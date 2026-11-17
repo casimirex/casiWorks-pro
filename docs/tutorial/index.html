@@ -1074,9 +1074,22 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><kbd>Esc</kbd></td><td>Cancel the current tool</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Front, Back, Left, Right, Top, Bottom</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>`</kbd></td><td>Scripting console</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> · <kbd>Space</kbd></td><td>Isometric</td></tr>
     <tr><td><kbd>S</kbd></td><td>Spline (in a sketch)</td><td><kbd>T</kbd></td><td>Trim (in a sketch)</td></tr>
-    <tr><td><kbd>M</kbd></td><td>Measure</td><td></td><td></td></tr>
+    <tr><td><kbd>M</kbd></td><td>Measure</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> · <kbd>F1</kbd></td><td>Command palette</td></tr>
   </table></div>
   <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
+  <h3>Working without a mouse</h3>
+  <p>Everything except drawing sketch geometry by hand can be done from the keyboard (sketches can be written in the scripting console instead). A blue ring shows where the keyboard is.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Where</th><th>Keys</th><th>What they do</th></tr>
+    <tr><td>Anywhere</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>F1</kbd></td><td>Command palette: type part of a command's name, <kbd>↑</kbd> <kbd>↓</kbd> to choose, <kbd>Enter</kbd> to run. A command that needs input says what it takes.</td></tr>
+    <tr><td>Ribbon tabs</td><td><kbd>←</kbd> <kbd>→</kbd> · <kbd>Home</kbd> <kbd>End</kbd></td><td>Move between the tabs (Features, Sketch, Assembly…); <kbd>Tab</kbd> then goes into the tab's buttons.</td></tr>
+    <tr><td>Feature tree</td><td><kbd>↑</kbd> <kbd>↓</kbd> · <kbd>Home</kbd> <kbd>End</kbd></td><td>Move through the features (one <kbd>Tab</kbd> stop: the selected feature).</td></tr>
+    <tr><td></td><td><kbd>Enter</kbd> · <kbd>Delete</kbd> · <kbd>S</kbd> · <kbd>R</kbd></td><td>Edit the feature · delete it · suppress or unsuppress it · roll back to it.</td></tr>
+    <tr><td>3D view (Tab to it)</td><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Turn the model 15° at a time.</td></tr>
+    <tr><td></td><td><kbd>Shift</kbd>+arrows · <kbd>+</kbd> <kbd>−</kbd> · <kbd>Home</kbd></td><td>Pan · zoom · back to the isometric view.</td></tr>
+    <tr><td>Dialogs</td><td><kbd>Tab</kbd> · <kbd>Esc</kbd></td><td>Focus moves into a dialog when it opens and stays there; <kbd>Esc</kbd> closes it and returns you where you were.</td></tr>
+  </table></div>
+  <p>Every button, field and list is named for screen readers, dialogs are announced as dialogs, and the property panel is named after what it edits (e.g. <i>Edit Boss-Extrude1</i>).</p>
 </section>
 
 <section class="chapter" id="limits" data-title="B · Current limits" data-part="ref" data-n="B">

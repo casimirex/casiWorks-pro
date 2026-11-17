@@ -8,6 +8,7 @@
 // one the test is skipped (exit 0) so it never blocks machines without Chrome.
 import { existsSync } from 'node:fs';
 import { findChrome, sleep, waitFor, withApp } from './browser.ts';
+import { AUDIT } from './a11yAudit.ts';
 import type { Page } from './browser.ts';
 
 const OUT = 'e2e-output';
@@ -763,6 +764,112 @@ const CHECKS: Check[] = [
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
       await p.click('Features', 1500);
       return `side by side: none; mated: ${rows[0]} (32-gon pin × 12 mm plate = ${(pinArea * 12).toFixed(1)} mm³)`;
+    },
+  },
+  {
+    name: 'keyboard only: palette, dialogs keep focus, tree, ribbon tabs, view; every control is named',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await sleep(1500);
+      await p.click('Features');
+      await p.eval(`document.activeElement?.blur()`);
+      const focused = () => p.eval<string>(`(() => { const a = document.activeElement; return a ? (a.className || a.tagName) + '' : ''; })()`);
+      const inDialog = () => p.eval<string>(`document.activeElement?.closest('[role=dialog]')?.getAttribute('aria-label') ?? ''`);
+
+      // Command palette: Ctrl+K, type, Enter runs the command; the dialog takes focus
+      await p.key('k', { ctrl: true });
+      await sleep(300);
+      const paletteFocus = await focused();
+      await p.type('mass prop');
+      await p.key('Enter');
+      await sleep(400);
+      const massDialog = await inDialog();
+      // Tab and Shift+Tab stay inside the dialog
+      let escaped = '';
+      for (let i = 0; i < 12; i++) {
+        await p.key('Tab', { shift: i % 3 === 2 });
+        if (await inDialog() !== 'Mass Properties') { escaped = await focused(); break; }
+      }
+      await p.key('Escape');
+      await sleep(300);
+      const closed = !(await p.eval<boolean>(`!!document.querySelector('[role=dialog]')`));
+      // A command that needs input says so in the palette
+      await p.key('F1');
+      await sleep(300);
+      await p.type('load example');
+      await p.key('Enter');
+      await sleep(300);
+      const paletteError = await p.eval<string>(`document.querySelector('.command-palette-error')?.textContent ?? ''`);
+      await p.key('Escape');
+      await sleep(200);
+
+      // Feature tree: one tab stop; arrows move, S suppresses, Enter edits
+      await p.eval(`document.querySelector('.feature-item[tabindex="0"]').focus()`);
+      const label = () => p.eval<string>(`document.activeElement.querySelector('.tree-node-label').firstChild.textContent`);
+      await p.key('Home');
+      await p.key('ArrowDown');
+      const second = await label();
+      // S on the last feature (nothing depends on it, so a second S restores the model exactly)
+      await p.key('End');
+      const current = await label();
+      const isSuppressed = () => p.eval<boolean>(`window.casiworks.features.list().at(-1).suppressed`);
+      await p.key('s');
+      await sleep(300);
+      const suppressed = await isSuppressed();
+      await p.key('s');
+      await sleep(300);
+      const restored = !(await isSuppressed());
+      await p.key('Enter');
+      await sleep(400);
+      const panel = await p.eval<string>(`document.querySelector('.property-panel-title')?.textContent ?? ''`);
+      await p.eval(`document.querySelector('.action-btn-red')?.click()`);
+      await sleep(200);
+
+      // Ribbon tabs: arrows move between them
+      await p.eval(`document.querySelector('[role=tab][aria-selected=true]').focus()`);
+      await p.key('ArrowRight');
+      await sleep(200);
+      const tab = await p.eval<string>(`document.activeElement?.getAttribute('aria-selected') === 'true' ? document.activeElement.textContent.trim() : ''`);
+      await p.key('ArrowLeft');
+
+      // View: arrow keys turn the model (the picture changes), Home goes back
+      const picture = () => p.eval<string>(`document.querySelector('canvas').toDataURL('image/png').length + ':' + document.querySelector('canvas').toDataURL('image/png').slice(-200)`);
+      await p.eval(`document.querySelector('.viewport-container').focus()`);
+      await p.key('Home');
+      await sleep(500);
+      const before = await picture();
+      await p.key('ArrowLeft');
+      await p.key('ArrowUp');
+      await sleep(500);
+      const turned = await picture();
+      await p.key('Home');
+      await sleep(500);
+
+      // Every visible control has a name, on every ribbon tab and in the dialogs
+      const problems = new Set<string>();
+      for (const t of ['Features', 'Sketch', 'Assembly', 'Evaluate', 'Drawing', 'Tools', 'Add-ins']) {
+        await p.click(t, 250);
+        for (const x of await p.eval<string[]>(AUDIT)) problems.add(`${t}: ${x}`);
+      }
+      for (const cmd of ['model.material', 'file.export', 'tools.equations', 'view.commandPalette', 'feature.extrude', 'feature.hole']) {
+        await p.eval(`window.casiworks.commands.execute(${JSON.stringify(cmd)})`);
+        await sleep(300);
+        for (const x of await p.eval<string[]>(AUDIT)) problems.add(`${cmd}: ${x}`);
+        await p.eval(`document.querySelector('.dialog-backdrop')?.click(); document.querySelector('.action-btn-red')?.click()`);
+        await sleep(200);
+      }
+      await p.click('Features');
+      await p.screenshot('10-keyboard');
+
+      assert(paletteFocus.includes('command-palette-input'), `palette focus: ${paletteFocus}`);
+      assert(massDialog === 'Mass Properties' && !escaped && closed, `dialog "${massDialog}", focus escaped to "${escaped}", closed ${closed}`);
+      assert(/^“Load example” could not run: .*It takes: /.test(paletteError), `palette error: "${paletteError}"`);
+      assert(second === 'Boss-Extrude1 (Base)' && current === 'Fillet1 (Corner Blend)' && suppressed === true && restored && panel === `Edit ${current}`,
+        `tree: ${second} then ${current}, suppressed ${suppressed}, restored ${restored}, panel "${panel}"`);
+      assert(tab === 'Sketch', `tab after ArrowRight: "${tab}"`);
+      assert(before !== turned, 'the view did not turn');
+      assert(problems.size === 0, `unnamed controls:\n  ${[...problems].join('\n  ')}`);
+      return `palette ran Mass Properties; Tab stayed in the dialog, Escape closed it; tree: arrows to ${second}, End to ${current}, S suppressed and restored it, Enter → "${panel}"; tabs and view move with arrows; no unnamed controls`;
     },
   },
   {

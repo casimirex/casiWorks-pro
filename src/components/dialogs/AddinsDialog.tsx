@@ -2,6 +2,7 @@
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { X, Puzzle, AlertTriangle, Trash2 } from 'lucide-react';
 import { pluginManager } from '../../plugins/index.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export default function AddinsDialog({ isOpen, onClose }: DialogProps) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const dialog = useDialog(isOpen, onClose, 'Add-ins');
   if (!isOpen) return null;
 
   const attempt = async (what: string, load: () => Promise<{ name: string; version: string; commands: string[] }>) => {
@@ -54,7 +56,7 @@ export default function AddinsDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box addins-dialog" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box addins-dialog" style={{ width: 560 }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Puzzle size={16} color="#a78bfa" />

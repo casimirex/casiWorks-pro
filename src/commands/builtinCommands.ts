@@ -496,6 +496,11 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     description: 'Opens the generated API reference (/api/) in a new tab',
     run: () => { window.open(`${import.meta.env?.BASE_URL ?? '/'}api/`, '_blank', 'noopener'); },
   },
+  {
+    id: 'view.commandPalette', label: 'Command palette', category: 'View', shortcuts: ['Ctrl+K', 'F1'], requiresUI: true, record: false,
+    description: 'Find any command by name and run it from the keyboard',
+    run: ({ ui }) => ui().openDialog('commandPalette'),
+  },
   { id: 'view.toggleConsole', label: 'Scripting console', category: 'View', shortcuts: ['Ctrl+`'], requiresUI: true, record: false, run: ({ ui }) => ui().toggleConsole() },
 
   // ------------------------------------------------------------------ evaluate & drawing

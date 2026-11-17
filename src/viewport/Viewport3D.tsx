@@ -1026,8 +1026,63 @@ export default function Viewport3D() {
     (exploded?.components ?? []).map(c => [c.id, c.position.clone().sub(c.originalPosition)] as const),
   ), [exploded]);
 
+  // Keyboard view control (the view has focus): arrows orbit, Shift+arrows pan, + and − zoom, Home: isometric
+  const onViewKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return; // not while typing in an overlay
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const camera = controls.object;
+    const target = controls.target;
+    const offset = camera.position.clone().sub(target);
+    const up = camera.up.clone().normalize();
+    const step = THREE.MathUtils.degToRad(15);
+    const arrow = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: 1, ArrowDown: -1 } as Record<string, number>;
+    if (e.key in arrow && e.shiftKey) {
+      // Pan: move camera and target together, 10% of the distance
+      const right = new THREE.Vector3().crossVectors(offset, up).normalize().negate();
+      const camUp = new THREE.Vector3().crossVectors(right, offset).normalize().negate();
+      const move = (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? right : camUp).multiplyScalar(arrow[e.key] * offset.length() * 0.1);
+      camera.position.add(move);
+      target.add(move);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (isSketchActive) return;
+      offset.applyAxisAngle(up, -arrow[e.key] * step);
+      camera.position.copy(target).add(offset);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (isSketchActive) return;
+      const right = new THREE.Vector3().crossVectors(up, offset).normalize();
+      const turned = offset.clone().applyAxisAngle(right, -arrow[e.key] * step);
+      // Stop short of looking straight down the up axis (the view would flip)
+      if (turned.angleTo(up) < THREE.MathUtils.degToRad(5) || turned.angleTo(up) > THREE.MathUtils.degToRad(175)) return;
+      camera.position.copy(target).add(turned);
+    } else if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+      const k = e.key === '+' || e.key === '=' ? 0.8 : 1.25;
+      camera.position.copy(target).add(offset.multiplyScalar(k));
+      if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+        (camera as THREE.OrthographicCamera).zoom /= k;
+        camera.updateProjectionMatrix();
+      }
+    } else if (e.key === 'Home') {
+      runCommand('view.isometric');
+    } else {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    camera.lookAt(target);
+    controls.update();
+  }, [isSketchActive]);
+
   return (
-    <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+    <div
+      className="viewport-container"
+      style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
+      tabIndex={0}
+      role="application"
+      aria-roledescription="3D view"
+      aria-label="3D model view. Arrow keys rotate, Shift with arrows pans, plus and minus zoom, Home returns to the isometric view."
+      onKeyDown={onViewKey}
+    >
       <Canvas
         shadows
         // Kept so a picture of the view can be taken (FEA report)

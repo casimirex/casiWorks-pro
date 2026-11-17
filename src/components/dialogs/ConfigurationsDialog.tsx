@@ -5,6 +5,7 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { configurationProblems, effectiveVariables, evaluateVariables } from '../../features/equations.ts';
 import type { Configuration } from '../../features/equations.ts';
 import { runCommand } from '../../commands/index.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export default function ConfigurationsDialog({ isOpen, onClose }: DialogProps) {
   const defaults = useMemo(() => evaluateVariables(variables).values, [variables]);
   const changed = JSON.stringify(draft) !== JSON.stringify(configurations);
 
+  const dialog = useDialog(isOpen, onClose, 'Configurations');
   if (!isOpen) return null;
 
   const setCell = (i: number, variable: string, expression: string) => setDraft(d => d.map((c, j) => {
@@ -42,7 +44,7 @@ export default function ConfigurationsDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box configurations-dialog" style={{ width: 760, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box configurations-dialog" style={{ width: 760, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Layers size={16} color="#38bdf8" />

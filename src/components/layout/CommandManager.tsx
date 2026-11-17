@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d, Search
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { RELATIONS } from '../../kernel/sketchSolve.ts';
@@ -170,6 +170,9 @@ export default function CommandManager() {
 
         {/* Right Tools */}
         <div className="qa-group">
+          <button className="qa-btn command-palette-btn" onClick={() => runCommand('view.commandPalette')} title="Command palette: find any command (Ctrl+K)" aria-keyshortcuts="Control+K F1">
+            <Search size={14} /> <span className="qa-label">Commands</span>
+          </button>
           <button className="qa-btn" onClick={() => runCommand('model.material')} title="Material Library">
             <Sliders size={14} /> <span className="qa-label">Material</span>
           </button>
@@ -190,14 +193,29 @@ export default function CommandManager() {
       </div>
 
       {/* Modern Segmented Ribbon Tabs */}
-      <div className="command-tabs-header">
-        {tabList.map((t) => (
+      <div className="command-tabs-header" role="tablist" aria-label="Command tabs">
+        {tabList.map((t, i) => (
           <button
             key={t.id}
             className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
+            role="tab"
+            aria-selected={activeTab === t.id}
+            aria-controls="command-ribbon"
+            tabIndex={activeTab === t.id ? 0 : -1}
             onClick={() => {
               setCommandTab(t.id);
               if (ribbonCollapsed) setRibbonCollapsed(false);
+            }}
+            onKeyDown={(e) => {
+              // Arrows move between tabs (and open them), Home/End to the ends
+              const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabList.length - 1 : null;
+              if (to === null) return;
+              e.preventDefault();
+              const next = tabList[(to + tabList.length) % tabList.length];
+              setCommandTab(next.id);
+              if (ribbonCollapsed) setRibbonCollapsed(false);
+              const buttons = e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]');
+              buttons?.[(to + tabList.length) % tabList.length]?.focus();
             }}
           >
             {t.icon}
@@ -208,7 +226,7 @@ export default function CommandManager() {
 
       {/* Ribbon Toolbars with Category Group Dividers */}
       {!ribbonCollapsed && (
-        <div className="command-ribbon">
+        <div className="command-ribbon" id="command-ribbon" role="tabpanel" aria-label={`${activeTab} commands`}>
           {/* FEATURES TAB */}
           {activeTab === 'Features' && (
             <>

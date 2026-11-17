@@ -5,6 +5,7 @@ import { useCADStore } from '../../store/cadStore.ts';
 import { dimensionLinks, effectiveVariables, evaluateLinks, evaluateVariables } from '../../features/equations.ts';
 import type { GlobalVariable } from '../../features/equations.ts';
 import { runCommand } from '../../commands/index.ts';
+import { useDialog } from '../common/useDialog.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
   const blank = draft.some(v => !v.name.trim() || !v.expression.trim());
   const hasErrors = Object.keys(errors).length > 0 || blank;
 
+  const dialog = useDialog(isOpen, onClose, 'Equations');
   if (!isOpen) return null;
 
   const update = (i: number, patch: Partial<GlobalVariable>) => setDraft(d => d.map((v, j) => (j === i ? { ...v, ...patch } : v)));
@@ -44,7 +46,7 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-box equations-dialog" style={{ width: 640, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog-box equations-dialog" style={{ width: 640, maxWidth: 'calc(100vw - 24px)' }} onClick={(e) => e.stopPropagation()} {...dialog}>
         <div className="dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Sigma size={16} color="#a78bfa" />
