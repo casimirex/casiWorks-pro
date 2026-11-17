@@ -30,6 +30,43 @@ export interface ResultPlot {
   max: number;
   /** Factor the displacements are multiplied by (0 when undeformed). */
   deformationScale: number;
+  /** For probes: the mesh node behind each plot vertex. */
+  vertexNodes: Int32Array;
+  /** For probes: von Mises (MPa) and displacement magnitude (mm) of every node. */
+  nodeVonMisesMPa: Float32Array;
+  nodeDisplacementMM: Float32Array;
+  /** For probes: undeformed node positions (mm), x y z per node. */
+  nodePoints: Float32Array;
+}
+
+/** A result probe: the values at one mesh node. */
+export interface FeaProbe {
+  node: number;
+  /** Undeformed position, mm. */
+  point: { x: number; y: number; z: number };
+  vonMisesMPa: number;
+  displacementMM: number;
+}
+
+/** The probe for plot vertex `vertex` (a corner of the clicked triangle). */
+export function probeAt(plot: ResultPlot, vertex: number): FeaProbe | null {
+  const node = plot.vertexNodes[vertex];
+  if (node === undefined || node < 0) return null;
+  return {
+    node,
+    point: { x: plot.nodePoints[3 * node], y: plot.nodePoints[3 * node + 1], z: plot.nodePoints[3 * node + 2] },
+    vonMisesMPa: plot.nodeVonMisesMPa[node],
+    displacementMM: plot.nodeDisplacementMM[node],
+  };
+}
+
+/** Where a node is drawn in the plot now (deformed or not), or null when it is not on the surface. */
+export function plotPositionOf(plot: ResultPlot, node: number): [number, number, number] | null {
+  const pos = plot.geometry.getAttribute('position');
+  for (let v = 0; v < plot.vertexNodes.length; v++) {
+    if (plot.vertexNodes[v] === node) return [pos.getX(v), pos.getY(v), pos.getZ(v)];
+  }
+  return null;
 }
 
 /** Rainbow colour map: blue (low) → cyan → green → yellow → red (high), t in [0, 1]. */
@@ -85,6 +122,7 @@ export function buildResultPlot(mesh: PlotMesh, result: Pick<SolidResult, 'nodal
 
   const positions: number[] = [];
   const colors: number[] = [];
+  const vertexNodes: number[] = [];
   for (const face of boundaryFaces) {
     const ids = [face.nodes[0], face.nodes[1], face.nodes[2]];
     if (ids.some(i => i === undefined || !nodes[i])) continue;
@@ -92,7 +130,20 @@ export function buildResultPlot(mesh: PlotMesh, result: Pick<SolidResult, 'nodal
       const p = position(i);
       positions.push(p.x, p.y, p.z);
       colors.push(...colormap((values[i] - min) / range));
+      vertexNodes.push(i);
     }
+  }
+
+  // Both quantities at every node, so a probe shows stress and displacement whatever is plotted
+  const nodeVonMisesMPa = new Float32Array(nodes.length);
+  const nodeDisplacementMM = new Float32Array(nodes.length);
+  const nodePoints = new Float32Array(nodes.length * 3);
+  for (let i = 0; i < nodes.length; i++) {
+    const vm = result.nodalVonMisesMPa[i];
+    const d = (result.displacementVectors[i]?.length() ?? 0) * 1000;
+    nodeVonMisesMPa[i] = Number.isFinite(vm) ? vm : 0;
+    nodeDisplacementMM[i] = Number.isFinite(d) ? d : 0;
+    nodePoints[3 * i] = nodes[i].point.x; nodePoints[3 * i + 1] = nodes[i].point.y; nodePoints[3 * i + 2] = nodes[i].point.z;
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -100,5 +151,8 @@ export function buildResultPlot(mesh: PlotMesh, result: Pick<SolidResult, 'nodal
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
-  return { geometry, quantity, unit: quantity === 'vonMises' ? 'MPa' : 'mm', min, max, deformationScale };
+  return {
+    geometry, quantity, unit: quantity === 'vonMises' ? 'MPa' : 'mm', min, max, deformationScale,
+    vertexNodes: Int32Array.from(vertexNodes), nodeVonMisesMPa, nodeDisplacementMM, nodePoints,
+  };
 }

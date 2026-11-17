@@ -121,7 +121,8 @@ const closeDialog = async (p: Page) => { await p.eval(`document.querySelector('.
 const canvasRect = async (p: Page) => JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`)) as DOMRect;
 const iso = (p: Page) => run(p, 'view.isometric', undefined, 600);
 const fresh = (p: Page) => run(p, 'document.new', undefined, 600);
-const example = (p: Page, id: string) => run(p, 'file.loadExample', { id }, 2000);
+/** Load an example into a new document (so nothing from earlier shots, such as assembly components, is left). */
+const example = async (p: Page, id: string) => { await run(p, 'document.new', undefined, 300); await run(p, 'file.loadExample', { id }, 2000); };
 
 /** A 80 × 50 × 20 plate, built through the API, as the base for later steps. */
 const plate = (p: Page) => p.eval(`(() => {
@@ -453,6 +454,16 @@ const SHOTS: Shot[] = [
       await p.eval(`document.querySelector('.fea-deformed')?.click()`);
       await sleep(800);
       await p.screenshot('30-fea-deformed');
+      // Probes: click around the middle until a click lands on the plot, then one more
+      const box = await canvasRect(p);
+      for (const [fx, fy] of [[0.5, 0.5], [0.45, 0.5], [0.55, 0.45], [0.5, 0.6], [0.4, 0.4], [0.6, 0.55], [0.35, 0.6], [0.3, 0.55]]) {
+        await p.mouseClick(box.left + box.width * fx, box.top + box.height * fy);
+        await sleep(250);
+        if (await p.eval<number>(`document.querySelectorAll('.fea-probe-row').length`) >= 2) break;
+      }
+      await sleep(400);
+      await p.screenshot('30b-fea-probes');
+      await p.eval(`document.querySelector('.fea-clear-probes')?.click()`);
       await feaPanel(p, false);
     },
   },

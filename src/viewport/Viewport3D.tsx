@@ -25,6 +25,8 @@ import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { LeaderLine } from '../assembly/AssemblyManager.ts';
 import { formatMm, measure, snapPick } from '../kernel/measure.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
+import { plotPositionOf, probeAt } from '../simulation/resultPlot.ts';
+import type { FeaProbe, ResultPlot } from '../simulation/resultPlot.ts';
 
 // <line> is the SVG element in JSX typings; register three's Line under its own tag
 extend({ ThreeLine: THREE.Line });
@@ -232,6 +234,31 @@ function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
           <div className="measure-label">{formatMm(m.gap ?? m.distance)} mm{m.gap !== null ? ' ⟂' : ''}</div>
         </Html>
       )}
+    </group>
+  );
+}
+
+/** FEA probes on the result plot: a dot and a numbered label with the values at that node. */
+function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] }) {
+  return (
+    <group name="FeaProbes">
+      {probes.map((p, i) => {
+        const at = plotPositionOf(plot, p.node);
+        if (!at) return null;
+        return (
+          <group key={p.node} position={at}>
+            <mesh renderOrder={SKETCH_ON_TOP}>
+              <sphereGeometry args={[0.7, 10, 10]} />
+              <meshBasicMaterial color="#ffffff" depthTest={false} />
+            </mesh>
+            <Html center={false} style={{ transform: 'translate(6px, -50%)' }} zIndexRange={[20, 0]}>
+              <div className="fea-probe-label">
+                <b>{i + 1}</b> {p.vonMisesMPa.toFixed(1)} MPa · {p.displacementMM.toPrecision(3)} mm
+              </div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -605,6 +632,8 @@ function ExplodeLeaderLines({ lines }: { lines: LeaderLine[] }) {
 export default function Viewport3D() {
   const bodies = useCADStore(s => s.bodies);
   const feaPlot = useCADStore(s => s.feaPlot);
+  const feaProbes = useCADStore(s => s.feaProbes);
+  const addFeaProbe = useCADStore(s => s.addFeaProbe);
   const feaSetupMarkers = useCADStore(s => s.feaSetupMarkers);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const mates = useCADStore(s => s.mates);
@@ -725,6 +754,8 @@ export default function Viewport3D() {
     <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
         shadows
+        // Kept so a picture of the view can be taken (FEA report)
+        gl={{ preserveDrawingBuffer: true }}
         camera={{ position: [80, 80, 80], fov: FOV, near: 0.1, far: 5000 }}
         style={{ background: 'radial-gradient(ellipse at 50% 45%, #2a2e38 0%, #16171c 70%, #0d0e11 100%)' }}
       >
@@ -758,10 +789,25 @@ export default function Viewport3D() {
 
         {/* FEA result plot replaces the bodies while it is shown */}
         {feaPlot && (
-          <mesh geometry={feaPlot.geometry} name="FEAResultPlot">
+          <mesh
+            geometry={feaPlot.geometry}
+            name="FEAResultPlot"
+            onClick={(e: ThreeEvent<MouseEvent>) => {
+              // Probe: the values at the clicked triangle's nearest corner node
+              if (!e.face) return;
+              e.stopPropagation();
+              const pos = feaPlot.geometry.getAttribute('position');
+              const nearest = [e.face.a, e.face.b, e.face.c]
+                .map(v => ({ v, d: new THREE.Vector3(pos.getX(v), pos.getY(v), pos.getZ(v)).distanceTo(e.point) }))
+                .sort((a, b) => a.d - b.d)[0].v;
+              const probe = probeAt(feaPlot, nearest);
+              if (probe) addFeaProbe(probe);
+            }}
+          >
             <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
           </mesh>
         )}
+        {feaPlot && feaProbes.length > 0 && <FeaProbeMarks plot={feaPlot} probes={feaProbes} />}
 
         {feaSetupMarkers && bodies[0]?.geometry && <FeaSetupMarkers setup={feaSetupMarkers} geometry={bodies[0].geometry} />}
 

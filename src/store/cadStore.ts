@@ -15,6 +15,7 @@ import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
 import { effectiveVariables, evaluateLinks, evaluateVariables } from '../features/equations.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
+import type { FeaProbe } from '../simulation/resultPlot.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
@@ -188,6 +189,8 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /** FEA result probes (values at picked mesh nodes); shown while the result plot is. Not saved. */
+  feaProbes: FeaProbe[];
   /** Points picked with the Measure tool (at most two; a third click starts again). Not saved. */
   measurePicks: MeasurePick[];
   /** Global variables (equations), saved with the project. */
@@ -287,6 +290,9 @@ export interface CADActions {
   setDrawingOptions(options: Partial<DrawingOptions>): void;
   /** Replace the global variables and update every parameter linked to them (one undo step). */
   setVariables(variables: GlobalVariable[]): void;
+  /** Add an FEA probe (a node already probed is not added twice; at most 12, oldest dropped). */
+  addFeaProbe(probe: FeaProbe): void;
+  clearFeaProbes(): void;
   /** Add a Measure pick; after two, the next one starts a new measurement. */
   addMeasurePick(pick: MeasurePick): void;
   clearMeasure(): void;
@@ -494,6 +500,7 @@ function initialState(): CADState {
     mates: [],
     explodedView: null,
     measurePicks: [],
+    feaProbes: [],
     variables: [],
     configurations: [],
     activeConfiguration: null,
@@ -971,6 +978,16 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = settings
         ? `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`
         : 'Exploded view collapsed';
+    }),
+
+    addFeaProbe: (probe) => set(state => {
+      if (state.feaProbes.some(p => p.node === probe.node)) return;
+      state.feaProbes = [...state.feaProbes, probe].slice(-12);
+      state.statusMessage = `Probe ${state.feaProbes.length}: ${probe.vonMisesMPa.toFixed(1)} MPa, ${probe.displacementMM.toPrecision(3)} mm`;
+    }),
+
+    clearFeaProbes: () => set(state => {
+      state.feaProbes = [];
     }),
 
     addMeasurePick: (pick) => set(state => {

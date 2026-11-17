@@ -440,7 +440,22 @@ const CHECKS: Check[] = [
       assert(/mm.*deformation ×[\d.]+.*mm/.test(dispLegend), `displacement legend: ${dispLegend}`);
       await p.eval(`window.casiworks.commands.execute('view.isometric')`);
       await sleep(500);
-      await p.screenshot('04-fea');
+      // Probe the plot: click around the middle of the view until the click lands on the part
+      const box = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      for (const [fx, fy] of [[0.5, 0.5], [0.45, 0.5], [0.55, 0.45], [0.5, 0.6], [0.4, 0.4], [0.6, 0.55]]) {
+        await p.mouseClick(box.left + box.width * fx, box.top + box.height * fy);
+        await sleep(250);
+        if (await p.eval<number>(`document.querySelectorAll('.fea-probe-row').length`) > 0) break;
+      }
+      const probe = await p.eval<string>(`document.querySelector('.fea-probe-row')?.textContent ?? ''`);
+      const probeLabel = await p.eval<string>(`document.querySelector('.fea-probe-label')?.textContent ?? ''`);
+      assert(/^1[\d.]+ MPa[\d.e+-]+ mm$/.test(probe) && /MPa · .* mm/.test(probeLabel), `probe row "${probe}", label "${probeLabel}"`);
+      await p.screenshot('04c-fea-probe');
+      await p.eval(CAPTURE_DOWNLOADS);
+      await p.click('Report', 600);
+      const report = await p.eval<string>(`window.__blobs.at(-1).text()`);
+      assert(/linear static study/.test(report) && /(PASS|FAIL): safety factor/.test(report) && /<img src="data:image\/png;base64,/.test(report) && /<h2>Probes<\/h2>/.test(report),
+        `report: ${report.slice(0, 300)}`);
       const staleBefore = await p.eval<boolean>(`!!document.querySelector('.fea-stale')`);
       await p.eval(`window.casiworks.commands.execute('model.setMaterial', { key: 'Titanium_Ti6Al4V' })`);
       await sleep(300);
@@ -451,7 +466,7 @@ const CHECKS: Check[] = [
       await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`); // later checks need a body
       await sleep(1500);
       assert(!staleBefore && staleAfterEdit && !resultsAfterNew, `stale: before ${staleBefore}, after edit ${staleAfterEdit}; results after New: ${resultsAfterNew}`);
-      return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works; ${meshReport}); plot legend "${dispLegend}"; marked out of date after a change, cleared by New`;
+      return `${lines} drawing lines; ${fea} (page stayed responsive: ${responsive} ms max; cancel works; ${meshReport}); plot legend "${dispLegend}"; probe ${probe}; report ${(report.length / 1024).toFixed(0)} KB with plot image; marked out of date after a change, cleared by New`;
     },
   },
   {

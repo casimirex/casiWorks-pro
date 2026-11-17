@@ -134,7 +134,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [x] **6.1** Solver in a Web Worker with progress and cancel (phases: meshing / solving; inline fallback where workers are unavailable)
 - [ ] **6.2** Meshing from exact geometry with local refinement (voxel mesh now sized from an element budget — Coarse / Medium / Fine — choosing the grid whose volume best matches the part, with the coverage reported and a warning beyond ±5%; thin-walled parts such as the sheet-metal enclosure still mesh far too thick; local refinement on the mesh kernel only, exact geometry is not planned)
 - [ ] **6.3** Fixtures and loads picked on faces (the FEA panel chooses the fixed face, loaded face and load direction among the six bounding-box faces, shown on the model; picking single faces would need an exact kernel, which is not planned)
-- [ ] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement on the model and exaggerated deformed shape done; probes and report to do)
+- [x] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement and exaggerated deformed shape; probes: click the plot for stress and displacement at the nearest node, up to 12, labelled on the model and listed; Report: a self-contained printable HTML page with verdict, results, plot picture, study, material, mesh and probes)
 - [ ] **6.5** Modal (frequency) analysis
 
 ## Phase 7 — Platform (cloud and collaboration)

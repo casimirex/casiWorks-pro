@@ -1265,3 +1265,17 @@ input:checked + .slider:before {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* FEA probes */
+.fea-probe-label {
+  background: rgba(15, 15, 18, 0.88);
+  color: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.fea-probe-label b { color: #fde047; margin-right: 2px; }

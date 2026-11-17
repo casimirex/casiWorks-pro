@@ -751,7 +751,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 13 · about 20 min</span></div>
   <h2 class="title">Stress analysis (FEA)</h2>
   <p class="lead">Finite element analysis (FEA) predicts how much a part bends and how hard it is stressed under a load, before you make it.</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Set up a static study: mesh, fixed face, load face, direction and force</li><li>Solve it and read von Mises stress, deflection and the safety factor</li><li>Show the stress and the deformed shape on the model</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Set up a static study: mesh, fixed face, load face, direction and force</li><li>Solve it and read von Mises stress, deflection and the safety factor</li><li>Show the stress and the deformed shape on the model</li><li>Probe values at points and save a study report</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 13.1</span><h4>Is the L-bracket strong enough for 5 kN?</h4><div class="specs"><span>Al 6061-T6</span><span>Tet10 · ~5,000 elements</span><span>5000 N, −Y</span></div></div>
     <div class="example-body">
@@ -772,6 +772,17 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
         <figure class="shot"><img loading="lazy" src="img/29-fea-stress.webp" alt="von Mises stress plot"><figcaption>von Mises stress plot.</figcaption></figure>
         <figure class="shot"><img loading="lazy" src="img/30-fea-deformed.webp" alt="Displacement plot deformed"><figcaption>Displacement on the deformed shape.</figcaption></figure>
       </div>
+    </div>
+  </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 13.2</span><h4>Probe the results and save a report</h4><div class="specs"><span>Probes</span><span>HTML report</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>With the plot shown, click anywhere on the coloured part. A numbered probe appears, with the <b>von Mises stress</b> and the <b>displacement</b> at the nearest mesh node, whichever quantity is plotted. The FEA panel lists the probes too.</li>
+        <li>Probe the places you care about, such as the inside corner and the loaded edge. <b>Clear probes</b> removes them, and a new solve starts afresh.</li>
+        <li>Click <b>Report</b>. CasiWorks saves a one-page HTML report: a pass/fail verdict on the safety factor (1.5 required), the key results, the picture of the plot as you see it, the study, material and mesh, and your probes. Open it in a browser to read, print or save it as PDF.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/30b-fea-probes.webp" alt="FEA plot with probes"><figcaption>Probes on the displacement plot, listed in the panel.</figcaption></figure>
     </div>
   </div>
   <h3>Reading the numbers like an engineer</h3>

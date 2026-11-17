@@ -16,6 +16,8 @@ import type { Direction, StudySetup } from './studySetup.ts';
 import type { BoxPlane } from './FEAEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
+import { feaReportHtml } from './report.ts';
+import { downloadBlob } from '../utils/download.ts';
 
 export default function ResultsViewer() {
   const bodies = useCADStore(s => s.bodies);
@@ -43,6 +45,9 @@ export default function ResultsViewer() {
   const [deformed, setDeformed] = useState(false);
   const feaPlot = useCADStore(s => s.feaPlot);
   const setFeaPlot = useCADStore(s => s.setFeaPlot);
+  const feaProbes = useCADStore(s => s.feaProbes);
+  const clearFeaProbes = useCADStore(s => s.clearFeaProbes);
+  const documentName = useCADStore(s => s.documentName);
 
   // Results of another document are dropped; results of an earlier state of this
   // model (geometry, material, load or element type changed) are shown as stale
@@ -106,6 +111,7 @@ export default function ResultsViewer() {
     setPhase('meshing');
     try {
       const { results: res, mesh, meshInfo } = await handle.promise;
+      useCADStore.getState().clearFeaProbes(); // probes belong to the previous results
       setSolved({ results: res, mesh, meshInfo, ...input });
       setShowPlot(true);
       useCADStore.getState().setStatus(`FEA solved: max von Mises ${res.maxStressMPa.toFixed(1)} MPa`);
@@ -393,6 +399,59 @@ export default function ResultsViewer() {
                   )}
                 </div>
               </div>
+
+              {/* Probes: values at clicked points of the plot */}
+              {feaPlot && (
+                <div className="fea-probes" style={{ marginTop: 4 }}>
+                  {feaProbes.length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 10 }}>Click the plot to probe stress and displacement at a point.</div>
+                  ) : (
+                    <>
+                      {feaProbes.map((p, i) => (
+                        <div key={p.node} className="fea-probe-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+                          <span style={{ color: '#fde047' }}>{i + 1}</span>
+                          <span>{p.vonMisesMPa.toFixed(1)} MPa</span>
+                          <span>{p.displacementMM.toPrecision(3)} mm</span>
+                        </div>
+                      ))}
+                      <button className="fea-clear-probes" onClick={clearFeaProbes}
+                        style={{ marginTop: 2, background: 'transparent', border: '1px solid #444', color: '#aaa', borderRadius: 4, padding: '1px 6px', fontSize: 10, cursor: 'pointer' }}>
+                        Clear probes
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <button
+                className="fea-report"
+                onClick={() => {
+                  const mat = materialLibrary.getMaterial(solved?.material ?? activeMaterial);
+                  let image: string | null = null;
+                  try { image = document.querySelector<HTMLCanvasElement>('.viewport-container canvas')?.toDataURL('image/png') ?? null; } catch { image = null; }
+                  const html = feaReportHtml({
+                    documentName: documentName || 'Part',
+                    date: (() => { const t = new Date(); const p = (v: number) => String(v).padStart(2, '0'); return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`; })(),
+                    material: { name: mat.name, youngsModulus: mat.youngsModulus, poissonsRatio: mat.poissonsRatio, yieldStrength: mat.yieldStrength, density: mat.density },
+                    setup: solved?.setup ?? setup,
+                    load: solved?.load ?? load,
+                    elementType: solved?.elementType ?? elementType,
+                    mesh: solved?.meshInfo ?? null,
+                    results: { maxStressMPa: results.maxStressMPa, minStressMPa: results.minStressMPa, maxDisplacementMM: results.maxDisplacementMM, factorOfSafety: results.factorOfSafety },
+                    requiredSafetyFactor: 1.5,
+                    probes: feaProbes,
+                    image: feaPlot ? image : null,
+                    stale,
+                  });
+                  const filename = `${(documentName || 'Part').replace(/\s+/g, '_')}_FEA_report.html`;
+                  downloadBlob(html, filename, 'text/html;charset=utf-8');
+                  useCADStore.getState().setStatus(`FEA report saved: ${filename}`);
+                }}
+                title="Download a report of this study (HTML, printable): setup, material, mesh, results, probes and the plot"
+                style={{ marginTop: 6, background: '#1e3a5f', border: '1px solid #4fc3f7', color: '#fff', borderRadius: 4, padding: '3px 8px', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}
+              >
+                <FileText size={12} /> Report
+              </button>
 
               {/* 3D Cauchy & Principal Stress Details Toggle */}
               <button
