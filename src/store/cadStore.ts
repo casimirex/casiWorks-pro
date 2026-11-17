@@ -14,6 +14,7 @@ import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
 import { effectiveVariables, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import type { MeasurePick } from '../kernel/measure.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
@@ -187,6 +188,8 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /** Points picked with the Measure tool (at most two; a third click starts again). Not saved. */
+  measurePicks: MeasurePick[];
   /** Global variables (equations), saved with the project. */
   variables: GlobalVariable[];
   /** Named variants that override variable values (design table). */
@@ -284,6 +287,9 @@ export interface CADActions {
   setDrawingOptions(options: Partial<DrawingOptions>): void;
   /** Replace the global variables and update every parameter linked to them (one undo step). */
   setVariables(variables: GlobalVariable[]): void;
+  /** Add a Measure pick; after two, the next one starts a new measurement. */
+  addMeasurePick(pick: MeasurePick): void;
+  clearMeasure(): void;
   /** Replace the configurations (one undo step); the active one stays active if it still exists. */
   setConfigurations(configurations: Configuration[]): void;
   /** Switch to a configuration (null = Default); linked sizes update and the part rebuilds. */
@@ -487,6 +493,7 @@ function initialState(): CADState {
     assemblyComponents: [],
     mates: [],
     explodedView: null,
+    measurePicks: [],
     variables: [],
     configurations: [],
     activeConfiguration: null,
@@ -515,12 +522,14 @@ export const useCADStore = create<CADStore>()(
 
     // ==================== TOOLS AND SELECTION ====================
     setActiveTool: (tool) => set(state => {
+      if (state.activeTool !== tool) state.measurePicks = [];
       state.activeTool = tool;
       state.statusMessage = `Tool: ${tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
     }),
 
     cancelTool: () => set(state => {
       state.activeTool = TOOLS.SELECT;
+      state.measurePicks = [];
       state.propertyPanelOpen = false;
       state.propertyPanelContent = null;
       state.statusMessage = 'Ready';
@@ -962,6 +971,17 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = settings
         ? `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`
         : 'Exploded view collapsed';
+    }),
+
+    addMeasurePick: (pick) => set(state => {
+      const picks = state.measurePicks.length >= 2 ? [] : [...state.measurePicks];
+      picks.push(pick);
+      state.measurePicks = picks;
+      state.statusMessage = picks.length === 1 ? 'Measure: click the second point' : 'Measure: click to start a new measurement (Esc to finish)';
+    }),
+
+    clearMeasure: () => set(state => {
+      state.measurePicks = [];
     }),
 
     setVariables: (variables) => set(state => {

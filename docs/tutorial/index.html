@@ -568,7 +568,7 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
 <section class="chapter" id="ch8" data-title="Materials & mass properties" data-part="intermediate" data-n="8">
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 8 · about 10 min</span></div>
   <h2 class="title">Materials and mass properties</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Give a part a material from the library</li><li>Read its mass, volume, surface area, centre of mass and inertia</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Give a part a material from the library</li><li>Read its mass, volume, surface area, centre of mass and inertia</li><li>Measure distances, angles and wall thicknesses on the model</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 8.1</span><h4>Weigh the L-bracket in aluminium</h4><div class="specs"><span>Al 6061-T6</span><span>2700 kg/m³</span><span>141.37 g</span></div></div>
     <div class="example-body">
@@ -592,6 +592,21 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
     <tr><td>Titanium Ti-6Al-4V</td><td>Very high strength-to-weight ratio</td></tr>
   </table></div>
   <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Swap the bracket to Titanium Ti-6Al-4V. The volume stays at 52.36 cm³ but the mass goes up, because titanium is denser than aluminium.</p></div></div>
+  <h3>Measuring the model</h3>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 8.2</span><h4>Check a plate's thickness in two clicks</h4><div class="specs"><span>Evaluate ▸ Measure</span><span>Key M</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Click <b>Measure</b> on the <b>Evaluate</b> tab, or press <kbd>M</kbd>. A <b>Measure</b> card opens at the top left of the viewport.</li>
+        <li>Click a point on the model. A click near a corner snaps to it (a small cube); otherwise the point sits on the face you clicked (a dot).</li>
+        <li>Click a second point. The card shows the straight <b>Distance</b>, its <b>dX · dY · dZ</b> parts and the <b>Angle between faces</b>. A dashed line with the length joins the two points.</li>
+        <li>Click the top and the bottom face of a plate, anywhere. The faces are parallel, so the card adds <b>Parallel faces, gap</b>: the thickness, however far apart the two points are. Use <kbd>Ctrl</kbd>+<kbd>1</kbd> and <kbd>Ctrl</kbd>+<kbd>2</kbd> (front and back view) to reach both sides.</li>
+        <li>A third click starts a new measurement. <kbd>Esc</kbd> finishes.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/21b-measure.webp" alt="Measure tool showing a 12 mm gap between parallel faces"><figcaption>Front face to back face of a 12 mm plate: gap 12 mm, faces at 180°.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">From a script</b><p><code>casiworks.model.measure(a, b, { normalA, normalB })</code> gives the same numbers for points you already know.</p></div></div>
   <div class="exercise"><b>Exercise 8.</b> Find the lightest material in the library that still has a yield strength above 250 MPa. What does the bracket weigh in it?<label><input type="checkbox" data-done="ch8"> I've done this</label></div>
 </section>
 
@@ -799,7 +814,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.5</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.6</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -842,7 +857,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
-    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
     <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>: the drawing sheet as text, also headless (since 1.5)</td></tr>
@@ -943,6 +958,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><kbd>Esc</kbd></td><td>Cancel the current tool</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Front, Back, Left, Right, Top, Bottom</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>`</kbd></td><td>Scripting console</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> · <kbd>Space</kbd></td><td>Isometric</td></tr>
     <tr><td><kbd>S</kbd></td><td>Spline (in a sketch)</td><td><kbd>T</kbd></td><td>Trim (in a sketch)</td></tr>
+    <tr><td><kbd>M</kbd></td><td>Measure</td><td></td><td></td></tr>
   </table></div>
   <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
 </section>

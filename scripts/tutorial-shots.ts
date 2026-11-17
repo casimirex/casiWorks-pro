@@ -340,6 +340,29 @@ const SHOTS: Shot[] = [
       await closeDialog(p);
     },
   },
+  {
+    name: '21b-measure', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
+        window.casiworks.features.extrude({ sketchId: s.sketchId, depth: 12, name: 'Plate' });
+      })()`);
+      await sleep(1000);
+      const r = await canvasRect(p);
+      await p.click('Evaluate');
+      await run(p, 'evaluate.measure', undefined, 200);
+      await run(p, 'view.front');
+      await p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await run(p, 'view.back');
+      await p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await sleep(300);
+      await iso(p);
+      await p.screenshot('21b-measure');
+      await run(p, 'edit.cancel', undefined, 200);
+      await p.click('Features');
+    },
+  },
   // ------------------------------------------------------------ Part 3: advanced
   {
     name: '22-assembly', async run(p) {

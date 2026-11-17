@@ -223,7 +223,7 @@ console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
 shown. Or use the browser's developer console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.5.0'
+const api = window.casiworks;          // api.version === '1.6.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -269,6 +269,9 @@ const svg = api.drawings.svg();                          // parts list and ballo
 
 api.sketches.trim(sketchId, lineId, { x: 5, y: 0 });     // also extend, offset, mirror
 ```
+
+**New in 1.6**: `api.model.measure(a, b, { normalA, normalB })`: distance, dX/dY/dZ, the
+angle between faces and, for parallel faces, the gap (what the Measure tool shows).
 
 **Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
 object; it gets the public API and can add commands and Add-ins ribbon buttons.

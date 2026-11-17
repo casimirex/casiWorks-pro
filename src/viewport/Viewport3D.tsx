@@ -3,7 +3,7 @@ import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import type { ElementRef } from 'react';
 import { Canvas, useThree, extend } from '@react-three/fiber';
 import type { Object3DNode, ThreeEvent } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, VIEW_ORIENTATIONS } from '../utils/constants.ts';
@@ -23,6 +23,8 @@ import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { LeaderLine } from '../assembly/AssemblyManager.ts';
+import { formatMm, measure, snapPick } from '../kernel/measure.ts';
+import type { MeasurePick } from '../kernel/measure.ts';
 
 // <line> is the SVG element in JSX typings; register three's Line under its own tag
 extend({ ThreeLine: THREE.Line });
@@ -119,9 +121,25 @@ interface CADBodyMeshProps {
   wireframeMode: boolean;
   edgeDisplay: boolean;
   materialKey: string;
+  /** While measuring, clicks become picks instead of selections. */
+  onMeasure?: (pick: MeasurePick) => void;
 }
 
-function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, edgeDisplay, materialKey }: CADBodyMeshProps) {
+/** How close (as a share of the camera distance, ≈ 10 px) a click must be to a corner to snap to it. */
+const MEASURE_SNAP = 0.012;
+
+/** The Measure pick for a click on a mesh: the clicked triangle's nearest corner, or the exact point. */
+function pickFromEvent(e: ThreeEvent<MouseEvent>): MeasurePick | null {
+  const face = e.face;
+  const mesh = e.object as THREE.Mesh;
+  if (!face || !mesh.geometry) return null;
+  const pos = mesh.geometry.getAttribute('position');
+  const corners = [face.a, face.b, face.c].map(i => new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(mesh.matrixWorld));
+  const normal = face.normal.clone().transformDirection(mesh.matrixWorld);
+  return snapPick(e.point, corners, normal, e.distance * MEASURE_SNAP);
+}
+
+function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, edgeDisplay, materialKey, onMeasure }: CADBodyMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   const material = useMemo(() => {
@@ -167,6 +185,11 @@ function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, ed
         onClick={(e: ThreeEvent<MouseEvent>) => {
           if (!selectable) return;
           e.stopPropagation();
+          if (onMeasure) {
+            const pick = pickFromEvent(e);
+            if (pick) onMeasure(pick);
+            return;
+          }
           if (body && onSelect) onSelect(body);
         }}
         castShadow
@@ -178,6 +201,64 @@ function CADBodyMesh({ body, isSelected, selectable, onSelect, wireframeMode, ed
         </lineSegments>
       )}
     </group>
+  );
+}
+
+/** Measure marks in the model: the picks (corners as cubes, face points as dots), the line and its length. */
+function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
+  const line = useMemo(() => (picks.length === 2
+    ? new THREE.BufferGeometry().setFromPoints(picks.map(p => new THREE.Vector3(p.point.x, p.point.y, p.point.z)))
+    : null), [picks]);
+  useEffect(() => () => line?.dispose(), [line]);
+  const m = picks.length === 2 ? measure(picks[0], picks[1]) : null;
+  const mid = picks.length === 2
+    ? [(picks[0].point.x + picks[1].point.x) / 2, (picks[0].point.y + picks[1].point.y) / 2, (picks[0].point.z + picks[1].point.z) / 2] as [number, number, number]
+    : null;
+  return (
+    <group name="MeasureMarks">
+      {picks.map((p, i) => (
+        <mesh key={i} position={[p.point.x, p.point.y, p.point.z]} renderOrder={SKETCH_ON_TOP}>
+          {p.kind === 'vertex' ? <boxGeometry args={[1.4, 1.4, 1.4]} /> : <sphereGeometry args={[0.8, 12, 12]} />}
+          <meshBasicMaterial color={i === 0 ? '#4ade80' : '#f472b6'} depthTest={false} />
+        </mesh>
+      ))}
+      {line && (
+        <threeLine geometry={line} renderOrder={SKETCH_ON_TOP} onUpdate={(l: THREE.Line) => l.computeLineDistances()}>
+          <lineDashedMaterial color="#fde047" dashSize={2} gapSize={1} depthTest={false} />
+        </threeLine>
+      )}
+      {m && mid && (
+        <Html position={mid} center zIndexRange={[20, 0]}>
+          <div className="measure-label">{formatMm(m.gap ?? m.distance)} mm{m.gap !== null ? ' ⟂' : ''}</div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/** The Measure results card over the viewport. */
+function MeasurePanel({ picks }: { picks: MeasurePick[] }) {
+  const m = picks.length === 2 ? measure(picks[0], picks[1]) : null;
+  const pt = (p: MeasurePick) => `${formatMm(p.point.x)}, ${formatMm(p.point.y)}, ${formatMm(p.point.z)}${p.kind === 'vertex' ? ' (corner)' : ''}`;
+  return (
+    <div className="measure-panel" role="status">
+      <div className="measure-head">
+        <span>Measure</span>
+        <button className="icon-btn" onClick={() => runCommand('edit.cancel')} title="Finish measuring (Esc)" aria-label="Finish measuring">✕</button>
+      </div>
+      {picks.length === 0 && <div className="measure-hint">Click a point on the model. Corners snap.</div>}
+      {picks.map((p, i) => <div key={i} className="measure-row"><span style={{ color: i === 0 ? '#4ade80' : '#f472b6' }}>{i === 0 ? 'A' : 'B'}</span><span>{pt(p)}</span></div>)}
+      {picks.length === 1 && <div className="measure-hint">Click the second point.</div>}
+      {m && (
+        <div className="measure-results">
+          <div className="measure-row big"><span>Distance</span><span className="measure-distance">{formatMm(m.distance)} mm</span></div>
+          <div className="measure-row"><span>dX · dY · dZ</span><span>{formatMm(m.dx)} · {formatMm(m.dy)} · {formatMm(m.dz)}</span></div>
+          {m.angle !== null && <div className="measure-row"><span>Angle between faces</span><span className="measure-angle">{formatMm(m.angle)}°</span></div>}
+          {m.gap !== null && <div className="measure-row big"><span>Parallel faces, gap</span><span className="measure-gap">{formatMm(m.gap)} mm</span></div>}
+          <div className="measure-hint">Click again to start a new measurement.</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -531,6 +612,8 @@ export default function Viewport3D() {
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const setSelection = useCADStore(s => s.setSelection);
   const activeMaterial = useCADStore(s => s.activeMaterial);
+  const measurePicks = useCADStore(s => s.measurePicks);
+  const addMeasurePick = useCADStore(s => s.addMeasurePick);
 
   const showGrid = useCADStore(s => s.showGrid);
   const showOrigin = useCADStore(s => s.showOrigin);
@@ -694,6 +777,7 @@ export default function Viewport3D() {
             wireframeMode={wireframeMode}
             edgeDisplay={edgeDisplay}
             materialKey={activeMaterial}
+            onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : undefined}
           />
         ))}
 
@@ -709,10 +793,13 @@ export default function Viewport3D() {
               wireframeMode={wireframeMode}
               edgeDisplay={edgeDisplay}
               materialKey={comp.material ?? activeMaterial}
+              onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : undefined}
             />
           </group>
         ))}
         {exploded && exploded.leaderLines.length > 0 && <ExplodeLeaderLines lines={exploded.leaderLines} />}
+
+        {activeTool === TOOLS.MEASURE && measurePicks.length > 0 && <MeasureMarks picks={measurePicks} />}
 
         {/* Active Sketch Overlay */}
         {isSketchActive && (
@@ -734,6 +821,7 @@ export default function Viewport3D() {
       </Canvas>
 
       <OrientationCubeHUD />
+      {activeTool === TOOLS.MEASURE && <MeasurePanel picks={measurePicks} />}
     </div>
   );
 }

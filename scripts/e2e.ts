@@ -314,6 +314,43 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'measure: two clicks on opposite faces give the wall thickness',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
+        window.casiworks.features.extrude({ sketchId: s.sketchId, depth: 20 });
+      })()`);
+      await sleep(1000);
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const centre = () => p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await p.click('Evaluate');
+      await p.click('Measure (M): click two points on the model', 200);
+      await p.eval(`window.casiworks.commands.execute('view.front')`);
+      await sleep(600);
+      await centre();
+      await sleep(200);
+      const hint = await p.eval<string>(`document.querySelector('.measure-panel')?.textContent ?? ''`);
+      await p.eval(`window.casiworks.commands.execute('view.back')`);
+      await sleep(600);
+      await centre();
+      await sleep(300);
+      const gap = await p.eval<string>(`document.querySelector('.measure-gap')?.textContent ?? ''`);
+      const angle = await p.eval<string>(`document.querySelector('.measure-angle')?.textContent ?? ''`);
+      assert(hint.includes('Click the second point'), `after one click: ${hint}`);
+      assert(gap === '20 mm' && angle === '180°', `gap "${gap}", angle "${angle}"`);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(600);
+      await p.screenshot('04b-measure');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(200);
+      const closed = await p.eval<boolean>(`!document.querySelector('.measure-panel')`);
+      assert(closed, 'Esc ends measuring');
+      await p.click('Features', 200);
+      return `front face to back face: gap ${gap}, angle ${angle}`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

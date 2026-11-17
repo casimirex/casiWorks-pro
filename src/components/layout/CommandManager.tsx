@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { TOOLS } from '../../utils/constants.ts';
@@ -521,6 +521,14 @@ export default function CommandManager() {
           {activeTab === 'Evaluate' && (
             <div className="tool-group">
               <div className="tool-group-buttons">
+                <button
+                  className={`ribbon-btn ${activeTool === TOOLS.MEASURE ? 'active' : ''}`}
+                  onClick={() => runCommand(activeTool === TOOLS.MEASURE ? 'edit.cancel' : 'evaluate.measure')}
+                  title="Measure (M): click two points on the model"
+                >
+                  <Ruler size={19} color="#4ade80" />
+                  <span>Measure</span>
+                </button>
                 <button className="ribbon-btn" onClick={() => runCommand('evaluate.massProperties')} title="Compute Mass Properties">
                   <Scale size={19} color="#38bdf8" />
                   <span>Mass Props</span>

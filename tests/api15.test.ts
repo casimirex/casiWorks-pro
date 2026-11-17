@@ -12,7 +12,7 @@ const throwsCode = (fn: () => unknown, code: CasiWorksAPIErrorCode, msg?: RegExp
   assert.throws(fn, (err: unknown) => err instanceof CasiWorksAPIError && err.code === code && (!msg || msg.test(err.message)), `expected ${code}`);
 
 test('API 1.5: version and the new namespaces are frozen', () => {
-  assert.equal(API_VERSION, '1.5.0');
+  assert.match(API_VERSION, /^1\.(5|6|7|8|9)\.\d+$/, 'at least 1.5');
   for (const ns of [api.equations, api.configurations, api.assembly, api.drawings]) assert.ok(Object.isFrozen(ns));
   assert.equal(typeof api.sketches.trim, 'function');
 });

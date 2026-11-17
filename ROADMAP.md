@@ -110,7 +110,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [ ] **3.6** Hole wizard (counterbore, countersink, tapped) with standards tables
 - [x] **3.7** Global variables and equations (Tools ▸ Equations; any feature number field (hole positions too, as `position.x`) takes an expression and stays linked (ƒ); safe parser, dependency order, cycle detection; saved with the project, in undo; `equations.set` / `equations.list`)
 - [x] **3.8** Configurations (design tables): named versions that override variable values. Tools ▸ Configs table, quick switcher on the ribbon, badge in the title bar; switching is an undo step; saved with the project; `configurations.*` commands and `api.configurations`
-- [ ] **3.9** Measure tool and section view on exact geometry
+- [x] **3.9** Measure tool (Evaluate ▸ Measure, key M: two picks on the model, corners snap; distance, dX/dY/dZ, angle between faces, gap between parallel faces; `api.model.measure` in API 1.6). Section view: the existing cross-section toggle; exact-geometry sections are not planned (mesh kernel)
 
 ## Phase 4 — Assemblies
 

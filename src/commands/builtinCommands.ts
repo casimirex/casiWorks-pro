@@ -311,6 +311,15 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   { id: 'view.toggleConsole', label: 'Scripting console', category: 'View', shortcuts: ['Ctrl+`'], requiresUI: true, record: false, run: ({ ui }) => ui().toggleConsole() },
 
   // ------------------------------------------------------------------ evaluate & drawing
+  {
+    id: 'evaluate.measure', label: 'Measure', category: 'Evaluate', shortcuts: ['M'], record: false,
+    description: 'Click two points on the model: distance, dX/dY/dZ, the angle between the faces and, for parallel faces, the gap',
+    run: ({ state }) => {
+      state().setActiveTool(TOOLS.MEASURE);
+      state().setStatus('Measure: click a point on the model (corners snap)');
+    },
+  },
+  { id: 'evaluate.clearMeasure', label: 'Clear measurement', category: 'Evaluate', record: false, run: ({ state }) => state().clearMeasure() },
   { id: 'evaluate.massProperties', label: 'Mass properties…', category: 'Evaluate', requiresUI: true, run: ({ ui }) => ui().openDialog('massProperties') },
   { id: 'drawing.open', label: '2D drawing sheet…', category: 'Drawing', requiresUI: true, description: 'Standard 3-view sheet with SVG / DXF export', run: ({ ui }) => ui().openDialog('drawing') },
   {

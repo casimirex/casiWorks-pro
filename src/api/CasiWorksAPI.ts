@@ -27,6 +27,8 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
 import { MATERIALS, MATE_TYPES } from '../utils/constants.ts';
+import { measure as measurePicks } from '../kernel/measure.ts';
+import type { Measurement } from '../kernel/measure.ts';
 import type { MateType } from '../utils/constants.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
 import type { FeatureType } from '../utils/constants.ts';
@@ -47,7 +49,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.5.0';
+export const API_VERSION = '1.6.0';
 
 // =====================================================================
 // Public types
@@ -212,7 +214,17 @@ export interface ModelAPI {
   massProperties(): MassProperties | null;
   /** Axis-aligned bounds in mm; null when there is no body. */
   boundingBox(): BoundingBox | null;
+  /**
+   * Distance between two points (mm) with its x/y/z parts. Give the face normals
+   * too and it adds the angle between the faces and, for parallel faces, the gap
+   * between them (as the Measure tool does). Since 1.6.
+   * @example api.model.measure({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 12 }, { normalA: { x: 0, y: 0, z: -1 }, normalB: { x: 0, y: 0, z: 1 } }).gap // 12
+   */
+  measure(a: Point3D, b: Point3D, options?: { normalA?: Point3D; normalB?: Point3D }): Measurement;
 }
+
+/** A point or direction in model space (mm). */
+export interface Point3D { x: number; y: number; z: number }
 
 /** The material library and the part's material (used for mass and FEA). */
 export interface MaterialsAPI {
@@ -951,6 +963,17 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
         max: { x: max.x, y: max.y, z: max.z },
         size: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z },
       };
+    },
+    measure(a: Point3D, b: Point3D, options: { normalA?: Point3D; normalB?: Point3D } = {}) {
+      const p = (v: unknown, what: string): Point3D => {
+        const o = requireObject(v, what);
+        return { x: requireNumber(o.x, `${what}.x`), y: requireNumber(o.y, `${what}.y`), z: requireNumber(o.z, `${what}.z`) };
+      };
+      const o = options && typeof options === 'object' ? options : {};
+      return measurePicks(
+        { point: p(a, 'a'), normal: o.normalA ? p(o.normalA, 'normalA') : null, kind: 'face' },
+        { point: p(b, 'b'), normal: o.normalB ? p(o.normalB, 'normalB') : null, kind: 'face' },
+      );
     },
   });
 
