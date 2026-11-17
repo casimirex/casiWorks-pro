@@ -18,7 +18,7 @@
     "perf": "node scripts/perf.ts",
     "docs:api": "node scripts/build-api-docs.ts",
     "docs:tutorial-shots": "node scripts/tutorial-shots.ts",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

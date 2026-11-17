@@ -84,7 +84,14 @@ casiworks/
 │       ├── projectFile.ts        # Project save / open / new (.casiproj)
 │       └── shortcuts.ts          # Keyboard shortcuts
 └── tests/
-    ├── casiworks.test.ts         # Solver, features, assembly, data exchange, FEA, drawings, store
+    ├── constraintSolver.test.ts  # Constraint solver: coupled systems, DOF, conflicts, numerics
+    ├── featureEngine.test.ts     # Feature engine: cuts, rollback, thin features, broken references
+    ├── assemblyManager.test.ts   # Every mate type, quaternion edge cases, exploded view
+    ├── dataExchange.test.ts      # STL, DXF, STEP and IGES round trips
+    ├── feaEngine.test.ts         # FEA against beam theory, Tet4 stiffness and stress
+    ├── drawingEngine.test.ts     # Projections, hidden lines, sheets, SVG/DXF
+    ├── store.test.ts             # Store: examples, load/save, undo/redo, new document
+    ├── massProperties.test.ts    # Mass properties in SI units
     ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
     ├── sketch.test.ts            # Sketch engine and constraint solver semantics
     ├── api.test.ts               # Public API (headless)
@@ -385,7 +392,7 @@ Browser end-to-end smoke test (needs Chrome; set `CHROME_PATH` if it is not foun
 
 Performance budgets: `npm run build && npm run perf`. It measures the gzipped bundle, the rebuild time of every example, a static and a modal FEA solve, and (with Chrome) a cold app load, and fails if any is over its budget in `perf-budgets.json`. Times are medians of several runs; results are written to `perf-results.json`. After an intended change, `npm run perf -- --update` resets the budgets from the current machine (3× headroom on times, 10% on bundle size). CI runs typecheck, lint, tests, build, e2e and the budgets (`.github/workflows/ci.yml`).
 
-CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.ts` and the other `tests/*.test.ts` files) executed with Node.js test runner:
+CasiWorks Pro is verified through an automated test suite (`tests/*.test.ts`, one file per module) executed with Node.js test runner:
 
 ```bash
 npm test

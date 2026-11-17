@@ -35,16 +35,16 @@ On 2026-11-16 it was decided not to build one (see Phase 2): CasiWorks stays on 
 
 ---
 
-## Phase 0 — Engineering foundation
+## Phase 0 — Engineering foundation (complete)
 
 Make every later step safe to take.
 
 - [x] **0.1** Linting: ESLint (flat config) for JS/JSX + React hooks rules; fix all errors; `npm run lint`
-- [ ] **0.1b** Clear the remaining `no-unused-vars` warnings (137 at 0.1), then make warnings fail CI
+- [x] **0.1b** Clear the remaining `no-unused-vars` warnings (137 at 0.1), then make warnings fail CI (0 warnings; `npm run lint` runs with `--max-warnings 0`, so CI fails on any new warning)
 - [x] **0.2** Error boundary: a crash in one panel shows a recoverable message instead of a blank app
 - [x] **0.3** CI: GitHub Actions runs lint, tests and build on every push and PR
 - [x] **0.4** Type checking → replaced by the full TypeScript migration, track T below
-- [ ] **0.5** Split the single test file into per-module test files
+- [x] **0.5** Split the single test file into per-module test files (`casiworks.test.ts` → constraintSolver, featureEngine, assemblyManager, dataExchange, feaEngine, drawingEngine, store, massProperties; the same 33 tests, each file importing only what it uses)
 - [x] **0.6** Autosave the current document to IndexedDB; restore on reload (one document, about a second after each change and when the tab is hidden; undo history is not kept; two open tabs share the one slot, the last write wins)
 
 ## Track T — Full TypeScript migration (complete)
@@ -57,7 +57,7 @@ working. Node runs `.ts` directly (type stripping), so tests need no build step.
 - [x] **T.1** Domain types (`types/`: Feature, SketchEntity, MassProperties, …) and `utils/` → `.ts`
 - [x] **T.2** Public API → `.ts` (typed API for script and add-in authors)
 - [x] **T.3** Store and rebuild → `.ts`
-- [ ] **T.4** Kernel → `.ts`
+- [x] **T.4** Kernel → `.ts` (all four parts done; no JavaScript left in `src/`)
   - [x] **T.4a** Sketch engine and constraint solver
   - [x] **T.4b** Geometry engine (plus profile builder and CSG modules; geometry fixes with tests)
   - [x] **T.4c** B-Rep and topology — removed instead of converted: unused by the app, a duplicate of the mesh CSG, and measured wrong (see commit)
