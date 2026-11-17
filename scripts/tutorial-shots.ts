@@ -5,7 +5,10 @@
 // Serves dist/ with `vite preview`, drives headless Chrome over the DevTools
 // protocol through the same flows the tutorial teaches, and writes one WebP per
 // step to docs/tutorial/img/. A failing step is reported and the rest go on.
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { findChrome, sleep, waitFor, withApp } from './browser.ts';
 import type { Page } from './browser.ts';
 
@@ -513,6 +516,42 @@ const SHOTS: Shot[] = [
     },
   },
   // -------------------------------------------------------- Part 4: professional
+  {
+    name: '36-library', async run(p) {
+      // The local library server on this build, with an empty data folder
+      const previewUrl = await p.eval<string>(`location.href`);
+      const data = mkdtempSync(join(tmpdir(), 'casiworks-shots-library-'));
+      const port = 5800 + Math.floor(Math.random() * 100);
+      const server = spawn(process.execPath, ['server/main.ts', '--port', String(port), '--data', data], { stdio: 'ignore' });
+      try {
+        await waitFor(() => fetch(`http://127.0.0.1:${port}/api/v1/health`).then(r => r.ok), 'library server');
+        await p.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
+        await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'app');
+        await example(p, 'l_bracket');
+        await feaPanel(p, false);
+        await p.eval(`window.casiworks.commands.execute('library.save', { message: 'First cut for the motor mount' })`);
+        await sleep(600);
+        await p.eval(`(() => { const f = window.casiworks.features.list().find(f => f.type === 'extrude_boss'); window.casiworks.features.update(f.id, { depth: 30 }); })()`);
+        await sleep(800);
+        await p.eval(`window.casiworks.commands.execute('library.save', { message: 'Base 30 mm deep for the M8 bolts' })`);
+        await sleep(600);
+        await run(p, 'library.open', undefined, 800);
+        await p.eval(`[...document.querySelectorAll('.library-version')].find(b => b.textContent.includes('Version 1')).click()`);
+        await sleep(200);
+        await p.eval(`document.querySelector('.library-release').click()`);
+        await waitFor(() => p.eval<boolean>(`!!document.querySelector('.library-revision')`), 'Rev A');
+        await sleep(300);
+        await p.screenshot('36-library');
+        await closeDialog(p);
+      } finally {
+        server.kill();
+        await new Promise(r => server.once('exit', r));
+        rmSync(data, { recursive: true, force: true });
+        await p.send('Page.navigate', { url: previewUrl });
+        await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'back to the preview');
+      }
+    },
+  },
   {
     name: '31-macro', async run(p) {
       await fresh(p);

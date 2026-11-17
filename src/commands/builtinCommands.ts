@@ -9,6 +9,7 @@ import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
 import { findInterferences } from '../assembly/interference.ts';
 import { naturalFrequencies } from '../simulation/modal.ts';
 import { rebuildModel } from '../features/rebuildModel.ts';
+import { saveToLibrary } from '../library/actions.ts';
 import { FACES } from '../simulation/studySetup.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { RELATIONS, dimensionConstraint, measureForDimension } from '../kernel/sketchSolve.ts';
@@ -151,6 +152,16 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   { id: 'file.open', label: 'Open…', category: 'File', shortcuts: ['Ctrl+O'], requiresUI: true, run: ({ state }) => openProject({ getState: state }) },
   { id: 'file.save', label: 'Save', category: 'File', shortcuts: ['Ctrl+S'], requiresUI: true, description: 'Download the project file', run: ({ state }) => downloadProject({ getState: state }) },
+  {
+    id: 'library.open', label: 'Library…', category: 'File', shortcuts: ['Ctrl+Shift+O'], requiresUI: true, record: false,
+    description: 'Documents in the local library (npm run server): open any version, release revisions',
+    run: ({ ui }) => ui().openDialog('library'),
+  },
+  {
+    id: 'library.save', label: 'Save to library', category: 'File', shortcuts: ['Ctrl+Shift+S'], record: false,
+    description: 'args?: { message?, asNew? } — a new version of the library document this came from, or a new library document. Resolves to the version, or null when not saved (the status bar says why)',
+    run: ({ state }, args?: { message?: string; asNew?: boolean }) => saveToLibrary({ getState: state }, { message: args?.message, asNew: args?.asNew }).catch(() => null),
+  },
   { id: 'file.export', label: 'Export model…', category: 'File', requiresUI: true, run: ({ ui }) => ui().openDialog('export') },
   {
     id: 'file.loadExample', label: 'Load example', category: 'File',

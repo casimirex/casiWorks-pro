@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // The local library server (npm run server); /api/ itself is the generated API reference
+    proxy: { '/api/v1': 'http://127.0.0.1:5180' },
   },
   resolve: {
     alias: {

@@ -6,7 +6,10 @@
 // protocol and checks the main user flows. Screenshots go to e2e-output/.
 // Chrome is taken from $CHROME_PATH or the usual install locations; without
 // one the test is skipped (exit 0) so it never blocks machines without Chrome.
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { findChrome, sleep, waitFor, withApp } from './browser.ts';
 import { AUDIT } from './a11yAudit.ts';
 import type { Page } from './browser.ts';
@@ -870,6 +873,104 @@ const CHECKS: Check[] = [
       assert(before !== turned, 'the view did not turn');
       assert(problems.size === 0, `unnamed controls:\n  ${[...problems].join('\n  ')}`);
       return `palette ran Mass Properties; Tab stayed in the dialog, Escape closed it; tree: arrows to ${second}, End to ${current}, S suppressed and restored it, Enter → "${panel}"; tabs and view move with arrows; no unnamed controls`;
+    },
+  },
+  {
+    name: 'library: save versions, shortcut save, release, open an old version, conflict, export job (local server)',
+    async run(p) {
+      // Without the server the dialog says how to start it
+      await p.eval(`window.casiworks.commands.execute('library.open')`);
+      const hint = await waitFor(() => p.eval<string>(`document.querySelector('.library-unavailable')?.textContent ?? ''`), 'library hint');
+      await p.key('Escape');
+
+      // The local server, serving this build, with an empty data folder
+      const previewUrl = await p.eval<string>(`location.href`);
+      const data = mkdtempSync(join(tmpdir(), 'casiworks-e2e-library-'));
+      const port = 5300 + Math.floor(Math.random() * 500);
+      const server = spawn(process.execPath, ['server/main.ts', '--port', String(port), '--data', data], { stdio: 'ignore' });
+      const url = `http://127.0.0.1:${port}/`;
+      try {
+        await waitFor(() => fetch(`${url}api/v1/health`).then(r => r.ok), 'library server');
+        await p.send('Page.navigate', { url });
+        await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'app from the server');
+        await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+        await sleep(1500);
+        const vol = () => p.eval<number>(`window.casiworks.model.massProperties().volume`);
+        const v1Volume = await vol();
+
+        // First save: a new library document
+        await p.click('Library: documents and versions on this computer (Ctrl+Shift+O)', 600);
+        await p.eval(`(() => { const el = document.querySelector('.library-message');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, 'First cut'); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+        await p.eval(`document.querySelector('.library-save').click()`);
+        await waitFor(() => p.eval<number>(`document.querySelectorAll('.library-version').length || null`), 'version 1 listed');
+        const firstStatus = await status(p);
+        await p.key('Escape');
+
+        // Change the part and save with the keyboard
+        await p.eval(`(() => { const f = window.casiworks.features.list().find(f => f.type === 'extrude_boss'); window.casiworks.features.update(f.id, { depth: 30 }); })()`);
+        await sleep(800);
+        const v2Volume = await vol();
+        await p.eval(`document.activeElement?.blur()`);
+        await p.key('S', { ctrl: true, shift: true });
+        await waitFor(async () => /version 2/.test(await status(p)), 'shortcut save');
+        const badge = await p.eval<string>(`document.querySelector('.doc-library-tag')?.textContent ?? ''`);
+
+        // Release version 1, then open it
+        await p.key('O', { ctrl: true, shift: true });
+        await waitFor(() => p.eval<number>(`document.querySelectorAll('.library-version').length === 2 || null`), 'two versions');
+        await p.eval(`[...document.querySelectorAll('.library-version')].find(b => b.textContent.includes('Version 1')).click()`);
+        await sleep(200);
+        await p.eval(`document.querySelector('.library-release').click()`);
+        await waitFor(() => p.eval<boolean>(`!!document.querySelector('.library-revision')`), 'Rev A');
+        const rev = await p.eval<string>(`document.querySelector('.library-revision').textContent`);
+        await p.screenshot('11-library');
+        await p.eval(`document.querySelector('.library-open').click()`);
+        await sleep(1500);
+        const reopened = await vol();
+        const openStatus = await status(p);
+        const badgeOld = await p.eval<string>(`document.querySelector('.doc-library-tag')?.textContent ?? ''`);
+
+        // Someone else saves meanwhile (another window): this save is refused, the work stays open
+        await p.eval(`(async () => {
+          const { token } = await (await fetch('/api/v1/session')).json();
+          const docs = (await (await fetch('/api/v1/documents', { headers: { authorization: 'Bearer ' + token } })).json()).documents;
+          await fetch('/api/v1/documents/' + docs[0].id + '/versions', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+            body: JSON.stringify({ content: JSON.stringify({ features: [] }), message: 'other window' }) });
+        })()`);
+        await p.eval(`window.casiworks.commands.execute('library.save')`);
+        await sleep(600);
+        const conflict = await status(p);
+
+        // An export job on the server
+        const job = await p.eval<{ status: string; size: number; triangles: number }>(`(async () => {
+          const { token } = await (await fetch('/api/v1/session')).json();
+          const h = { authorization: 'Bearer ' + token, 'content-type': 'application/json' };
+          const docs = (await (await fetch('/api/v1/documents', { headers: h })).json()).documents;
+          let job = await (await fetch('/api/v1/jobs', { method: 'POST', headers: h, body: JSON.stringify({ kind: 'export', documentId: docs[0].id, version: 2, format: 'stl' }) })).json();
+          for (let i = 0; i < 50 && (job.status === 'queued' || job.status === 'running'); i++) {
+            await new Promise(r => setTimeout(r, 200));
+            job = await (await fetch('/api/v1/jobs/' + job.id, { headers: h })).json();
+          }
+          const buf = await (await fetch('/api/v1/jobs/' + job.id + '/result', { headers: h })).arrayBuffer();
+          return { status: job.status, size: buf.byteLength, triangles: new DataView(buf).getUint32(80, true) };
+        })()`);
+
+        assert(/npm run server/.test(hint), `hint: ${hint}`);
+        assert(/Added Mounting_L_Bracket to the library \(version 1\)/.test(firstStatus), `first save: ${firstStatus}`);
+        assert(badge === 'v2' && v2Volume > v1Volume, `badge ${badge}, volumes ${v1Volume} → ${v2Volume}`);
+        assert(rev === 'Rev A', `revision ${rev}`);
+        assert(Math.abs(reopened - v1Volume) < 1e-6 && badgeOld === 'v1' && /saving makes version 3/.test(openStatus), `reopened ${reopened} vs ${v1Volume}; badge ${badgeOld}; ${openStatus}`);
+        assert(/^Not saved: Version 3 was saved after version 2/.test(conflict), `conflict: ${conflict}`);
+        assert(job.status === 'done' && job.size === 84 + 50 * job.triangles && job.triangles > 10, `job ${JSON.stringify(job)}`);
+        return `saved v1, Ctrl+Shift+S saved v2 (badge ${badge}); v1 released as ${rev} and reopened (${openStatus}); a stale save refused; STL export job: ${job.triangles} triangles`;
+      } finally {
+        server.kill();
+        await new Promise(r => server.once('exit', r));
+        rmSync(data, { recursive: true, force: true });
+        await p.send('Page.navigate', { url: previewUrl });
+        await waitFor(() => p.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'back to the preview');
+      }
     },
   },
   {

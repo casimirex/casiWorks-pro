@@ -220,7 +220,7 @@ tr:last-child td { border-bottom: 0; }
   <div class="inner">
     <div class="eyebrow">The CasiWorks Pro Handbook</div>
     <h1>From first sketch to<br>professional CAD workflows</h1>
-    <p>A hands-on course in 17 chapters. Every chapter is a worked example you build yourself, with screenshots taken from the real app.</p>
+    <p>A hands-on course in 18 chapters. Every chapter is a worked example you build yourself, with screenshots taken from the real app.</p>
     <div class="levels"><span>● Novice</span><span>● Intermediate</span><span>● Advanced</span><span>● Professional</span></div>
   </div>
 </div>
@@ -902,7 +902,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
 </section>
 
 <!-- ======================================================= PART IV -->
-<div class="part-banner pro" id="part4"><small>Part IV</small><h2>Professional: automate and extend</h2><p>Record repeatable work, script the model, and add your own commands to the ribbon.</p></div>
+<div class="part-banner pro" id="part4"><small>Part IV</small><h2>Professional: automate and extend</h2><p>Record repeatable work, script the model, add your own commands to the ribbon, and keep versions in your own library.</p></div>
 
 <section class="chapter" id="ch14" data-title="Macros: record & replay" data-part="pro" data-n="14">
   <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 14 · about 10 min</span></div>
@@ -1058,6 +1058,46 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="exercise"><b>Exercise 17.</b> Read a CSV of <code>name,width,height,thickness</code> rows and print the mass of each plate in aluminium 6061.<label><input type="checkbox" data-done="ch17"> I've done this</label></div>
 </section>
 
+<section class="chapter" id="ch18" data-title="Your document library" data-part="pro" data-n="18">
+  <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 18 · about 20 min</span></div>
+  <h2 class="title">Your document library: versions, revisions and the REST API</h2>
+  <p class="lead">Saving to a file keeps one copy. The library keeps every version you save, lets you release one as a revision (A, B, C…), and lets scripts and other programs reach your parts. It runs on your own computer: nothing leaves it.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 18.1</span><h4>Start the library and save two versions</h4><div class="specs"><span>npm run server</span><span>Ctrl+Shift+S</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>In a terminal in the project folder run <code>npm run build</code> once, then <code>npm run server</code>. Open <code>http://127.0.0.1:5180</code>: the same app, now with a library. (Documents are kept in <code>~/.casiworks</code>.)</li>
+        <li>Load the L-bracket example. Click <b>Library</b> in the top bar, type <i>First cut for the motor mount</i> as the message and click <b>Save to library</b>. The title bar now shows <b>v1</b>.</li>
+        <li>Make the base 30 mm deep and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>: version 2.</li>
+        <li>Open the Library again (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>), pick <b>Version 1</b> and click <b>Release</b>: it becomes <b>Rev A</b>. A released version never changes, so it is safe to send to a supplier.</li>
+        <li>Pick version 1 and click <b>Open version 1</b> to go back to it. Saving then makes version 3: older versions are kept as they were.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/36-library.webp" alt="The Library dialog with two versions, version 1 released as revision A"><figcaption>Two versions of the bracket; version 1 is released as revision A.</figcaption></figure>
+      <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Two windows, one document</b><p>If the same document is saved from another window after you opened it, your save is refused rather than silently replacing that work. Your changes stay open: <b>Save as new document</b> keeps them, or open the newest version and redo them.</p></div></div>
+    </div>
+  </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 18.2</span><h4>Export a revision from a script</h4><div class="specs"><span>REST API v1</span><span>API key</span></div></div>
+    <div class="example-body split single">
+      <div class="code"><span class="lang">Terminal</span><button type="button">Copy</button><pre><span class="tok-c"># once: a key for your scripts (shown only now)</span>
+npm run server -- key create "export script"
+KEY=cw_…
+
+<span class="tok-c"># the documents, then an STL export job for version 1</span>
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:5180/api/v1/documents
+curl -s -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
+  -d '{"kind":"export","documentId":"&lt;id&gt;","version":1,"format":"stl"}' \
+  http://127.0.0.1:5180/api/v1/jobs
+curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
+  http://127.0.0.1:5180/api/v1/jobs/&lt;job id&gt;/result</pre></div>
+      <p>Jobs rebuild the saved version on the same kernel the app uses, without a browser. A <code>rebuild</code> job reports rebuild warnings and the mass properties; an <code>export</code> job writes STL, OBJ, STEP, IGES or DXF. The whole API is described at <code>/api/v1/openapi.json</code> (OpenAPI 3.1).</p>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Webhooks</b><p><code>POST /api/v1/webhooks</code> with a <code>url</code> and the library will POST to it when a version is saved, a revision released or a job finished, signed with <code>X-CasiWorks-Signature: sha256=…</code> (HMAC of the body with the secret you get back). Use it to start a slicer, copy released parts to a shared folder, or post to a chat.</p></div></div>
+    </div>
+  </div>
+  <div class="callout check"><span class="ic">✓</span><div><b class="label">Only you, only this computer</b><p>The server listens on <code>127.0.0.1</code> only, refuses other web sites and other host names, and every API call needs your API key (the app uses its own session). Revoke a key with <code>npm run server -- key delete &lt;id&gt;</code>.</p></div></div>
+  <div class="exercise"><b>Exercise 18.</b> Write a small script that lists every document whose newest version is not released yet.<label><input type="checkbox" data-done="ch18"> I've done this</label></div>
+</section>
+
 <!-- ======================================================= APPENDICES -->
 <div class="part-banner ref" id="appendix"><small>Appendices</small><h2>Reference</h2><p>Shortcuts, current limits and a glossary.</p></div>
 
@@ -1075,6 +1115,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><kbd>Ctrl</kbd>+<kbd>`</kbd></td><td>Scripting console</td><td><kbd>Ctrl</kbd>+<kbd>7</kbd> · <kbd>Space</kbd></td><td>Isometric</td></tr>
     <tr><td><kbd>S</kbd></td><td>Spline (in a sketch)</td><td><kbd>T</kbd></td><td>Trim (in a sketch)</td></tr>
     <tr><td><kbd>M</kbd></td><td>Measure</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> · <kbd>F1</kbd></td><td>Command palette</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Save to library</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td><td>Library</td></tr>
   </table></div>
   <p>Shortcuts are ignored while you are typing in a field. Every shortcut runs a named command, so <code>api.commands.list()</code> shows them all with their keys.</p>
   <h3>Working without a mouse</h3>

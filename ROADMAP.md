@@ -141,11 +141,11 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 
 The "experience platform" layer: data management and a server-side API.
 
-- [ ] **7.1** Backend service (Node), auth (OIDC), user accounts
-- [ ] **7.2** Cloud document storage with versions and revisions (PDM basics)
-- [ ] **7.3** REST API v1: documents, versions, export jobs; OpenAPI spec; API keys
-- [ ] **7.4** Headless kernel on the server: run rebuild / export jobs without a browser
-- [ ] **7.5** Webhooks (document saved, revision released)
+- [x] **7.1** Backend service (Node), auth (OIDC), user accounts — *local, single user (decided 2026-11-17)*: `npm run server` on 127.0.0.1 with SQLite; no OIDC or accounts; bearer tokens (app session token, API keys); other hosts and web sites refused
+- [x] **7.2** Cloud document storage with versions and revisions (PDM basics) — *local*: Library dialog, every version kept, stale saves refused (409), release as revision A, B, …
+- [x] **7.3** REST API v1: documents, versions, export jobs; OpenAPI spec; API keys (OpenAPI 3.1 generated from the route table; keys hashed, shown once, revocable)
+- [x] **7.4** Headless kernel on the server: run rebuild / export jobs without a browser (STL, OBJ, STEP, IGES, DXF)
+- [x] **7.5** Webhooks (document saved, revision released) — plus job finished; HMAC-signed, retried, every attempt logged
 - [ ] **7.6** Sharing, permissions, comments on models
 - [ ] **7.7** Real-time co-viewing; later, co-editing
 - [ ] **7.8** Lifecycle: check-in/out, release states, where-used

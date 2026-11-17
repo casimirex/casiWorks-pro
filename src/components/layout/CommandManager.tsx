@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d, Search
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d, Search, LibraryBig
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { RELATIONS } from '../../kernel/sketchSolve.ts';
@@ -33,6 +33,7 @@ export default function CommandManager() {
   const constructionMode = useCADStore(s => s.constructionMode);
   const sectionActive = useCADStore(s => s.sectionViewActive);
   const documentName = useCADStore(s => s.documentName);
+  const libraryRef = useCADStore(s => s.libraryRef);
   const configurations = useCADStore(s => s.configurations);
   const activeConfiguration = useCADStore(s => s.activeConfiguration);
   const isModified = useCADStore(s => s.isModified);
@@ -164,6 +165,12 @@ export default function CommandManager() {
         <div className="doc-name-pill">
           <span className={`doc-status-dot ${isModified ? 'modified' : 'saved'}`} />
           <span className="doc-title-text">{documentName}</span>
+          {libraryRef && (
+            <button className="doc-unit-tag doc-library-tag" onClick={() => runCommand('library.open')} title={`Library document ${libraryRef.name}, version ${libraryRef.opened}: open the Library`}
+              style={{ cursor: 'pointer', border: 'none' }}>
+              v{libraryRef.opened}
+            </button>
+          )}
           {activeConfiguration && <span className="doc-unit-tag doc-config-tag" title="Active configuration">{activeConfiguration}</span>}
           <span className="doc-unit-tag">MMGS</span>
         </div>
@@ -172,6 +179,9 @@ export default function CommandManager() {
         <div className="qa-group">
           <button className="qa-btn command-palette-btn" onClick={() => runCommand('view.commandPalette')} title="Command palette: find any command (Ctrl+K)" aria-keyshortcuts="Control+K F1">
             <Search size={14} /> <span className="qa-label">Commands</span>
+          </button>
+          <button className="qa-btn library-btn" onClick={() => runCommand('library.open')} title="Library: documents and versions on this computer (Ctrl+Shift+O)">
+            <LibraryBig size={14} /> <span className="qa-label">Library</span>
           </button>
           <button className="qa-btn" onClick={() => runCommand('model.material')} title="Material Library">
             <Sliders size={14} /> <span className="qa-label">Material</span>

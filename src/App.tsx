@@ -10,6 +10,7 @@ import EquationsDialog from './components/dialogs/EquationsDialog.tsx';
 import ConfigurationsDialog from './components/dialogs/ConfigurationsDialog.tsx';
 import DrawingViewModal from './drawings/DrawingViewModal.tsx';
 import CommandPalette from './components/common/CommandPalette.tsx';
+import LibraryDialog from './components/dialogs/LibraryDialog.tsx';
 import { commands } from './commands/index.ts';
 import { useCADStore, ensureFeatureGraph } from './store/cadStore.ts';
 import { setupKeyboardShortcuts } from './utils/shortcuts.ts';
@@ -32,6 +33,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
   const [equationsOpen, setEquationsOpen] = useState(false);
   const [configurationsOpen, setConfigurationsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   // The UI that commands open dialogs in, and keyboard shortcuts that run commands
   useEffect(() => {
@@ -46,6 +48,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
         else if (name === 'equations') setEquationsOpen(true);
         else if (name === 'configurations') setConfigurationsOpen(true);
         else if (name === 'commandPalette') setPaletteOpen(true);
+        else if (name === 'library') setLibraryOpen(true);
       },
       toggleFeatureTree: () => setTreeOpen(open => !open),
       toggleConsole: () => setConsoleOpen(open => !open),
@@ -111,6 +114,7 @@ export default function App({ seedStarter = true }: { seedStarter?: boolean }) {
       <EquationsDialog isOpen={equationsOpen} onClose={() => setEquationsOpen(false)} />
       <ConfigurationsDialog isOpen={configurationsOpen} onClose={() => setConfigurationsOpen(false)} />
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <LibraryDialog isOpen={libraryOpen} onClose={() => setLibraryOpen(false)} />
 
       <DrawingViewModal isOpen={drawingOpen} onClose={() => setDrawingOpen(false)} />
     </>

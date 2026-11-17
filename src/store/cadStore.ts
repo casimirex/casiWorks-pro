@@ -127,12 +127,21 @@ interface UndoEntry {
   snapshot: DocumentSnapshot;
 }
 
+/**
+ * A document in the local library: `opened` is the version whose content this
+ * is; `version` is the newest version when it was opened or saved, which the
+ * next save builds on (a save refused if someone saved after it).
+ */
+export interface LibraryRef { documentId: string; name: string; version: number; opened: number }
+
 export interface CADState {
   appMode: AppMode;
 
   // Document
   documentName: string;
   isModified: boolean;
+  /** The library document and version this was opened from or last saved as (local server), if any. */
+  libraryRef: LibraryRef | null;
 
   // Tools and selection
   activeTool: ToolId;
@@ -302,6 +311,8 @@ export interface CADActions {
   closePropertyPanel(): void;
   setCommandTab(tab: string): void;
   setStatus(message: string): void;
+  /** Note the library document and version now open (null: not from the library); a save also clears the modified mark. */
+  setLibraryRef(ref: LibraryRef | null, saved?: boolean): void;
 
   // Undo / redo / rebuild
   undo(): void;
@@ -530,6 +541,7 @@ function initialState(): CADState {
     appMode: APP_MODES.PART,
     documentName: 'Untitled Part',
     isModified: false,
+    libraryRef: null,
     activeTool: TOOLS.SELECT,
     selectedEntities: [],
     features: [],
@@ -1167,6 +1179,11 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== DOCUMENTS ====================
+    setLibraryRef: (ref, saved = false) => set(state => {
+      state.libraryRef = ref ? { ...ref } : null;
+      if (saved) state.isModified = false;
+    }),
+
     saveProject: () => {
       const state = get();
       const assemblyComponents: SerializedComponent[] = state.assemblyComponents.map(comp => ({
@@ -1266,6 +1283,7 @@ export const useCADStore = create<CADStore>()(
         state.redoStack = [];
         state.needsRebuild = true;
         state.isModified = false;
+        state.libraryRef = null; // a file; the library sets its own reference after loading
         state.statusMessage = `Loaded: ${state.documentName}`;
         state.documentRevision += 1;
       } catch (e) {

@@ -488,3 +488,19 @@ To build for production:
 npm run build
 ```
 Production assets are generated cleanly in `dist/`.
+
+### Local document library and REST API (`npm run server`)
+
+```bash
+npm run build && npm run server        # http://127.0.0.1:5180 — the app plus /api/v1
+npm run server -- key create "script"  # an API key for scripts (shown once); key list / key delete ID
+```
+
+A small Node server for one person on one machine: it listens on 127.0.0.1 only, keeps its data in `~/.casiworks` (`CASIWORKS_DATA` or `--data` to change), and needs no extra packages (SQLite is built into Node 22+).
+
+- **Library** (File ▸ Library, `Ctrl+Shift+O`; Save to library `Ctrl+Shift+S`): every saved version is kept; a save on top of a version someone saved after you opened is refused (409); releasing a version gives it the next revision letter (A, B, …).
+- **REST API v1** (`/api/v1`, described in `/api/v1/openapi.json`): documents, versions, version content, release, jobs, API keys, webhooks. Every call needs `Authorization: Bearer <API key>`; the app uses a session token only its own pages can read. Other host names and other web sites are refused.
+- **Jobs**: `rebuild` (rebuild warnings and mass properties) or `export` (STL, OBJ, STEP, IGES, DXF) of a saved version, run on the app's own kernel without a browser.
+- **Webhooks**: `document.saved`, `revision.released`, `job.finished`, POSTed as JSON signed with `X-CasiWorks-Signature: sha256=<HMAC-SHA256 of the body>`; retried twice on failure; every attempt is logged (`GET /api/v1/webhooks/{id}/deliveries`).
+
+In development, `npm run dev` proxies `/api/v1` to a running `npm run server`.
