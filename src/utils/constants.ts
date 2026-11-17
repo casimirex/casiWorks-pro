@@ -81,6 +81,7 @@ export const FEATURE_TYPES = {
   REFERENCE_PLANE: 'reference_plane',
   REFERENCE_AXIS: 'reference_axis',
   REFERENCE_POINT: 'reference_point',
+  COORDINATE_SYSTEM: 'coordinate_system',
 } as const;
 
 // Sketch entity types

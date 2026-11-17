@@ -1,4 +1,6 @@
 // CasiWorks Pro - 3D Viewport Component
+import { featureFrame } from '../features/coordinateSystems.ts';
+import type { CoordinateFrame } from '../features/coordinateSystems.ts';
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import type { ElementRef } from 'react';
 import { Canvas, useThree, extend } from '@react-three/fiber';
@@ -89,6 +91,31 @@ function ReferenceMark({ name, kind, at, dir }: { name: string; kind: 'axis' | '
       )}
       <Html position={labelAt} zIndexRange={[10, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
         <div className="plane-label">{name}</div>
+      </Html>
+    </group>
+  );
+}
+
+/** A coordinate system: red X, green Y, blue Z arrows from its origin, with its name. */
+function CoordinateTriad({ name, frame }: { name: string; frame: CoordinateFrame }) {
+  const arrows = useMemo(() => {
+    const o = new THREE.Vector3(frame.origin.x, frame.origin.y, frame.origin.z);
+    return ([[frame.x, 0xef4444], [frame.y, 0x22c55e], [frame.z, 0x3b82f6]] as const).map(([a, color]) => {
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(a.x, a.y, a.z), o, 22, color, 5, 2.5);
+      // Drawn over the part, so a system inside it stays visible
+      for (const part of [arrow.line, arrow.cone]) {
+        (part.material as THREE.Material).depthTest = false;
+        part.renderOrder = SKETCH_ON_TOP;
+      }
+      return arrow;
+    });
+  }, [frame]);
+  useEffect(() => () => arrows.forEach(a => a.dispose()), [arrows]);
+  return (
+    <group name={`CoordinateSystem-${name}`}>
+      {arrows.map((a, i) => <primitive key={i} object={a} />)}
+      <Html position={[frame.origin.x, frame.origin.y, frame.origin.z]} zIndexRange={[10, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
+        <div className="plane-label cs-label" style={{ transform: 'translate(6px, 6px)' }}>{name}</div>
       </Html>
     </group>
   );
@@ -810,6 +837,7 @@ export default function Viewport3D() {
   const referenceMarks = useMemo(() => {
     const points = new Map<string, { x: number; y: number; z: number }>();
     const out: Array<{ id: string; name: string; kind: 'axis' | 'point'; at: [number, number, number]; dir?: [number, number, number] }> = [];
+    const triads: Array<{ id: string; name: string; frame: CoordinateFrame }> = [];
     for (const f of features) {
       if (f.suppressed) continue;
       const r = f as ReferenceFeature;
@@ -817,13 +845,16 @@ export default function Viewport3D() {
         const p = r.point ?? { x: 0, y: 0, z: 0 };
         points.set(f.id, p);
         out.push({ id: f.id, name: f.name, kind: 'point', at: [p.x, p.y, p.z] });
+      } else if (f.type === 'coordinate_system') {
+        const frame = featureFrame(f, features);
+        if (frame) triads.push({ id: f.id, name: f.name, frame });
       } else if (f.type === 'reference_axis') {
         const through = (r.throughRef && points.get(r.throughRef)) || r.point || { x: 0, y: 0, z: 0 };
         const a = referenceAxisLine(r.direction ?? 'Y', through);
         out.push({ id: f.id, name: f.name, kind: 'axis', at: [a.origin.x, a.origin.y, a.origin.z], dir: [a.direction.x, a.direction.y, a.direction.z] });
       }
     }
-    return out;
+    return { marks: out, triads };
   }, [features]);
   const startSketchOnFace = useCallback((pick: MeasurePick) => {
     if (pick.normal) runCommand('sketch.onFace', { point: pick.point, normal: pick.normal });
@@ -1031,7 +1062,8 @@ export default function Viewport3D() {
 
         <OriginDisplay showOrigin={showOrigin} showAxes={showAxes} />
         <ReferencePlanes showPlanes={showPlanes} activePlane={activeSketchPlane} />
-        {showPlanes && referenceMarks.map(m => <ReferenceMark key={m.id} {...m} />)}
+        {showPlanes && referenceMarks.marks.map(m => <ReferenceMark key={m.id} {...m} />)}
+        {showPlanes && referenceMarks.triads.map(t => <CoordinateTriad key={t.id} name={t.name} frame={t.frame} />)}
         {showPlanes && referencePlanes.map(rp => (
           <FramePlane key={rp.id} frame={rp.frame} size={70} color="#fbbf24" opacity={0.07} label={rp.name} />
         ))}

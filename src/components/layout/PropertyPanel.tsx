@@ -80,6 +80,7 @@ interface PanelContentFields {
   axisRef?: string;
   point?: Point3;
   throughRef?: string;
+  rotation?: Point3;
 }
 
 export default function PropertyPanel() {
@@ -138,6 +139,7 @@ export default function PropertyPanel() {
   const [refDirection, setRefDirection] = useState<'X' | 'Y' | 'Z'>('Y');
   const [refPoint, setRefPoint] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const [refThrough, setRefThrough] = useState('');
+  const [refRotation, setRefRotation] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const sketchEntitiesMap = useCADStore(s => s.sketchEntities);
   const [holePosition, setHolePosition] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const [holeAxis, setHoleAxis] = useState<AxisName>('+Z');
@@ -223,7 +225,8 @@ export default function PropertyPanel() {
       if (c.type === FEATURE_TYPES.REVOLVE_BOSS || c.type === FEATURE_TYPES.REVOLVE_CUT) {
         setRevolveAxis(c.axisLine ? `line:${c.axisLine}` : c.axisRef ? `ref:${c.axisRef}` : (c as { axis?: unknown }).axis === 'x' ? 'x' : 'y');
       }
-      if (c.type === FEATURE_TYPES.REFERENCE_AXIS || c.type === FEATURE_TYPES.REFERENCE_POINT) {
+      if (c.type === FEATURE_TYPES.COORDINATE_SYSTEM) setRefRotation({ ...(c.rotation ?? { x: 0, y: 0, z: 0 }) });
+      if (c.type === FEATURE_TYPES.REFERENCE_AXIS || c.type === FEATURE_TYPES.REFERENCE_POINT || c.type === FEATURE_TYPES.COORDINATE_SYSTEM) {
         const dir = (c as { direction?: string }).direction;
         if (dir === 'X' || dir === 'Y' || dir === 'Z') setRefDirection(dir);
         setRefPoint({ ...(c.point ?? { x: 0, y: 0, z: 0 }) });
@@ -296,6 +299,8 @@ export default function PropertyPanel() {
         return { direction: refDirection, point: { ...refPoint }, throughRef: refThrough || undefined };
       case FEATURE_TYPES.REFERENCE_POINT:
         return { point: { ...refPoint } };
+      case FEATURE_TYPES.COORDINATE_SYSTEM:
+        return { point: { ...refPoint }, throughRef: refThrough || undefined, rotation: { ...refRotation } };
       default:
         return {};
     }
@@ -336,6 +341,7 @@ export default function PropertyPanel() {
           || (featureType === FEATURE_TYPES.HOLE && holeSize ? standardHole(holeType, holeSize, holeFit).label : '')
           || (featureType === FEATURE_TYPES.REFERENCE_PLANE ? `Plane${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_PLANE).length + 1}` : '')
           || (featureType === FEATURE_TYPES.REFERENCE_AXIS ? `Axis${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_AXIS).length + 1}` : '')
+          || (featureType === FEATURE_TYPES.COORDINATE_SYSTEM ? `CS${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.COORDINATE_SYSTEM).length + 1}` : '')
           || (featureType === FEATURE_TYPES.REFERENCE_POINT ? `Point${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT).length + 1}` : '')
           || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
         ...params,
@@ -646,6 +652,36 @@ export default function PropertyPanel() {
                 {featureType === FEATURE_TYPES.REFERENCE_AXIS
                   ? 'Use it as the axis of a Revolve when it lies in the sketch plane.'
                   : 'Reference axes can pass through it, and follow it when it moves.'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.COORDINATE_SYSTEM && (
+          <div className="property-card">
+            <div className="property-card-header">Coordinate System</div>
+            <div className="property-card-body">
+              <div className="property-row">
+                <span className="property-label">Origin at:</span>
+                <select className="property-select cs-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
+                  <option value="">This point</option>
+                  {features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT && !f.suppressed).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </div>
+              {!refThrough && (['x', 'y', 'z'] as const).map(k => (
+                <div className="property-row" key={k}>
+                  <span className="property-label">Origin {k.toUpperCase()}:</span>
+                  <NumericInput value={refPoint[k]} onChange={(v) => setRefPoint(p => ({ ...p, [k]: v }))} step={5} unit="mm" {...linkable(`point.${k}`)} />
+                </div>
+              ))}
+              {(['x', 'y', 'z'] as const).map(k => (
+                <div className="property-row" key={`r${k}`}>
+                  <span className="property-label">Turn about {k.toUpperCase()}:</span>
+                  <NumericInput value={refRotation[k]} onChange={(v) => setRefRotation(r => ({ ...r, [k]: v }))} min={-360} max={360} step={15} unit="°" {...linkable(`rotation.${k}`)} />
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                Turns apply about model X, then Y, then Z. Mass Properties can report the centre of mass and inertia in it.
               </div>
             </div>
           </div>

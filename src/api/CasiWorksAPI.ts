@@ -25,6 +25,8 @@ import type { Bom, BomComponent } from '../assembly/bom.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
 import { findInterferences } from '../assembly/interference.ts';
 import { naturalFrequencies } from '../simulation/modal.ts';
+import { featureFrame, massPropertiesIn } from '../features/coordinateSystems.ts';
+import type { CoordinateFrame } from '../features/coordinateSystems.ts';
 import { FACES } from '../simulation/studySetup.ts';
 import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
@@ -56,7 +58,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.14.0';
+export const API_VERSION = '1.15.0';
 
 // =====================================================================
 // Public types
@@ -264,6 +266,12 @@ export interface FeaturesAPI {
   referenceAxis(spec: { direction: 'X' | 'Y' | 'Z'; point?: { x: number; y: number; z: number }; through?: string; name?: string }): string;
   /** Add a reference point. Since 1.10. */
   referencePoint(spec: { x: number; y: number; z: number; name?: string }): string;
+  /**
+   * Add a coordinate system: an origin (`origin`, or the reference point `through`) and
+   * the model axes turned about model X, then Y, then Z by `rotation` (degrees). Since 1.15.
+   * @example api.features.coordinateSystem({ origin: { x: 50, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 90 } })
+   */
+  coordinateSystem(spec: { origin?: { x: number; y: number; z: number }; through?: string; rotation?: { x?: number; y?: number; z?: number }; name?: string }): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
   /** Delete a feature; features that depend on it lose their parent. Throws NOT_FOUND. */
@@ -283,7 +291,12 @@ export interface ModelAPI {
   /** true when the features produce a solid. */
   hasBody(): boolean;
   /** Mass properties with the active material; null when there is no body. */
-  massProperties(): MassProperties | null;
+  /**
+   * Mass properties with the active material; null when there is no body. With
+   * `coordinateSystem` (a coordinate system id, since 1.15) the centre of mass is in
+   * its coordinates and the inertia is along its axes (momentOfInertiaAtOrigin: about its origin).
+   */
+  massProperties(options?: { coordinateSystem?: string }): MassProperties | null;
   /** Axis-aligned bounds in mm; null when there is no body. */
   boundingBox(): BoundingBox | null;
   /**
@@ -1111,6 +1124,21 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       const count = get().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT).length;
       return addFeature({ type: FEATURE_TYPES.REFERENCE_POINT, name: optionalName(s.name) ?? `Point${count + 1}`, point } as unknown as FeatureSpec);
     },
+    coordinateSystem(spec: { origin?: { x: number; y: number; z: number }; through?: string; rotation?: { x?: number; y?: number; z?: number }; name?: string }) {
+      const s = requireObject(spec ?? {}, 'spec');
+      let throughRef: string | undefined;
+      if (s.through !== undefined) {
+        const ref = get().features.find(f => f.id === s.through && f.type === FEATURE_TYPES.REFERENCE_POINT);
+        if (!ref) fail('NOT_FOUND', `No reference point ${JSON.stringify(s.through)}`);
+        throughRef = ref.id;
+      }
+      const o = s.origin === undefined ? { x: 0, y: 0, z: 0 } : requireObject(s.origin, 'origin');
+      const point = { x: requireNumber(o.x ?? 0, 'origin.x'), y: requireNumber(o.y ?? 0, 'origin.y'), z: requireNumber(o.z ?? 0, 'origin.z') };
+      const r = s.rotation === undefined ? {} : requireObject(s.rotation, 'rotation');
+      const rotation = { x: requireNumber(r.x ?? 0, 'rotation.x'), y: requireNumber(r.y ?? 0, 'rotation.y'), z: requireNumber(r.z ?? 0, 'rotation.z') };
+      const count = get().features.filter(f => f.type === FEATURE_TYPES.COORDINATE_SYSTEM).length;
+      return addFeature({ type: FEATURE_TYPES.COORDINATE_SYSTEM, name: optionalName(s.name) ?? `CS${count + 1}`, point, rotation, ...(throughRef ? { throughRef } : {}) } as unknown as FeatureSpec);
+    },
     hole(spec: HoleSpec) {
       const s = requireObject(spec, 'spec');
       const vec = (v: unknown, what: string) => {
@@ -1193,11 +1221,20 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     hasBody() {
       return currentGeometry() !== null;
     },
-    massProperties() {
+    massProperties(options: { coordinateSystem?: string } = {}) {
+      let frame: CoordinateFrame | null = null;
+      if (options?.coordinateSystem !== undefined) {
+        const cs = get().features.find(f => f.id === options.coordinateSystem && f.type === FEATURE_TYPES.COORDINATE_SYSTEM);
+        if (!cs) fail('NOT_FOUND', `No coordinate system ${JSON.stringify(options.coordinateSystem)}`);
+        if (cs.suppressed) fail('OPERATION_FAILED', `${cs.name} is suppressed`);
+        frame = featureFrame(cs, get().features);
+        if (!frame) fail('OPERATION_FAILED', `The reference point of ${cs.name} is missing or suppressed`);
+      }
       const geometry = currentGeometry();
       if (!geometry) return null;
       const material = materialLibrary.getMaterial(get().activeMaterial);
-      return clone(geometryEngine.computeMassProperties(geometry, material) as MassProperties);
+      const mp = geometryEngine.computeMassProperties(geometry, material) as MassProperties;
+      return clone(frame && mp ? massPropertiesIn(mp, frame) : mp);
     },
     naturalFrequencies(options = {}) {
       const geometry = currentGeometry();

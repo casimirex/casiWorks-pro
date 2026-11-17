@@ -222,17 +222,19 @@ export interface BooleanFeature extends FeatureBase {
 }
 
 export interface ReferenceFeature extends FeatureBase {
-  type: 'reference_plane' | 'reference_axis' | 'reference_point';
+  type: 'reference_plane' | 'reference_axis' | 'reference_point' | 'coordinate_system';
   /** Reference plane: offset `offset` mm along the normal of `base`, then tilted `angle`° about its X axis. */
   base?: SketchPlane;
   offset?: number;
   angle?: number;
   /** Reference axis: parallel to model X, Y or Z… */
   direction?: 'X' | 'Y' | 'Z';
-  /** …through this point (reference axis), or the point itself (reference point). */
+  /** …through this point (reference axis), the point itself (reference point), or the origin (coordinate system). */
   point?: Point3;
-  /** Reference axis: through this reference point feature instead of `point`. */
+  /** Reference axis or coordinate system: through (at) this reference point feature instead of `point`. */
   throughRef?: string;
+  /** Coordinate system: the model axes turned about model X, then Y, then Z (degrees). */
+  rotation?: Point3;
 }
 
 /** A feature as authored or saved (dependency links may be missing). */

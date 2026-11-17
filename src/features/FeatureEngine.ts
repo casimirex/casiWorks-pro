@@ -129,6 +129,11 @@ export class FeatureEngine {
         this.pointCache[feature.id] = { x: p.x, y: p.y, z: p.z };
         return currentBody;
       }
+      case FEATURE_TYPES.COORDINATE_SYSTEM: {
+        const ref = feature as ReferenceFeature;
+        if (ref.throughRef && !this.pointCache[ref.throughRef]) throw new Error('The reference point of this coordinate system is missing or suppressed');
+        return currentBody;
+      }
       case FEATURE_TYPES.REFERENCE_AXIS: {
         const ref = feature as ReferenceFeature;
         let through = ref.point ?? { x: 0, y: 0, z: 0 };

@@ -1,10 +1,13 @@
 // CasiWorks Pro - Mass Properties Dialog
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Scale } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../../kernel/GeometryEngine.ts';
+import { featureFrame, massPropertiesIn } from '../../features/coordinateSystems.ts';
 
+/** Two decimals, without a minus sign on zero. */
+const mm = (v: number) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
 const formatInertia = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? v.toPrecision(6) : '—');
 
 interface DialogProps {
@@ -16,14 +19,22 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
 
+  const features = useCADStore(s => s.features);
+  // Report in the model frame, or in a coordinate system
+  const [csId, setCsId] = useState('');
+  const systems = features.filter(f => f.type === 'coordinate_system' && !f.suppressed);
+  const system = systems.find(f => f.id === csId);
+  const frame = useMemo(() => (system ? featureFrame(system, features) : null), [system, features]);
+
   const matData = materialLibrary.getMaterial(activeMaterial);
 
   const massProps = useMemo(() => {
     if (bodies.length === 0 || !bodies[0].geometry) {
       return null;
     }
-    return geometryEngine.computeMassProperties(bodies[0].geometry, matData);
-  }, [bodies, matData]);
+    const mp = geometryEngine.computeMassProperties(bodies[0].geometry, matData);
+    return mp && frame ? massPropertiesIn(mp, frame) : mp;
+  }, [bodies, matData, frame]);
 
   if (!isOpen) return null;
 
@@ -44,6 +55,16 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
               <div style={{ background: '#1c1c1f', padding: 8, borderRadius: 4 }}>
                 <strong>Material:</strong> {matData.name} (Density: {matData.density} kg/m³)
               </div>
+              {systems.length > 0 && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Report relative to:
+                  <select className="mass-props-cs" value={system ? csId : ''} onChange={(e) => setCsId(e.target.value)}
+                    style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px' }}>
+                    <option value="">Model origin</option>
+                    {systems.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </label>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
@@ -69,18 +90,20 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
                 </div>
 
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
-                  <div style={{ color: '#aaa' }}>Center of Mass (X, Y, Z)</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#ce93d8', marginTop: 4 }}>
-                    ({massProps.centerOfMass.x.toFixed(2)}, {massProps.centerOfMass.y.toFixed(2)}, {massProps.centerOfMass.z.toFixed(2)}) mm
+                  <div style={{ color: '#aaa' }}>Center of Mass (X, Y, Z){system ? ` in ${system.name}` : ''}</div>
+                  <div className="mass-props-com" style={{ fontSize: 13, fontWeight: 600, color: '#ce93d8', marginTop: 4 }}>
+                    ({mm(massProps.centerOfMass.x)}, {mm(massProps.centerOfMass.y)}, {mm(massProps.centerOfMass.z)}) mm
                   </div>
                 </div>
               </div>
 
               <div style={{ background: '#1c1c1f', padding: 8, borderRadius: 4, fontFamily: 'monospace', fontSize: 11 }}>
-                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia at center of mass (kg · mm²):</div>
+                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia at center of mass{system ? `, along ${system.name}'s axes` : ''} (kg · mm²):</div>
                 <div>Ixx: {formatInertia(massProps.momentOfInertia?.Ixx)}</div>
                 <div>Iyy: {formatInertia(massProps.momentOfInertia?.Iyy)}</div>
                 <div>Izz: {formatInertia(massProps.momentOfInertia?.Izz)}</div>
+                <div style={{ color: '#aaa', margin: '6px 0 4px' }}>About the {system ? `${system.name} origin` : 'model origin'} (kg · mm²):</div>
+                <div className="mass-props-origin">Ixx: {formatInertia(massProps.momentOfInertiaAtOrigin?.Ixx)}  Iyy: {formatInertia(massProps.momentOfInertiaAtOrigin?.Iyy)}  Izz: {formatInertia(massProps.momentOfInertiaAtOrigin?.Izz)}</div>
               </div>
             </div>
           ) : (

@@ -681,6 +681,20 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
     </div>
   </div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">From a script</b><p><code>casiworks.model.measure(a, b, { normalA, normalB })</code> gives the same numbers for points you already know.</p></div></div>
+  <h3>Mass properties in your own coordinate system</h3>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 8.3</span><h4>Inertia about the bracket's own axes</h4><div class="specs"><span>Features ▸ Coord Sys</span><span>Mass Properties</span></div></div>
+    <div class="example-body">
+      <p>A drawing or a customer often wants the centre of mass and inertia relative to a mounting point, not to the model origin. A <b>coordinate system</b> gives you that reference.</p>
+      <ol class="steps">
+        <li>Features ▸ <b>Coord Sys</b>. Type the origin (or pick a reference point under <b>Origin at</b>, and the system moves with it). Turn the axes with <b>Turn about X / Y / Z</b>; the turns apply about model X, then Y, then Z.</li>
+        <li>Click <b>OK</b>. <i>CS1</i> appears in the tree and as red (X), green (Y) and blue (Z) arrows on the model.</li>
+        <li>Open <b>Mass Props</b> and set <b>Report relative to</b> to <i>CS1</i>. The centre of mass is now in CS1's coordinates, and the inertia runs along CS1's axes, both at the centre of mass and about CS1's origin.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/22b-coordinate-system.webp" alt="Mass Properties reported in a coordinate system"><figcaption>Mass Properties in CS1, placed at the bracket's centre of mass and turned 90° about Z: the centre of mass reads (0, 0, 0), and the inertia is along CS1's axes.</figcaption></figure>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">From a script</b><p><code>api.features.coordinateSystem({ origin, rotation: { z: 90 } })</code> adds one, and <code>api.model.massProperties({ coordinateSystem: id })</code> reports in it. Its origin and turns can be driven by equations, e.g. <code>rotation.z</code>.</p></div></div>
+    </div>
+  </div>
   <div class="exercise"><b>Exercise 8.</b> Find the lightest material in the library that still has a yield strength above 250 MPa. What does the bracket weigh in it?<label><input type="checkbox" data-done="ch8"> I've done this</label></div>
 </section>
 
@@ -916,7 +930,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.14</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.15</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -958,8 +972,8 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code> (number or <code>'wall * 2'</code>, 1.12), <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
-    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
-    <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14), <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>coordinateSystem({ origin, rotation })</code> (since 1.15), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
+    <tr><td><code>api.model</code></td><td><code>massProperties({ coordinateSystem })</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5), <code>interference()</code> (since 1.13)</td></tr>
     <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5)</td></tr>

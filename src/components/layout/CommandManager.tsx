@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal, Move3d
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { RELATIONS } from '../../kernel/sketchSolve.ts';
@@ -338,6 +338,10 @@ export default function CommandManager() {
                   <button className="ribbon-btn" onClick={() => runCommand('feature.referencePoint')} title="Reference Point: a named point in the model">
                     <CircleDot size={19} color="#fbbf24" />
                     <span>Point</span>
+                  </button>
+                  <button className="ribbon-btn" onClick={() => runCommand('feature.coordinateSystem')} title="Coordinate System: an origin and turned axes; report mass properties in it">
+                    <Move3d size={19} color="#fbbf24" />
+                    <span>Coord Sys</span>
                   </button>
                 </div>
                 <div className="tool-group-label">REFERENCE</div>

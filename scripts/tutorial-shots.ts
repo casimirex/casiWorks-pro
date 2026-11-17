@@ -460,6 +460,27 @@ const SHOTS: Shot[] = [
       await p.click('Features');
     },
   },
+  {
+    name: '22b-coordinate-system', async run(p) {
+      await example(p, 'l_bracket');
+      await feaPanel(p, false);
+      await p.eval(`(() => {
+        const c = window.casiworks.model.massProperties().centerOfMass;
+        window.casiworks.features.coordinateSystem({ origin: c, rotation: { z: 90 } });
+      })()`);
+      await sleep(800);
+      await iso(p);
+      await run(p, 'evaluate.massProperties', undefined, 500);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.mass-props-cs');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, sel.options[1].value);
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(400);
+      await p.screenshot('22b-coordinate-system');
+      await closeDialog(p);
+    },
+  },
   // ------------------------------------------------------------ Part 3: advanced
   {
     name: '22-assembly', async run(p) {

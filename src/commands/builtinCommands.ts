@@ -315,6 +315,11 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     description: 'Opens the reference point panel; or feature.create { type: "reference_point", point: { x, y, z } }',
     run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.REFERENCE_POINT }),
   },
+  {
+    id: 'feature.coordinateSystem', label: 'Coordinate system', category: 'Features', record: false,
+    description: 'Opens the coordinate system panel; or feature.create { type: "coordinate_system", point | throughRef, rotation: { x, y, z } (degrees, about model X then Y then Z) }',
+    run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.COORDINATE_SYSTEM }),
+  },
   { id: 'sketch.discard', label: 'Discard sketch', category: 'Sketch', record: false, run: ({ state }) => state().endSketch(false) },
   {
     id: 'sketch.create', label: 'Create sketch', category: 'Sketch',

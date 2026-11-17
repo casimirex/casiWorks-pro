@@ -448,6 +448,49 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'coordinate system from the ribbon; mass properties reported in it',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await sleep(1500);
+      await p.click('Features');
+      await p.click('Coordinate System: an origin and turned axes; report mass properties in it', 400);
+      const com = await p.eval<{ x: number; y: number; z: number }>(`window.casiworks.model.massProperties().centerOfMass`);
+      await setField(p, 'Origin X', com.x.toFixed(3));
+      await setField(p, 'Origin Y', com.y.toFixed(3));
+      await setField(p, 'Origin Z', com.z.toFixed(3));
+      await setField(p, 'Turn about Z', 90);
+      await sleep(200);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(800);
+      const names = await treeNames(p);
+      const label = await p.eval<boolean>(`[...document.querySelectorAll('.cs-label')].some(e => e.textContent === 'CS1')`);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(400);
+      await p.screenshot('02j-coordinate-system');
+      await p.eval(`window.casiworks.commands.execute('evaluate.massProperties')`);
+      await sleep(400);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.mass-props-cs');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, sel.options[1].value);
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(300);
+      const shown = await p.eval<string>(`document.querySelector('.mass-props-com')?.textContent ?? ''`);
+      await p.screenshot('02k-mass-props-cs');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await p.eval(`document.querySelector('.dialog-backdrop')?.click()`);
+      await sleep(200);
+      const csId = await p.eval<string>(`window.casiworks.features.list().find(f => f.type === 'coordinate_system')?.id ?? ''`);
+      const rot = await p.eval<{ z: number }>(`window.casiworks.features.list().find(f => f.type === 'coordinate_system').parameters.rotation`);
+      assert(names.includes('CS1') && label && rot.z === 90, `tree ${names}, label ${label}, rotation ${JSON.stringify(rot)}`);
+      // The centre of mass is (about) the CS origin
+      assert(/\(0\.00, 0\.00, 0\.00\) mm/.test(shown), `centre of mass in CS1: ${shown}`);
+      const viaApi = await p.eval<{ x: number }>(`window.casiworks.model.massProperties({ coordinateSystem: ${JSON.stringify('')} + ${JSON.stringify(csId)} }).centerOfMass`);
+      assert(Math.abs(viaApi.x) < 0.01, `API centre x ${viaApi.x}`);
+      return `CS1 at the centre of mass, turned 90° about Z; Mass Properties in CS1: ${shown.trim()}`;
+    },
+  },
+  {
     name: 'sketch relations and driving dimensions with the mouse',
     async run(p) {
       await p.eval(`window.casiworks.commands.execute('document.new')`);
