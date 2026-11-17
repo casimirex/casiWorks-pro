@@ -7,12 +7,15 @@ import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/C
 import type { CasiWorksAPIErrorCode } from '../src/api/CasiWorksAPI.ts';
 import type { LineEntity } from '../src/types/cad.ts';
 
+/** Semantic version at least major.minor. */
+const atLeast = (v: string, major: number, minor: number) => { const [a, b] = v.split('.').map(Number); return a > major || (a === major && b >= minor); };
+
 const api = createCasiWorksAPI(useCADStore);
 const throwsCode = (fn: () => unknown, code: CasiWorksAPIErrorCode, msg?: RegExp) =>
   assert.throws(fn, (err: unknown) => err instanceof CasiWorksAPIError && err.code === code && (!msg || msg.test(err.message)), `expected ${code}`);
 
 test('API 1.5: version and the new namespaces are frozen', () => {
-  assert.match(API_VERSION, /^1\.(5|6|7|8|9)\.\d+$/, 'at least 1.5');
+  assert.ok(atLeast(API_VERSION, 1, 5), `API ${API_VERSION} is at least 1.5`);
   for (const ns of [api.equations, api.configurations, api.assembly, api.drawings]) assert.ok(Object.isFrozen(ns));
   assert.equal(typeof api.sketches.trim, 'function');
 });

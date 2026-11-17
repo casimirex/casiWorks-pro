@@ -79,6 +79,7 @@ export const FEATURE_TYPES = {
   BOOLEAN: 'boolean',
   REFERENCE_PLANE: 'reference_plane',
   REFERENCE_AXIS: 'reference_axis',
+  REFERENCE_POINT: 'reference_point',
 } as const;
 
 // Sketch entity types

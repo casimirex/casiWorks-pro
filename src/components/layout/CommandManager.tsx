@@ -329,6 +329,14 @@ export default function CommandManager() {
                     <Layers size={19} color="#fbbf24" />
                     <span>Plane</span>
                   </button>
+                  <button className="ribbon-btn" onClick={() => runCommand('feature.referenceAxis')} title="Reference Axis: parallel to model X, Y or Z through a point; use it to revolve about">
+                    <ArrowRightToLine size={19} color="#fbbf24" />
+                    <span>Axis</span>
+                  </button>
+                  <button className="ribbon-btn" onClick={() => runCommand('feature.referencePoint')} title="Reference Point: a named point in the model">
+                    <CircleDot size={19} color="#fbbf24" />
+                    <span>Point</span>
+                  </button>
                 </div>
                 <div className="tool-group-label">REFERENCE</div>
               </div>

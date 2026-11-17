@@ -9,7 +9,7 @@ import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import type { ToolId } from '../utils/constants.ts';
 import type { PlaneFrame, Point2, ReferenceFeature, SketchEntity, SketchEntityMap, SketchPlaneRef } from '../types/cad.ts';
-import { getSketchPlaneMatrix, isPlaneFrame, referencePlaneFrame, sketchToWorld } from '../utils/math.ts';
+import { getSketchPlaneMatrix, isPlaneFrame, referenceAxisLine, referencePlaneFrame, sketchToWorld } from '../utils/math.ts';
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
@@ -57,6 +57,35 @@ function FramePlane({ frame, size, color, opacity, label }: { frame: PlaneFrame;
           <div className="plane-label">{label}</div>
         </Html>
       )}
+    </group>
+  );
+}
+
+/** A reference axis (a long dash-dot line) or point (a small diamond), with its name. */
+function ReferenceMark({ name, kind, at, dir }: { name: string; kind: 'axis' | 'point'; at: [number, number, number]; dir?: [number, number, number] }) {
+  const line = useMemo(() => {
+    if (kind !== 'axis' || !dir) return null;
+    const o = new THREE.Vector3(...at), d = new THREE.Vector3(...dir);
+    return new THREE.BufferGeometry().setFromPoints([o.clone().addScaledVector(d, -90), o.clone().addScaledVector(d, 90)]);
+  }, [kind, at, dir]);
+  useEffect(() => () => line?.dispose(), [line]);
+  const labelAt: [number, number, number] = kind === 'axis' && dir ? [at[0] + dir[0] * 90, at[1] + dir[1] * 90, at[2] + dir[2] * 90] : at;
+  return (
+    <group>
+      {line && (
+        <threeLine geometry={line} onUpdate={(l: THREE.Line) => l.computeLineDistances()}>
+          <lineDashedMaterial color="#fbbf24" dashSize={6} gapSize={2} />
+        </threeLine>
+      )}
+      {kind === 'point' && (
+        <mesh position={at}>
+          <octahedronGeometry args={[1.6]} />
+          <meshBasicMaterial color="#fbbf24" />
+        </mesh>
+      )}
+      <Html position={labelAt} zIndexRange={[10, 0]}>
+        <div className="plane-label">{name}</div>
+      </Html>
     </group>
   );
 }
@@ -677,6 +706,25 @@ export default function Viewport3D() {
     const r = f as ReferenceFeature;
     return { id: f.id, name: f.name, frame: referencePlaneFrame(r.base ?? 'Front', r.offset ?? 0, r.angle ?? 0) };
   }), [features]);
+  // Reference axes (through their point or reference point) and points, as the rebuild builds them
+  const referenceMarks = useMemo(() => {
+    const points = new Map<string, { x: number; y: number; z: number }>();
+    const out: Array<{ id: string; name: string; kind: 'axis' | 'point'; at: [number, number, number]; dir?: [number, number, number] }> = [];
+    for (const f of features) {
+      if (f.suppressed) continue;
+      const r = f as ReferenceFeature;
+      if (f.type === 'reference_point') {
+        const p = r.point ?? { x: 0, y: 0, z: 0 };
+        points.set(f.id, p);
+        out.push({ id: f.id, name: f.name, kind: 'point', at: [p.x, p.y, p.z] });
+      } else if (f.type === 'reference_axis') {
+        const through = (r.throughRef && points.get(r.throughRef)) || r.point || { x: 0, y: 0, z: 0 };
+        const a = referenceAxisLine(r.direction ?? 'Y', through);
+        out.push({ id: f.id, name: f.name, kind: 'axis', at: [a.origin.x, a.origin.y, a.origin.z], dir: [a.direction.x, a.direction.y, a.direction.z] });
+      }
+    }
+    return out;
+  }, [features]);
   const startSketchOnFace = useCallback((pick: MeasurePick) => {
     if (pick.normal) runCommand('sketch.onFace', { point: pick.point, normal: pick.normal });
   }, []);
@@ -831,6 +879,7 @@ export default function Viewport3D() {
 
         <OriginDisplay showOrigin={showOrigin} showAxes={showAxes} />
         <ReferencePlanes showPlanes={showPlanes} activePlane={activeSketchPlane} />
+        {showPlanes && referenceMarks.map(m => <ReferenceMark key={m.id} {...m} />)}
         {showPlanes && referencePlanes.map(rp => (
           <FramePlane key={rp.id} frame={rp.frame} size={70} color="#fbbf24" opacity={0.07} label={rp.name} />
         ))}

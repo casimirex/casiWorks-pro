@@ -161,3 +161,36 @@ export function sanitizePoint(
   const pick = (value: number | undefined, fallback: number) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
   return new THREE.Vector3(pick(p.x, defaultVal.x), pick(p.y, defaultVal.y), pick(p.z, defaultVal.z));
 }
+
+/** A line in model space: a point on it and its unit direction. */
+export interface AxisLine { origin: Point3; direction: Point3 }
+
+/** A reference axis: parallel to model X, Y or Z through `point`. */
+export function referenceAxisLine(direction: 'X' | 'Y' | 'Z', point: Point3 = { x: 0, y: 0, z: 0 }): AxisLine {
+  const d = direction === 'X' ? { x: 1, y: 0, z: 0 } : direction === 'Y' ? { x: 0, y: 1, z: 0 } : { x: 0, y: 0, z: 1 };
+  return { origin: { ...point }, direction: d };
+}
+
+/**
+ * A model-space axis as a line of a sketch plane (sketch coordinates), or null when
+ * it does not lie in the plane (it must be parallel to it and on it, within 1e-6 mm).
+ */
+export function axisInSketchPlane(axis: AxisLine, plane: string | PlaneFrame): { point: Point2; direction: Point2 } | null {
+  const m = getSketchPlaneMatrix(plane);
+  const inv = m.clone().invert();
+  const o = new THREE.Vector3(axis.origin.x, axis.origin.y, axis.origin.z).applyMatrix4(inv);
+  const d = new THREE.Vector3(axis.direction.x, axis.direction.y, axis.direction.z).transformDirection(inv);
+  if (Math.abs(o.z) > 1e-6 || Math.abs(d.z) > 1e-6) return null;
+  const len = Math.hypot(d.x, d.y);
+  return { point: { x: o.x, y: o.y }, direction: { x: d.x / len, y: d.y / len } };
+}
+
+/**
+ * Matrix taking a profile revolved about the local Y axis back to the sketch:
+ * local Y runs along `direction` through `point`, local X is the profile radius.
+ */
+export function revolveAxisMatrix(point: Point2, direction: Point2): THREE.Matrix4 {
+  const d = new THREE.Vector3(direction.x, direction.y, 0).normalize();
+  const r = new THREE.Vector3(d.y, -d.x, 0); // radius direction, right of the axis
+  return new THREE.Matrix4().makeBasis(r, d, new THREE.Vector3(0, 0, 1)).setPosition(point.x, point.y, 0);
+}

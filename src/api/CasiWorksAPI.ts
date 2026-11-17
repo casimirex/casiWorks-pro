@@ -52,7 +52,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.9.0';
+export const API_VERSION = '1.10.0';
 
 // =====================================================================
 // Public types
@@ -100,6 +100,12 @@ export interface RevolveSpec {
   angle?: number;
   cut?: boolean;
   name?: string;
+  /**
+   * Axis of revolution (since 1.10): 'y' (the sketch's vertical axis, default), 'x',
+   * { line: entityId } for a line of the sketch, or { axis: featureId } for a reference
+   * axis lying in the sketch plane.
+   */
+  axis?: 'x' | 'y' | { line: string } | { axis: string };
 }
 
 export interface FilletSpec { radius: number; name?: string }
@@ -229,6 +235,10 @@ export interface FeaturesAPI {
    * tilted `angle`° about its X axis. Sketch on it with sketches.create({ plane: id }). Since 1.9.
    */
   referencePlane(spec: { base?: SketchPlane; offset?: number; angle?: number; name?: string }): string;
+  /** Add a reference axis parallel to model X, Y or Z through `point` (or the reference point `through`). Since 1.10. */
+  referenceAxis(spec: { direction: 'X' | 'Y' | 'Z'; point?: { x: number; y: number; z: number }; through?: string; name?: string }): string;
+  /** Add a reference point. Since 1.10. */
+  referencePoint(spec: { x: number; y: number; z: number; name?: string }): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
   /** Delete a feature; features that depend on it lose their parent. Throws NOT_FOUND. */
@@ -941,12 +951,26 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       const sketchId = requireSketch(s.sketchId);
       const angle = requireNumber(s.angle ?? 360, 'angle', { positive: true, max: 360 });
       const cut = s.cut === true;
+      const axis: Record<string, string> = {};
+      if (s.axis === 'x' || s.axis === 'y') axis.axis = s.axis;
+      else if (s.axis !== undefined) {
+        const a = requireObject(s.axis, 'axis');
+        if (typeof a.line === 'string') {
+          const line = (get().sketchEntities[sketchId] ?? []).find(e => e.id === a.line);
+          if (!line || line.type !== 'line') fail('NOT_FOUND', `No line ${JSON.stringify(a.line)} in sketch ${sketchId}`);
+          axis.axisLine = a.line;
+        } else if (typeof a.axis === 'string') {
+          if (!get().features.some(f => f.id === a.axis && f.type === FEATURE_TYPES.REFERENCE_AXIS)) fail('NOT_FOUND', `No reference axis ${JSON.stringify(a.axis)}`);
+          axis.axisRef = a.axis;
+        } else fail('INVALID_ARGUMENT', "axis must be 'x', 'y', { line } or { axis }");
+      }
       return addFeature({
         type: cut ? FEATURE_TYPES.REVOLVE_CUT : FEATURE_TYPES.REVOLVE_BOSS,
         name: optionalName(s.name) ?? (cut ? 'Cut-Revolve' : 'Revolve'),
         sketchId,
         angle,
-      });
+        ...axis,
+      } as unknown as FeatureSpec);
     },
     fillet(spec: FilletSpec) {
       const s = requireObject(spec, 'spec');
@@ -969,6 +993,26 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       if (Math.abs(angle) >= 90) fail('INVALID_ARGUMENT', 'angle must be between -90 and 90 degrees');
       const count = get().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_PLANE).length;
       return addFeature({ type: FEATURE_TYPES.REFERENCE_PLANE, name: optionalName(s.name) ?? `Plane${count + 1}`, base, offset, angle } as unknown as FeatureSpec);
+    },
+    referenceAxis(spec: { direction: 'X' | 'Y' | 'Z'; point?: { x: number; y: number; z: number }; through?: string; name?: string }) {
+      const s = requireObject(spec, 'spec');
+      if (s.direction !== 'X' && s.direction !== 'Y' && s.direction !== 'Z') fail('INVALID_ARGUMENT', "direction must be 'X', 'Y' or 'Z'");
+      let throughRef: string | undefined;
+      if (s.through !== undefined) {
+        const ref = get().features.find(f => f.id === s.through && f.type === FEATURE_TYPES.REFERENCE_POINT);
+        if (!ref) fail('NOT_FOUND', `No reference point ${JSON.stringify(s.through)}`);
+        throughRef = ref.id;
+      }
+      const p = s.point === undefined ? { x: 0, y: 0, z: 0 } : requireObject(s.point, 'point');
+      const point = { x: requireNumber(p.x ?? 0, 'point.x'), y: requireNumber(p.y ?? 0, 'point.y'), z: requireNumber(p.z ?? 0, 'point.z') };
+      const count = get().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_AXIS).length;
+      return addFeature({ type: FEATURE_TYPES.REFERENCE_AXIS, name: optionalName(s.name) ?? `Axis${count + 1}`, direction: s.direction, point, ...(throughRef ? { throughRef } : {}) } as unknown as FeatureSpec);
+    },
+    referencePoint(spec: { x: number; y: number; z: number; name?: string }) {
+      const s = requireObject(spec, 'spec');
+      const point = { x: requireNumber(s.x, 'x'), y: requireNumber(s.y, 'y'), z: requireNumber(s.z, 'z') };
+      const count = get().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT).length;
+      return addFeature({ type: FEATURE_TYPES.REFERENCE_POINT, name: optionalName(s.name) ?? `Point${count + 1}`, point } as unknown as FeatureSpec);
     },
     hole(spec: HoleSpec) {
       const s = requireObject(spec, 'spec');

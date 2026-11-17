@@ -8,6 +8,9 @@ import { drawingFile } from '../src/drawings/drawingSheet.ts';
 import { rebuildModel } from '../src/features/rebuildModel.ts';
 import { createCasiWorksAPI, API_VERSION } from '../src/api/CasiWorksAPI.ts';
 
+/** Semantic version at least major.minor. */
+const atLeast = (v: string, major: number, minor: number) => { const [a, b] = v.split('.').map(Number); return a > major || (a === major && b >= minor); };
+
 /** Check the file structure: header, objects at the offsets the xref table gives, trailer. */
 function checkPdf(pdf: string): { pageSize: number[]; content: string } {
   assert.ok(pdf.startsWith('%PDF-1.4\n'));
@@ -51,7 +54,7 @@ test('PDF: the part sheet is a valid one-page vector PDF with the sheet text', (
 
 test('PDF: assembly sheet carries the parts list and balloons; API 1.7 drawings.pdf', () => {
   const api = createCasiWorksAPI(useCADStore);
-  assert.match(API_VERSION, /^1\.([7-9])\.\d+$/);
+  assert.ok(atLeast(API_VERSION, 1, 7), `API ${API_VERSION} is at least 1.7`);
   api.document.new();
   api.assembly.insert({ name: 'Base_Plate', shape: 'box' });
   api.assembly.insert({ name: 'Pin_Shaft', shape: 'pin' });

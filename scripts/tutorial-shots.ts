@@ -331,6 +331,26 @@ const SHOTS: Shot[] = [
     name: '17-revolve', async run(p) {
       await example(p, 'piston_head'); await iso(p); await zoom(p, 5);
       await p.screenshot('17-revolve-piston');
+      // A ring revolved about a centreline beside the profile, and a reference axis
+      await fresh(p);
+      await feaPanel(p, false);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ name: 'Ring profile', entities: [
+          { type: 'rectangle', corner1: { x: 15, y: 0 }, corner2: { x: 25, y: 12 } },
+          { type: 'line', p1: { x: 0, y: -10 }, p2: { x: 0, y: 25 }, construction: true },
+        ] });
+        const id = window.casiworks.sketches.getEntities(s.sketchId).find(e => e.construction).id;
+        window.casiworks.features.revolve({ sketchId: s.sketchId, axis: { line: id }, angle: 270, name: 'Ring' });
+        window.casiworks.features.referenceAxis({ direction: 'Y', point: { x: 45, y: 0, z: 0 } });
+      })()`);
+      await sleep(1200);
+      await iso(p);
+      await p.click('Features');
+      await p.eval(`[...document.querySelectorAll('.feature-item')].find(e => e.querySelector('.tree-node-label')?.firstChild?.textContent.trim() === 'Ring').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+      await sleep(700);
+      await p.screenshot('17b-revolve-axis');
+      await p.eval(`document.querySelector('.action-btn-red')?.click()`);
+      await sleep(300);
     },
   },
   {

@@ -6,6 +6,9 @@ import { METRIC, METRIC_SIZES, standardHole } from '../src/features/holeStandard
 import { useCADStore } from '../src/store/cadStore.ts';
 import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/CasiWorksAPI.ts';
 
+/** Semantic version at least major.minor. */
+const atLeast = (v: string, major: number, minor: number) => { const [a, b] = v.split('.').map(Number); return a > major || (a === major && b >= minor); };
+
 /** Cross-section area of the kernel's 32-sided hole of radius r. */
 const area = (r: number) => 16 * r * r * Math.sin(Math.PI / 16);
 const near = (a: number, b: number, tol: number, msg: string) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b}`);
@@ -32,7 +35,7 @@ test('Hole table: consistent with the standards it comes from', () => {
 
 test('API 1.8 features.hole: standard holes remove the right volume', () => {
   const api = createCasiWorksAPI(useCADStore);
-  assert.match(API_VERSION, /^1\.([8-9])\.\d+$/);
+  assert.ok(atLeast(API_VERSION, 1, 8), `API ${API_VERSION} is at least 1.8`);
   const block = () => {
     api.document.new();
     const s = api.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });

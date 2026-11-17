@@ -411,6 +411,42 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'revolve about a centreline picked in the panel; a reference axis',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      const lineId = await p.eval<string>(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [
+          { type: 'rectangle', corner1: { x: 10, y: 0 }, corner2: { x: 20, y: 30 } },
+          { type: 'line', p1: { x: 5, y: -5 }, p2: { x: 5, y: 40 }, construction: true },
+        ] });
+        return window.casiworks.sketches.getEntities(s.sketchId).find(e => e.construction).id;
+      })()`);
+      await p.click('Features');
+      await p.click('Revolved Boss/Base', 500);
+      const options = await p.eval<string[]>(`[...document.querySelectorAll('.property-panel .revolve-axis option')].map(o => o.textContent)`);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.property-panel .revolve-axis');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(`line:${lineId}`)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(150);
+      await p.screenshot('02h-revolve-axis');
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const v = await volume(p);
+      const expected = 2 * Math.PI * 10 * 300;
+      assert(options.includes('Centreline (5, -5) → (5, 40)') && Math.abs(v - expected) / expected < 0.005, `axis options ${options}; volume ${v} vs ${expected}`);
+
+      await p.click('Reference Axis: parallel to model X, Y or Z through a point; use it to revolve about', 400);
+      await setField(p, 'X', 40);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(600);
+      const names = await treeNames(p);
+      assert(names.includes('Axis1'), `tree ${names}`);
+      return `revolve about the centreline: ${v.toFixed(0)} mm³ (Pappus ${expected.toFixed(0)}); Axis1 added`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume; Hole Wizard M8 counterbore',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

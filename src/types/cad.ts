@@ -134,6 +134,12 @@ export interface RevolveFeature extends FeatureBase {
   sketchId: string;
   /** Degrees. */
   angle: number;
+  /** Axis of revolution: the sketch's vertical ('y', default) or horizontal ('x') axis… */
+  axis?: 'x' | 'y';
+  /** …or a line of the same sketch (usually a construction centreline)… */
+  axisLine?: string;
+  /** …or a reference axis feature lying in the sketch plane. */
+  axisRef?: string;
 }
 
 export interface SweepFeature extends FeatureBase {
@@ -216,11 +222,17 @@ export interface BooleanFeature extends FeatureBase {
 }
 
 export interface ReferenceFeature extends FeatureBase {
-  type: 'reference_plane' | 'reference_axis';
+  type: 'reference_plane' | 'reference_axis' | 'reference_point';
   /** Reference plane: offset `offset` mm along the normal of `base`, then tilted `angle`° about its X axis. */
   base?: SketchPlane;
   offset?: number;
   angle?: number;
+  /** Reference axis: parallel to model X, Y or Z… */
+  direction?: 'X' | 'Y' | 'Z';
+  /** …through this point (reference axis), or the point itself (reference point). */
+  point?: Point3;
+  /** Reference axis: through this reference point feature instead of `point`. */
+  throughRef?: string;
 }
 
 /** A feature as authored or saved (dependency links may be missing). */

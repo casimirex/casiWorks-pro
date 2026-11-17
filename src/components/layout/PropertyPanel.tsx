@@ -76,6 +76,10 @@ interface PanelContentFields {
   plane?: SketchPlane;
   base?: SketchPlane;
   offset?: number;
+  axisLine?: string;
+  axisRef?: string;
+  point?: Point3;
+  throughRef?: string;
 }
 
 export default function PropertyPanel() {
@@ -128,6 +132,13 @@ export default function PropertyPanel() {
   const [refBase, setRefBase] = useState<SketchPlane>('Front');
   const [refOffset, setRefOffset] = useState(20);
   const [refAngle, setRefAngle] = useState(0);
+  // Revolve axis: 'y' | 'x' (sketch axes), 'line:<entity id>', 'ref:<axis feature id>'
+  const [revolveAxis, setRevolveAxis] = useState('y');
+  // Reference axis / point
+  const [refDirection, setRefDirection] = useState<'X' | 'Y' | 'Z'>('Y');
+  const [refPoint, setRefPoint] = useState<Point3>({ x: 0, y: 0, z: 0 });
+  const [refThrough, setRefThrough] = useState('');
+  const sketchEntitiesMap = useCADStore(s => s.sketchEntities);
   const [holePosition, setHolePosition] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const [holeAxis, setHoleAxis] = useState<AxisName>('+Z');
   const [count, setCount] = useState(3);
@@ -209,6 +220,15 @@ export default function PropertyPanel() {
       if (c.type === FEATURE_TYPES.LINEAR_PATTERN) setPatternDirection(nearestAxis({ x: c.directionX, y: c.directionY, z: c.directionZ }, '+X'));
       if (c.type === FEATURE_TYPES.CIRCULAR_PATTERN) setPatternAxis(nearestAxis({ x: c.axisX, y: c.axisY, z: c.axisZ }, '+Y'));
       if (c.type === FEATURE_TYPES.MIRROR && c.plane) setMirrorPlane(c.plane);
+      if (c.type === FEATURE_TYPES.REVOLVE_BOSS || c.type === FEATURE_TYPES.REVOLVE_CUT) {
+        setRevolveAxis(c.axisLine ? `line:${c.axisLine}` : c.axisRef ? `ref:${c.axisRef}` : (c as { axis?: unknown }).axis === 'x' ? 'x' : 'y');
+      }
+      if (c.type === FEATURE_TYPES.REFERENCE_AXIS || c.type === FEATURE_TYPES.REFERENCE_POINT) {
+        const dir = (c as { direction?: string }).direction;
+        if (dir === 'X' || dir === 'Y' || dir === 'Z') setRefDirection(dir);
+        setRefPoint({ ...(c.point ?? { x: 0, y: 0, z: 0 }) });
+        setRefThrough(c.throughRef ?? '');
+      }
       if (c.type === FEATURE_TYPES.REFERENCE_PLANE) {
         setRefBase(c.base ?? 'Front');
         setRefOffset(c.offset ?? 20);
@@ -231,7 +251,12 @@ export default function PropertyPanel() {
         return { sketchId: selectedSketchId, depth, direction, flip: flipDir, thin, wallThickness };
       case FEATURE_TYPES.REVOLVE_BOSS:
       case FEATURE_TYPES.REVOLVE_CUT:
-        return { sketchId: selectedSketchId, angle };
+        return {
+          sketchId: selectedSketchId, angle,
+          axis: revolveAxis === 'x' ? 'x' : revolveAxis === 'y' ? 'y' : undefined,
+          axisLine: revolveAxis.startsWith('line:') ? revolveAxis.slice(5) : undefined,
+          axisRef: revolveAxis.startsWith('ref:') ? revolveAxis.slice(4) : undefined,
+        };
       case FEATURE_TYPES.SWEEP_BOSS:
       case FEATURE_TYPES.SWEEP_CUT:
         return { sketchId: selectedSketchId };
@@ -267,6 +292,10 @@ export default function PropertyPanel() {
         return { plane: mirrorPlane };
       case FEATURE_TYPES.REFERENCE_PLANE:
         return { base: refBase, offset: refOffset, angle: refAngle };
+      case FEATURE_TYPES.REFERENCE_AXIS:
+        return { direction: refDirection, point: { ...refPoint }, throughRef: refThrough || undefined };
+      case FEATURE_TYPES.REFERENCE_POINT:
+        return { point: { ...refPoint } };
       default:
         return {};
     }
@@ -306,6 +335,8 @@ export default function PropertyPanel() {
         name: propertyPanelContent.name
           || (featureType === FEATURE_TYPES.HOLE && holeSize ? standardHole(holeType, holeSize, holeFit).label : '')
           || (featureType === FEATURE_TYPES.REFERENCE_PLANE ? `Plane${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_PLANE).length + 1}` : '')
+          || (featureType === FEATURE_TYPES.REFERENCE_AXIS ? `Axis${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_AXIS).length + 1}` : '')
+          || (featureType === FEATURE_TYPES.REFERENCE_POINT ? `Point${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT).length + 1}` : '')
           || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
         ...params,
         ...(isEdit || Object.keys(links).length ? { expressions: links } : {}),
@@ -563,6 +594,58 @@ export default function PropertyPanel() {
               <div className="property-row">
                 <span className="property-label">Angle:</span>
                 <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" {...linkable('angle')} />
+              </div>
+              <div className="property-row">
+                <span className="property-label">Axis:</span>
+                <select className="property-select revolve-axis" style={{ width: 150 }} value={revolveAxis} onChange={(e) => setRevolveAxis(e.target.value)}>
+                  <option value="y">Sketch vertical (Y)</option>
+                  <option value="x">Sketch horizontal (X)</option>
+                  {(sketchEntitiesMap[selectedSketchId] ?? [])
+                    .filter(e => e.type === 'line')
+                    .sort((a, b) => Number(!!b.construction) - Number(!!a.construction))
+                    .map((e, i) => {
+                      const l = e as { id: string; p1: Point3; p2: Point3; construction?: boolean };
+                      const f = (v: number) => +v.toFixed(1);
+                      return <option key={l.id} value={`line:${l.id}`}>{l.construction ? 'Centreline' : `Line ${i + 1}`} ({f(l.p1.x)}, {f(l.p1.y)}) → ({f(l.p2.x)}, {f(l.p2.y)})</option>;
+                    })}
+                  {features.filter(f => f.type === FEATURE_TYPES.REFERENCE_AXIS && !f.suppressed).map(f => <option key={f.id} value={`ref:${f.id}`}>{f.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {(featureType === FEATURE_TYPES.REFERENCE_AXIS || featureType === FEATURE_TYPES.REFERENCE_POINT) && (
+          <div className="property-card">
+            <div className="property-card-header">{featureType === FEATURE_TYPES.REFERENCE_AXIS ? 'Reference Axis' : 'Reference Point'}</div>
+            <div className="property-card-body">
+              {featureType === FEATURE_TYPES.REFERENCE_AXIS && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">Parallel to:</span>
+                    <select className="property-select ref-direction" style={{ width: 110 }} value={refDirection} onChange={(e) => setRefDirection(e.target.value as 'X' | 'Y' | 'Z')}>
+                      {(['X', 'Y', 'Z'] as const).map(d => <option key={d} value={d}>Model {d}</option>)}
+                    </select>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Through:</span>
+                    <select className="property-select ref-through" style={{ width: 110 }} value={refThrough} onChange={(e) => setRefThrough(e.target.value)}>
+                      <option value="">This point</option>
+                      {features.filter(f => f.type === FEATURE_TYPES.REFERENCE_POINT && !f.suppressed).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+              {(featureType === FEATURE_TYPES.REFERENCE_POINT || !refThrough) && (['x', 'y', 'z'] as const).map(k => (
+                <div className="property-row" key={k}>
+                  <span className="property-label">{k.toUpperCase()}:</span>
+                  <NumericInput value={refPoint[k]} onChange={(v) => setRefPoint(p => ({ ...p, [k]: v }))} step={5} unit="mm" {...linkable(`point.${k}`)} />
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                {featureType === FEATURE_TYPES.REFERENCE_AXIS
+                  ? 'Use it as the axis of a Revolve when it lies in the sketch plane.'
+                  : 'Reference axes can pass through it, and follow it when it moves.'}
               </div>
             </div>
           </div>

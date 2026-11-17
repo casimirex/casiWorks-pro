@@ -7,7 +7,8 @@ import type {
   BooleanFeature, CircularPatternFeature, ExtrudeFeature, FeatureData, HoleFeature, LinearPatternFeature,
   LoftFeature, MirrorFeature, PlaneFrame, RebuildError, ReferenceFeature, RevolveFeature, SketchEntity, SketchEntityMap, SketchFeature, SketchPlane, SweepFeature,
 } from '../types/cad.ts';
-import { referencePlaneFrame } from '../utils/math.ts';
+import { axisInSketchPlane, referenceAxisLine, referencePlaneFrame, revolveAxisMatrix, getSketchPlaneMatrix } from '../utils/math.ts';
+import type { AxisLine } from '../utils/math.ts';
 
 type Geometry = THREE.BufferGeometry;
 /** The body being built; null until the first solid feature. */
@@ -55,6 +56,9 @@ export class FeatureEngine {
   sketchCache: Record<string, SketchData> = {};
   /** Frames of the reference planes built so far in this rebuild. */
   planeCache: Record<string, PlaneFrame> = {};
+  /** Reference axes and points built so far in this rebuild. */
+  axisCache: Record<string, AxisLine> = {};
+  pointCache: Record<string, { x: number; y: number; z: number }> = {};
   /** Tool geometry of each solid feature in the current rebuild, by feature id. */
   featureGeometries: Record<string, Geometry> = {};
 
@@ -67,6 +71,8 @@ export class FeatureEngine {
   rebuild(features: FeatureData[], sketchEntities: SketchEntityMap = {}, rollbackIndex: number | null = null): FeatureRebuildResult {
     this.sketchCache = {};
     this.planeCache = {};
+    this.axisCache = {};
+    this.pointCache = {};
     this.featureGeometries = {};
     let currentBody: Body = null;
     const errors: RebuildError[] = [];
@@ -116,6 +122,22 @@ export class FeatureEngine {
       case FEATURE_TYPES.REFERENCE_PLANE: {
         const ref = feature as ReferenceFeature;
         this.planeCache[feature.id] = referencePlaneFrame(ref.base ?? 'Front', ref.offset ?? 0, ref.angle ?? 0);
+        return currentBody;
+      }
+      case FEATURE_TYPES.REFERENCE_POINT: {
+        const p = (feature as ReferenceFeature).point ?? { x: 0, y: 0, z: 0 };
+        this.pointCache[feature.id] = { x: p.x, y: p.y, z: p.z };
+        return currentBody;
+      }
+      case FEATURE_TYPES.REFERENCE_AXIS: {
+        const ref = feature as ReferenceFeature;
+        let through = ref.point ?? { x: 0, y: 0, z: 0 };
+        if (ref.throughRef) {
+          const p = this.pointCache[ref.throughRef];
+          if (!p) throw new Error('The reference point of this axis is missing or suppressed');
+          through = p;
+        }
+        this.axisCache[feature.id] = referenceAxisLine(ref.direction ?? 'Y', through);
         return currentBody;
       }
       case FEATURE_TYPES.EXTRUDE_BOSS:
@@ -229,10 +251,47 @@ export class FeatureEngine {
     if (!sketchData || !sketchData.entities || sketchData.entities.length === 0) return null;
 
     const angleRad = ((feature.angle ?? 360) * Math.PI) / 180;
-    const shape = this.geometryEngine.shapeFromSketchEntities(sketchData.entities as ProfileEntity[]);
-    const revolved = this.geometryEngine.revolveProfile(shape, null, angleRad, { plane: sketchData.plane });
+    const axis = this._revolveAxis(feature, sketchData);
+    // The profile without the axis line itself (a centreline drawn as a normal line must not become part of it)
+    const all = sketchData.entities as SketchEntity[];
+    const entities = feature.axisLine ? all.filter(e => e.id !== feature.axisLine) : all;
+    const shape = this.geometryEngine.shapeFromSketchEntities(entities as ProfileEntity[]);
+    // Revolve about local Y, the axis in sketch coordinates: profile points become (radius, height)
+    const toSketch = revolveAxisMatrix(axis.point, axis.direction);
+    const toLocal = toSketch.clone().invert();
+    const local = new THREE.Shape(shape.getPoints(50).map(p => {
+      const v = new THREE.Vector3(p.x, p.y, 0).applyMatrix4(toLocal);
+      return new THREE.Vector2(v.x, v.y);
+    }));
+    const radii = local.getPoints(4).map(p => p.x);
+    if (Math.min(...radii) < -1e-6 && Math.max(...radii) > 1e-6) throw new Error('The profile crosses the axis of revolution');
+    const revolved = this.geometryEngine.revolveProfile(local, null, angleRad, {});
+    revolved.applyMatrix4(getSketchPlaneMatrix(sketchData.plane).multiply(toSketch));
+    revolved.computeVertexNormals();
+    revolved.computeBoundingBox();
     this.featureGeometries[feature.id] = revolved;
     return revolved;
+  }
+
+  /** The axis of a revolve in sketch coordinates. */
+  _revolveAxis(feature: RevolveFeature, sketchData: SketchData): { point: { x: number; y: number }; direction: { x: number; y: number } } {
+    if (feature.axisLine) {
+      const line = (sketchData.entities as SketchEntity[]).find(e => e.id === feature.axisLine);
+      if (!line || line.type !== 'line') throw new Error('The axis line is not a line of this sketch');
+      const dx = line.p2.x - line.p1.x, dy = line.p2.y - line.p1.y, len = Math.hypot(dx, dy);
+      if (len < 1e-9) throw new Error('The axis line has no length');
+      return { point: { x: line.p1.x, y: line.p1.y }, direction: { x: dx / len, y: dy / len } };
+    }
+    if (feature.axisRef) {
+      const axis = this.axisCache[feature.axisRef];
+      if (!axis) throw new Error('The reference axis is missing or suppressed');
+      const inPlane = axisInSketchPlane(axis, sketchData.plane);
+      if (!inPlane) throw new Error('The reference axis does not lie in the sketch plane');
+      return inPlane;
+    }
+    return feature.axis === 'x'
+      ? { point: { x: 0, y: 0 }, direction: { x: 1, y: 0 } }
+      : { point: { x: 0, y: 0 }, direction: { x: 0, y: 1 } };
   }
 
   _processRevolveBoss(feature: RevolveFeature & LegacyFeatureFields, currentBody: Body, sketchEntities: SketchEntityMap): Body {

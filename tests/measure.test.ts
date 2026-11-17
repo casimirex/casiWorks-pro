@@ -7,6 +7,9 @@ import { useCADStore } from '../src/store/cadStore.ts';
 import { createCommandRegistry } from '../src/commands/builtinCommands.ts';
 import { createCasiWorksAPI, CasiWorksAPIError, API_VERSION } from '../src/api/CasiWorksAPI.ts';
 
+/** Semantic version at least major.minor. */
+const atLeast = (v: string, major: number, minor: number) => { const [a, b] = v.split('.').map(Number); return a > major || (a === major && b >= minor); };
+
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
 
 test('Measure: distance and parts; angle between faces; gap only for parallel faces', () => {
@@ -58,7 +61,7 @@ test('Measure tool state: two picks, a third starts again; leaving the tool clea
 
 test('API 1.6: model.measure with and without normals; bad input refused', () => {
   const api = createCasiWorksAPI(useCADStore);
-  assert.match(API_VERSION, /^1\.([6-9])\.\d+$/, 'at least 1.6');
+  assert.ok(atLeast(API_VERSION, 1, 6), `API ${API_VERSION} is at least 1.6`);
   const m = api.model.measure({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 12 }, { normalA: { x: 0, y: 0, z: -1 }, normalB: { x: 0, y: 0, z: 1 } });
   near(m.gap!, 12);
   near(m.distance, 12);

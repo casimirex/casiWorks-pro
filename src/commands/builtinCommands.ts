@@ -280,6 +280,16 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     description: 'Opens the reference plane panel; create one directly with feature.create { type: "reference_plane", base, offset, angle }',
     run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.REFERENCE_PLANE }),
   },
+  {
+    id: 'feature.referenceAxis', label: 'Reference axis', category: 'Features', record: false,
+    description: 'Opens the reference axis panel; or feature.create { type: "reference_axis", direction: "X" | "Y" | "Z", point | throughRef }',
+    run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.REFERENCE_AXIS }),
+  },
+  {
+    id: 'feature.referencePoint', label: 'Reference point', category: 'Features', record: false,
+    description: 'Opens the reference point panel; or feature.create { type: "reference_point", point: { x, y, z } }',
+    run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.REFERENCE_POINT }),
+  },
   { id: 'sketch.discard', label: 'Discard sketch', category: 'Sketch', record: false, run: ({ state }) => state().endSketch(false) },
   {
     id: 'sketch.create', label: 'Create sketch', category: 'Sketch',

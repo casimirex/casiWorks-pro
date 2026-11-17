@@ -514,7 +514,7 @@ npm run dev</pre></div>
 <section class="chapter" id="ch6" data-title="Revolve, sweep & loft" data-part="intermediate" data-n="6">
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 6 · about 10 min</span></div>
   <h2 class="title">Revolve, sweep and loft</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Spin a profile around an axis to make round parts</li><li>Know when to use sweep and loft instead</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Spin a profile around an axis to make round parts</li><li>Choose the axis: a centreline, the sketch axes or a reference axis</li><li>Know when to use sweep and loft instead</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 6.1</span><h4>Study the engine piston</h4><div class="specs"><span>Aluminium 7075</span><span>Revolve + cut</span></div></div>
     <div class="example-body split">
@@ -527,6 +527,19 @@ npm run dev</pre></div>
       <figure class="shot"><img loading="lazy" src="img/17-revolve-piston.webp" alt="Revolved piston"><figcaption>The piston: one revolve and one cut.</figcaption></figure>
     </div>
   </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 6.2</span><h4>A ring about a centreline</h4><div class="specs"><span>Construction centreline</span><span>270° revolve</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Sketch on Front: a 10 × 12 rectangle from x = 15 to 25, and a vertical line through x = 0. Make the line construction geometry (<b>Construct</b>), so it is a centreline and not part of the profile.</li>
+        <li>Click <b>Revolve</b>. In <b>Axis</b>, choose <i>Centreline (0, -10) → (0, 25)</i>. The list also offers the sketch's own vertical and horizontal axes, every line of the sketch, and your reference axes.</li>
+        <li>Set the <b>Angle</b> to 270° to see the section, and click <b>OK</b>: a ring 30 mm inside, 50 mm outside.</li>
+        <li>To revolve about an axis that is not in the sketch, add one with Features ▸ <b>Axis</b>: parallel to model X, Y or Z, through a point or a reference point (<b>Point</b>). It must lie in the sketch plane. Move the point later and the revolve follows.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/17b-revolve-axis.webp" alt="Revolve about a centreline"><figcaption>A 270° ring about a centreline, with the Axis choice in the panel and Axis1 beside the part.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">The profile must stay on one side</b><p>A profile that crosses its axis would make a solid that overlaps itself, so the revolve reports <i>The profile crosses the axis of revolution</i>. Draw only half the cross-section.</p></div></div>
   <div class="cards">
     <div class="card"><b>Revolve</b><p>Round parts: shafts, pulleys, pistons, bottles. Draw half the cross-section.</p></div>
     <div class="card"><b>Sweep</b><p>A profile moved along a path: pipes, handles, springs.</p></div>
@@ -864,7 +877,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.9</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.10</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -906,7 +919,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
-    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
+    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
@@ -1034,6 +1047,8 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
     <tr><td>Configuration</td><td>A named version of a part that changes some variable values (Tools ▸ Configs). Default is the plain values.</td></tr>
+    <tr><td>Centreline</td><td>A construction line in a sketch, used as the axis of a revolve.</td></tr>
+    <tr><td>Reference axis · point</td><td>An axis parallel to model X, Y or Z through a point, and a named point (Features ▸ Axis, Point).</td></tr>
     <tr><td>Reference plane</td><td>A plane you make: a standard plane moved and tilted (Features ▸ Plane). Sketches on it follow it.</td></tr>
     <tr><td>Global variable</td><td>A named value, such as <code>wall = 4</code>, that feature sizes can use in expressions (Tools ▸ Equations).</td></tr>
     <tr><td>Feature</td><td>One modelling step, such as an extrude, cut, revolve, hole or pattern.</td></tr>
