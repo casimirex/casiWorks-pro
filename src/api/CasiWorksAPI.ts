@@ -49,7 +49,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.6.0';
+export const API_VERSION = '1.7.0';
 
 // =====================================================================
 // Public types
@@ -497,6 +497,11 @@ export interface DrawingsAPI {
   svg(): string;
   /** The sheet as DXF R12. Throws NOT_FOUND when there is nothing to draw. */
   dxf(): string;
+  /**
+   * The sheet as a one-page vector PDF, as a binary string (one character per
+   * byte). In Node: fs.writeFileSync('sheet.pdf', api.drawings.pdf(), 'latin1'). Since 1.7.
+   */
+  pdf(): string;
 }
 
 /** The CasiWorks public API. */
@@ -1290,7 +1295,7 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
   });
 
   const SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'];
-  const sheetText = (format: 'svg' | 'dxf'): string => {
+  const sheetText = (format: 'svg' | 'dxf' | 'pdf'): string => {
     ensureRebuilt();
     const st = get();
     const file = drawingFile(st as unknown as DrawingSource, format);
@@ -1319,6 +1324,7 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
     svg: () => sheetText('svg'),
     dxf: () => sheetText('dxf'),
+    pdf: () => sheetText('pdf'),
   });
 
   return Object.freeze({

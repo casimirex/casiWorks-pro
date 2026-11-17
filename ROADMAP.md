@@ -127,7 +127,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [ ] **5.2** Associative dimensions that update with the model (today the sheet has fixed views and overall dimensions; the Drawing tab switches hidden lines, dimensions and GD&T, picks the sheet size and exports SVG / DXF)
 - [x] **5.3** BOM tables and balloons from assemblies (Drawing tab: Part / Assembly. The assembly sheet draws the assembled components, puts the parts list on the title block and numbers each item with a balloon placed clear of the other sheet elements. Checked with `layoutProblems` on every sheet size; SVG and DXF)
 - [ ] **5.4** Sheet formats and title block editor (layout done: reserved bands per view, title block kept clear, standard ISO 5455 scales, overlap checker `layoutProblems` tested on every example and sheet size; editor still to do)
-- [ ] **5.5** PDF and DWG/DXF export
+- [x] **5.5** PDF and DXF export (vector PDF written directly, no library: standard Helvetica fonts, GD&T symbols drawn as lines, checked with poppler and Ghostscript; Drawing tab, sheet window and `api.drawings.pdf()`). DWG is not planned (closed format; DXF covers the exchange)
 
 ## Phase 6 — Simulation
 

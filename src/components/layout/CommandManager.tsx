@@ -784,6 +784,10 @@ export default function CommandManager() {
                     <Download size={19} color="#fbbf24" />
                     <span>DXF</span>
                   </button>
+                  <button className="ribbon-btn drawing-export-pdf" onClick={() => runCommand('drawing.export', { format: 'pdf' })} title="Download the sheet as PDF (vector, ready to print)">
+                    <Download size={19} color="#f87171" />
+                    <span>PDF</span>
+                  </button>
                 </div>
                 <div className="tool-group-label">EXPORT</div>
               </div>

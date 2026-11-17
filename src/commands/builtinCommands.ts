@@ -348,18 +348,18 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   {
-    id: 'drawing.export', label: 'Export drawing (SVG / DXF)', category: 'Drawing', requiresUI: true, record: false,
-    description: "args: { format: 'svg' | 'dxf' } — downloads the sheet with the current drawing options",
+    id: 'drawing.export', label: 'Export drawing (SVG / DXF / PDF)', category: 'Drawing', requiresUI: true, record: false,
+    description: "args: { format: 'svg' | 'dxf' | 'pdf' } — downloads the sheet with the current drawing options",
     run: ({ state }, args: { format?: DrawingFormat } | undefined) => {
       const format = args?.format ?? 'svg';
-      if (format !== 'svg' && format !== 'dxf') throw new CommandError('INVALID_ARGUMENT', "format must be 'svg' or 'dxf'");
+      if (format !== 'svg' && format !== 'dxf' && format !== 'pdf') throw new CommandError('INVALID_ARGUMENT', "format must be 'svg', 'dxf' or 'pdf'");
       const file = drawingFile(state(), format);
       if (!file) {
         throw new CommandError('NOT_AVAILABLE', state().drawingOptions.subject === 'assembly'
           ? 'Insert components first: the assembly drawing is made from them'
           : 'Create a solid body first: the drawing is made from it');
       }
-      downloadBlob(file.text, file.filename, file.mimeType);
+      downloadBlob(file.bytes ? new Blob([file.bytes as BlobPart], { type: file.mimeType }) : file.text, file.filename, file.mimeType);
       state().setStatus(`Drawing exported: ${file.filename}`);
       return { filename: file.filename };
     },

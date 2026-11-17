@@ -6,9 +6,10 @@ import type { DrawingOptions } from '../store/cadStore.ts';
 import { createAssemblySheet } from './assemblyDrawing.ts';
 import type { DrawingComponent } from './assemblyDrawing.ts';
 import { buildBom } from '../assembly/bom.ts';
+import { pdfBytes, sheetToPdf } from './pdf.ts';
 import type { BomComponent } from '../assembly/bom.ts';
 
-export type DrawingFormat = 'svg' | 'dxf';
+export type DrawingFormat = 'svg' | 'dxf' | 'pdf';
 
 /** What the sheet is built from: a slice of the store. */
 export interface DrawingSource {
@@ -53,12 +54,19 @@ export function visibleSheet(sheet: SheetData, options: DrawingOptions): SheetDa
   };
 }
 
-/** The sheet as an SVG or DXF file. Null when there is no solid body. */
-export function drawingFile(src: DrawingSource, format: DrawingFormat): { filename: string; text: string; mimeType: string } | null {
+/**
+ * The sheet as an SVG, DXF or PDF file. Null when there is nothing to draw.
+ * For PDF, `text` is a binary string (one char per byte) and `bytes` holds the file.
+ */
+export function drawingFile(src: DrawingSource, format: DrawingFormat): { filename: string; text: string; mimeType: string; bytes?: Uint8Array } | null {
   const sheet = buildDrawingSheet(src);
   if (!sheet) return null;
   const shown = visibleSheet(sheet, src.drawingOptions);
   const base = `${(src.documentName || 'Part1').replace(/\s+/g, '_')}_${src.drawingOptions.subject === 'assembly' ? 'assembly_' : ''}drawing`;
+  if (format === 'pdf') {
+    const text = sheetToPdf(shown, sheet.titleBlock?.title ?? base);
+    return { filename: `${base}.pdf`, text, mimeType: 'application/pdf', bytes: pdfBytes(text) };
+  }
   return format === 'svg'
     ? { filename: `${base}.svg`, text: drawingEngine.exportSVG(shown), mimeType: 'image/svg+xml;charset=utf-8' }
     : { filename: `${base}.dxf`, text: drawingEngine.exportDXF(shown), mimeType: 'application/dxf;charset=utf-8' };

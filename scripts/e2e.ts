@@ -571,7 +571,7 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'Drawing tab: switches the sheet options, opens the sheet, exports DXF',
+    name: 'Drawing tab: switches the sheet options, opens the sheet, exports DXF and PDF',
     async run(p) {
       const tabs = await p.eval<string[]>(`[...document.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => t === 'Surfaces' || t === 'Sheet Metal')`);
       assert(tabs.length === 0, `placeholder tabs still shown: ${tabs}`);
@@ -595,9 +595,16 @@ const CHECKS: Check[] = [
       const dxf = await p.eval<string>(`window.__blobs.at(-1).text()`);
       const exported = await status(p);
       assert(dxf.startsWith('0\nSECTION') && /^Drawing exported: .+_drawing\.dxf$/.test(exported), `DXF export: "${exported}"`);
+      await p.click('PDF', 600);
+      const pdf = await p.eval<{ head: string; size: number; type: string; tail: string }>(`window.__blobs.at(-1).arrayBuffer().then(b => {
+        const u = new Uint8Array(b);
+        const str = (x) => String.fromCharCode(...x);
+        return { head: str(u.slice(0, 8)), size: u.length, type: window.__blobs.at(-1).type, tail: str(u.slice(-6)) };
+      })`);
+      assert(pdf.head === '%PDF-1.4' && pdf.tail === '%%EOF\n' && pdf.type === 'application/pdf' && pdf.size > 2000, `PDF export: ${JSON.stringify(pdf)}`);
       await p.click('Dimensions');
       await p.click('Features', 300);
-      return `dimensions switched off on the sheet, GD&T kept; ${exported}`;
+      return `dimensions switched off on the sheet, GD&T kept; ${exported}; PDF ${pdf.size} bytes`;
     },
   },
   {

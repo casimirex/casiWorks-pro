@@ -58,7 +58,7 @@ test('Measure tool state: two picks, a third starts again; leaving the tool clea
 
 test('API 1.6: model.measure with and without normals; bad input refused', () => {
   const api = createCasiWorksAPI(useCADStore);
-  assert.equal(API_VERSION, '1.6.0');
+  assert.match(API_VERSION, /^1\.([6-9])\.\d+$/, 'at least 1.6');
   const m = api.model.measure({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 12 }, { normalA: { x: 0, y: 0, z: -1 }, normalB: { x: 0, y: 0, z: 1 } });
   near(m.gap!, 12);
   near(m.distance, 12);

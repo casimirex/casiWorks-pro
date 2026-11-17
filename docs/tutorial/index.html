@@ -681,7 +681,7 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
 <section class="chapter" id="ch11" data-title="2D engineering drawings" data-part="advanced" data-n="11">
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 11 · about 10 min</span></div>
   <h2 class="title">2D engineering drawings</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as SVG or DXF</li><li>Make an assembly drawing with a parts list and item balloons</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as PDF, SVG or DXF</li><li>Make an assembly drawing with a parts list and item balloons</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 11.1</span><h4>A drawing sheet for the L-bracket</h4><div class="specs"><span>A4 landscape</span><span>Front · Top · Right · Iso</span><span>Title block</span></div></div>
     <div class="example-body">
@@ -690,7 +690,7 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
         <li>Choose the sheet size in the <b>SHEET</b> group: A4 landscape or portrait, A3 landscape or ANSI B.</li>
         <li>In the <b>SHOW</b> group, switch <b>Hidden Lines</b>, <b>Dimensions</b> and <b>GD&amp;T</b> on or off. A highlighted button is on.</li>
         <li>Click <b>Open Sheet</b>. The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date. The green <b>2D Dwg</b> button on the FEA panel opens the same sheet.</li>
-        <li>Click <b>SVG</b> for a sheet you can print or put in a document, or <b>DXF</b> to open it in AutoCAD or another 2D CAD program. You can export straight from the ribbon without opening the sheet, or use <b>Export SVG</b> and <b>Export DXF</b> on the sheet.</li>
+        <li>Click <b>PDF</b> for a sheet to print or send, <b>SVG</b> to put it in a document or web page, or <b>DXF</b> to open it in AutoCAD or another 2D CAD program. You can export straight from the ribbon without opening the sheet, or use the <b>Export</b> buttons on the sheet. The PDF is vector: lines stay sharp at any zoom, and it prints at true scale on the chosen paper size.</li>
       </ol>
       <figure class="shot"><img loading="lazy" src="img/26-drawing-tab.webp" alt="Drawing tab of the ribbon with sheet, show and export groups"><figcaption>The Drawing tab: sheet size, what to show, and export.</figcaption></figure>
       <figure class="shot"><img loading="lazy" src="img/26-drawing.webp" alt="Drawing sheet of the L-bracket"><figcaption>The drawing sheet, with dimensions, a datum and a feature control frame.</figcaption></figure>
@@ -708,7 +708,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
         <li>Build the assembly from Example 10.1, with a second pin. Make the pins brass in the <b>BOM</b> window (chapter 10).</li>
         <li>On the <b>Drawing</b> tab, change the first picker in the <b>SHEET</b> group from <b>Part</b> to <b>Assembly</b>.</li>
         <li>Click <b>Open Sheet</b>. The four views show the assembled components. A parts list sits on the title block, with the same rows as the BOM: item, part number, description, material and quantity. Each item has a numbered balloon with a leader to its part in the isometric view.</li>
-        <li>Export it as <b>SVG</b> or <b>DXF</b>, just like a part drawing. The DXF has the parts list and balloons too.</li>
+        <li>Export it as <b>PDF</b>, <b>SVG</b> or <b>DXF</b>, just like a part drawing. All three have the parts list and balloons.</li>
       </ol>
       <figure class="shot"><img loading="lazy" src="img/26c-assembly-drawing.webp" alt="Assembly drawing with parts list and balloons"><figcaption>The assembly drawing: balloons 1 and 2 match the parts list rows.</figcaption></figure>
     </div>
@@ -814,7 +814,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.6</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.7</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -860,7 +860,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
-    <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>: the drawing sheet as text, also headless (since 1.5)</td></tr>
+    <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5)</td></tr>
     <tr><td><code>api.commands</code></td><td><code>list()</code>, <code>execute(id, args)</code>. Every ribbon button is a command.</td></tr>
     <tr><td><code>api.macros</code> · <code>api.plugins</code></td><td><code>start()</code>, <code>stop()</code>, <code>run(macro)</code> · <code>load(url)</code>, <code>unload(id)</code></td></tr>
     <tr><td><code>api.on(event, fn)</code></td><td><code>rebuild</code>, <code>featureAdded</code>, <code>featureRemoved</code>, <code>commandExecuted</code>, …</td></tr>

@@ -215,6 +215,27 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
             <span>Export DXF</span>
           </button>
 
+          {/* Export PDF */}
+          <button
+            onClick={() => handleExport('pdf')}
+            style={{
+              background: '#b91c1c',
+              border: 'none',
+              color: '#fff',
+              borderRadius: 4,
+              padding: '5px 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <Download size={13} />
+            <span>Export PDF</span>
+          </button>
+
           {downloadSuccess && (
             <span style={{ fontSize: 11, color: '#4caf50', display: 'flex', alignItems: 'center', gap: 3 }}>
               <Check size={13} /> {downloadSuccess}
