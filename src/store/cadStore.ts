@@ -132,7 +132,16 @@ interface UndoEntry {
  * is; `version` is the newest version when it was opened or saved, which the
  * next save builds on (a save refused if someone saved after it).
  */
-export interface LibraryRef { documentId: string; name: string; version: number; opened: number }
+export interface LibraryRef {
+  documentId: string;
+  name: string;
+  /** The newest version when opened or saved (the base the next save builds on). */
+  version: number;
+  /** The version that was opened (or saved). */
+  opened: number;
+  /** Lifecycle state when last seen ('draft' | 'in_review' | 'released' | 'obsolete'). */
+  state?: string;
+}
 
 export interface CADState {
   appMode: AppMode;

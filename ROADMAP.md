@@ -148,7 +148,7 @@ The "experience platform" layer: data management and a server-side API.
 - [x] **7.5** Webhooks (document saved, revision released) — plus job finished; HMAC-signed, retried, every attempt logged
 - [ ] **7.6** Sharing, permissions, comments on models
 - [ ] **7.7** Real-time co-viewing; later, co-editing
-- [ ] **7.8** Lifecycle: check-in/out, release states, where-used
+- [ ] **7.8** Lifecycle: check-in/out, release states, where-used — *release states done (local): Draft → In review → Released → Obsolete with history; in review/obsolete lock saving, saving a released document starts the next revision. Where-used waits for 4.2 (components that reference library parts); check-in/out is for several people*
 
 ## Phase 8 — Production readiness
 

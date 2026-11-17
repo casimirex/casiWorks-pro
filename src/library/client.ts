@@ -4,7 +4,17 @@
 // server itself, or through the Vite dev server's proxy. Without one, every
 // call fails with LibraryUnavailable and the app works as before (files only).
 
-export interface LibraryDocument { id: string; name: string; createdAt: string; updatedAt: string; headVersion: number; latestRevision: string | null }
+export type LifecycleState = 'draft' | 'in_review' | 'released' | 'obsolete';
+export const STATE_LABEL: Record<LifecycleState, string> = { draft: 'Draft', in_review: 'In review', released: 'Released', obsolete: 'Obsolete' };
+/** Where a document may be moved from each state (as the server allows). */
+export const LIFECYCLE_MOVES: Record<LifecycleState, LifecycleState[]> = {
+  draft: ['in_review', 'released', 'obsolete'],
+  in_review: ['draft', 'released', 'obsolete'],
+  released: ['draft', 'obsolete'],
+  obsolete: ['draft'],
+};
+export interface LibraryDocument { id: string; name: string; createdAt: string; updatedAt: string; headVersion: number; latestRevision: string | null; state: LifecycleState }
+export interface LifecycleEvent { id: number; documentId: string; from: LifecycleState | null; to: LifecycleState; version: number; note: string; createdAt: string }
 export interface LibraryVersion { documentId: string; number: number; message: string; createdAt: string; size: number; sha256: string; revision: string | null; releasedAt: string | null }
 
 export class LibraryUnavailable extends Error {
@@ -82,6 +92,9 @@ export const library = {
   async documents(query?: string): Promise<LibraryDocument[]> {
     return (await call<{ documents: LibraryDocument[] }>('GET', `/documents${query ? `?q=${encodeURIComponent(query)}` : ''}`)).documents;
   },
+  document(documentId: string) {
+    return call<LibraryDocument>('GET', `/documents/${encodeURIComponent(documentId)}`);
+  },
   create(name: string, content: string, message?: string) {
     return call<{ document: LibraryDocument; version: LibraryVersion }>('POST', '/documents', { name, content, ...(message ? { message } : {}) });
   },
@@ -99,6 +112,15 @@ export const library = {
   },
   release(documentId: string, version: number) {
     return call<LibraryVersion>('POST', `/documents/${encodeURIComponent(documentId)}/versions/${version}/release`);
+  },
+  /** The lifecycle history, newest first. */
+  async lifecycle(documentId: string): Promise<LifecycleEvent[]> {
+    return (await call<{ events: LifecycleEvent[] }>('GET', `/documents/${encodeURIComponent(documentId)}/lifecycle`)).events;
+  },
+  /** Move a document to another state; released releases the newest version. */
+  setState(documentId: string, state: LifecycleState, note?: string) {
+    return call<{ document: LibraryDocument; version: LibraryVersion | null; newRevision: boolean; event: LifecycleEvent }>(
+      'POST', `/documents/${encodeURIComponent(documentId)}/lifecycle`, { state, ...(note ? { note } : {}) });
   },
   remove(documentId: string) {
     return call<void>('DELETE', `/documents/${encodeURIComponent(documentId)}`);

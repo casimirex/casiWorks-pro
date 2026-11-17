@@ -956,14 +956,33 @@ const CHECKS: Check[] = [
           return { status: job.status, size: buf.byteLength, triangles: new DataView(buf).getUint32(80, true) };
         })()`);
 
+        // Lifecycle: send for review (saving locks), then approve (releases the newest version)
+        await p.key('Escape');
+        await p.key('O', { ctrl: true, shift: true });
+        await waitFor(() => p.eval<boolean>(`!!document.querySelector('.library-move-in_review:not(:disabled)')`), 'status buttons');
+        await p.eval(`document.querySelector('.library-move-in_review').click()`);
+        await waitFor(() => p.eval<boolean>(`document.querySelector('.library-lifecycle .library-state')?.textContent === 'In review' || null`), 'in review');
+        const saveLocked = await p.eval<boolean>(`document.querySelector('.library-save').disabled`);
+        await waitFor(() => p.eval<boolean>(`!!document.querySelector('.library-move-released:not(:disabled)')`), 'approve button');
+        await p.eval(`document.querySelector('.library-move-released').click()`);
+        await waitFor(() => p.eval<boolean>(`document.querySelector('.library-lifecycle .library-state')?.textContent === 'Released' || null`), 'released');
+        await p.eval(`document.querySelector('.library-history summary').click()`);
+        await sleep(200);
+        const historyRows = await p.eval<number>(`document.querySelectorAll('.library-history li').length`);
+        await p.screenshot('11-library-lifecycle');
+        const badgeReleased = await p.eval<string>(`document.querySelector('.doc-library-tag')?.title ?? ''`);
+        await p.key('Escape');
+
         assert(/npm run server/.test(hint), `hint: ${hint}`);
+        assert(saveLocked, 'Save is locked while in review');
+        assert(/\(Released\), version 1 of 2/.test(badgeReleased) && historyRows === 3, `badge ${badgeReleased}; ${historyRows} history rows`);
         assert(/Added Mounting_L_Bracket to the library \(version 1\)/.test(firstStatus), `first save: ${firstStatus}`);
         assert(badge === 'v2' && v2Volume > v1Volume, `badge ${badge}, volumes ${v1Volume} → ${v2Volume}`);
         assert(rev === 'Rev A', `revision ${rev}`);
         assert(Math.abs(reopened - v1Volume) < 1e-6 && badgeOld === 'v1' && /saving makes version 3/.test(openStatus), `reopened ${reopened} vs ${v1Volume}; badge ${badgeOld}; ${openStatus}`);
         assert(/^Not saved: Version 3 was saved after version 2/.test(conflict), `conflict: ${conflict}`);
         assert(job.status === 'done' && job.size === 84 + 50 * job.triangles && job.triangles > 10, `job ${JSON.stringify(job)}`);
-        return `saved v1, Ctrl+Shift+S saved v2 (badge ${badge}); v1 released as ${rev} and reopened (${openStatus}); a stale save refused; STL export job: ${job.triangles} triangles`;
+        return `saved v1, Ctrl+Shift+S saved v2 (badge ${badge}); v1 released as ${rev} and reopened (${openStatus}); a stale save refused; STL export job: ${job.triangles} triangles; review → released ("${badgeReleased}")`;
       } finally {
         server.kill();
         await new Promise(r => server.once('exit', r));

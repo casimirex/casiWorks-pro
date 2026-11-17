@@ -1,5 +1,5 @@
 // CasiWorks Pro - Save to and open from the local library (used by commands and the Library dialog)
-import { library, LibraryRequestError } from './client.ts';
+import { library, LibraryRequestError, STATE_LABEL } from './client.ts';
 import type { LibraryVersion } from './client.ts';
 import type { LibraryRef } from '../store/cadStore.ts';
 
@@ -48,16 +48,18 @@ export async function saveToLibrary(store: Store, options: { message?: string; a
   try {
     if (ref) {
       const v = await library.save(ref.documentId, content, options.message ?? '', ref.version);
-      store.getState().setLibraryRef({ ...ref, version: v.number, opened: v.number }, true);
-      store.getState().setStatus(`Saved ${ref.name} version ${v.number} to the library`);
+      store.getState().setLibraryRef({ ...ref, version: v.number, opened: v.number, state: 'draft' }, true);
+      store.getState().setStatus(ref.state === 'released'
+        ? `Saved ${ref.name} version ${v.number}: it was released, so it is a draft of the next revision now`
+        : `Saved ${ref.name} version ${v.number} to the library`);
       return v;
     }
     const { document, version } = await library.create(s.documentName, content, options.message || undefined);
-    store.getState().setLibraryRef({ documentId: document.id, name: document.name, version: version.number, opened: version.number }, true);
+    store.getState().setLibraryRef({ documentId: document.id, name: document.name, version: version.number, opened: version.number, state: document.state }, true);
     store.getState().setStatus(`Added ${document.name} to the library (version 1)`);
     return version;
   } catch (err) {
-    const message = err instanceof LibraryRequestError && err.code === 'CONFLICT'
+    const message = err instanceof LibraryRequestError && (err.code === 'CONFLICT' || err.code === 'LOCKED')
       ? `Not saved: ${err.message}. Your changes are still open; Save as new document keeps them separately.`
       : `Not saved to the library: ${err instanceof Error ? err.message : String(err)}`;
     store.getState().setStatus(message);
@@ -70,12 +72,17 @@ export async function saveToLibrary(store: Store, options: { message?: string; a
  * the next version, also when an older one was opened (to build on it).
  */
 export async function openFromLibrary(store: Store, documentId: string, name: string, version: number | 'latest' = 'latest'): Promise<void> {
-  const head = (await library.versions(documentId))[0].number;
+  const doc = await library.document(documentId);
+  const head = doc.headVersion;
   const number = version === 'latest' ? head : version;
   const content = await library.content(documentId, number);
   store.getState().loadProject(content);
-  store.getState().setLibraryRef({ documentId, name, version: head, opened: number }, true);
-  statusAfterRebuild(store, number === head
+  store.getState().setLibraryRef({ documentId, name, version: head, opened: number, state: doc.state }, true);
+  const opened = number === head
     ? `Opened ${name} version ${number} from the library`
-    : `Opened ${name} version ${number} (the newest is ${head}); saving makes version ${head + 1}`);
+    : `Opened ${name} version ${number} (the newest is ${head}); saving makes version ${head + 1}`;
+  const locked = doc.state === 'in_review' || doc.state === 'obsolete'
+    ? ` · ${STATE_LABEL[doc.state]}: return it to draft in the Library to save changes`
+    : '';
+  statusAfterRebuild(store, opened + locked);
 }

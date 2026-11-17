@@ -1,7 +1,7 @@
 // CasiWorks Pro - Document library: SQLite for the records, files for the content
 //
 // Everything lives in one data folder (default ~/.casiworks):
-//   library.db         documents, versions, revisions, API keys, jobs, webhooks
+//   library.db         documents, versions, revisions, lifecycle states, API keys, jobs, webhooks
 //   blobs/<sha256>     project files (.casiproj JSON), stored once per distinct content
 //   exports/<job id>   files made by export jobs
 // A version is never changed after it is saved; releasing one gives it the next
@@ -20,6 +20,35 @@ export interface DocumentRecord {
   headVersion: number;
   /** The newest released revision, if any. */
   latestRevision: string | null;
+  /** Where the document is in its lifecycle. */
+  state: LifecycleState;
+}
+
+/**
+ * draft: being worked on. in_review: frozen while it is checked (no saves).
+ * released: the newest version is a released revision; saving starts the next
+ * revision (back to draft). obsolete: no longer used (no saves until reactivated).
+ */
+export type LifecycleState = 'draft' | 'in_review' | 'released' | 'obsolete';
+export const LIFECYCLE_STATES: LifecycleState[] = ['draft', 'in_review', 'released', 'obsolete'];
+/** Which state a document may be moved to from each state (saving and releasing move it too). */
+export const LIFECYCLE_MOVES: Record<LifecycleState, LifecycleState[]> = {
+  draft: ['in_review', 'released', 'obsolete'],
+  in_review: ['draft', 'released', 'obsolete'],
+  released: ['draft', 'obsolete'],
+  obsolete: ['draft'],
+};
+export const STATE_LABEL: Record<LifecycleState, string> = { draft: 'Draft', in_review: 'In review', released: 'Released', obsolete: 'Obsolete' };
+
+export interface LifecycleEvent {
+  id: number;
+  documentId: string;
+  from: LifecycleState | null;
+  to: LifecycleState;
+  /** The newest version when it happened. */
+  version: number;
+  note: string;
+  createdAt: string;
 }
 
 export interface VersionRecord {
@@ -52,8 +81,8 @@ export interface JobRecord {
   finishedAt: string | null;
 }
 
-export type WebhookEvent = 'document.saved' | 'revision.released' | 'job.finished';
-export const WEBHOOK_EVENTS: WebhookEvent[] = ['document.saved', 'revision.released', 'job.finished'];
+export type WebhookEvent = 'document.saved' | 'revision.released' | 'document.state_changed' | 'job.finished';
+export const WEBHOOK_EVENTS: WebhookEvent[] = ['document.saved', 'revision.released', 'document.state_changed', 'job.finished'];
 export interface WebhookRecord { id: string; url: string; events: WebhookEvent[]; createdAt: string; active: boolean }
 export interface DeliveryRecord { id: number; webhookId: string; event: WebhookEvent; status: number | null; error: string | null; createdAt: string }
 
@@ -104,6 +133,15 @@ const SCHEMA = [
      id INTEGER PRIMARY KEY AUTOINCREMENT, webhook_id TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
      event TEXT NOT NULL, status INTEGER, error TEXT, created_at TEXT NOT NULL
    );`,
+  // version 2: lifecycle states and their history
+  `ALTER TABLE documents ADD COLUMN state TEXT NOT NULL DEFAULT 'draft';
+   UPDATE documents SET state = 'released'
+     WHERE EXISTS (SELECT 1 FROM versions v WHERE v.document_id = documents.id AND v.number = documents.head_version AND v.revision IS NOT NULL);
+   CREATE TABLE lifecycle_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+     from_state TEXT, to_state TEXT NOT NULL, version INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
+   );
+   CREATE INDEX lifecycle_events_document ON lifecycle_events(document_id, id);`,
 ];
 
 type Row = Record<string, unknown>;
@@ -175,16 +213,24 @@ export class Library {
     return {
       id: String(r.id), name: String(r.name), createdAt: String(r.created_at), updatedAt: String(r.updated_at),
       headVersion: Number(r.head_version), latestRevision: (r.latest_revision as string | null) ?? null,
+      state: String(r.state) as LifecycleState,
     };
   }
 
   private static DOC_SELECT = `SELECT d.*, (SELECT revision FROM versions v WHERE v.document_id = d.id AND v.revision IS NOT NULL ORDER BY v.number DESC LIMIT 1) AS latest_revision FROM documents d`;
 
-  listDocuments(query?: string): DocumentRecord[] {
-    const rows = query
-      ? this.db.prepare(`${Library.DOC_SELECT} WHERE d.name LIKE ? ESCAPE '\\' ORDER BY d.updated_at DESC`).all(`%${query.replace(/[\\%_]/g, c => '\\' + c)}%`)
-      : this.db.prepare(`${Library.DOC_SELECT} ORDER BY d.updated_at DESC`).all();
+  /** Documents, newest change first; `query` filters by name, `state` by lifecycle state. */
+  listDocuments(query?: string, state?: string): DocumentRecord[] {
+    const where: string[] = [], args: string[] = [];
+    if (query) { where.push(`d.name LIKE ? ESCAPE '\\'`); args.push(`%${query.replace(/[\\%_]/g, c => '\\' + c)}%`); }
+    if (state) { where.push('d.state = ?'); args.push(Library.checkState(state)); }
+    const rows = this.db.prepare(`${Library.DOC_SELECT}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY d.updated_at DESC`).all(...args);
     return rows.map(r => this.toDocument(r as Row));
+  }
+
+  private static checkState(state: unknown): LifecycleState {
+    if (!LIFECYCLE_STATES.includes(state as LifecycleState)) throw new LibraryError(400, 'INVALID_ARGUMENT', `state must be one of ${LIFECYCLE_STATES.join(', ')}`);
+    return state as LifecycleState;
   }
 
   getDocument(id: string): DocumentRecord {
@@ -202,6 +248,7 @@ export class Library {
     this.transaction(() => {
       this.db.prepare('INSERT INTO documents (id, name, created_at, updated_at, head_version) VALUES (?, ?, ?, ?, 1)').run(id, n, t, t);
       this.db.prepare('INSERT INTO versions (document_id, number, message, created_at, size, sha256) VALUES (?, 1, ?, ?, ?, ?)').run(id, String(message), t, size, sha);
+      this.recordMove(id, null, 'draft', 1, 'Created', t);
     });
     return { document: this.getDocument(id), version: this.getVersion(id, 1) };
   }
@@ -217,6 +264,7 @@ export class Library {
     this.getDocument(id);
     this.transaction(() => {
       this.db.prepare('DELETE FROM versions WHERE document_id = ?').run(id);
+      this.db.prepare('DELETE FROM lifecycle_events WHERE document_id = ?').run(id);
       this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
     });
     this.collectBlobs();
@@ -264,31 +312,101 @@ export class Library {
     const msg = message === undefined ? '' : String(message).slice(0, 500);
     const { sha, size } = this.writeBlob(c);
     const number = this.transaction(() => {
-      const doc = this.db.prepare('SELECT head_version FROM documents WHERE id = ?').get(documentId) as Row | undefined;
+      const doc = this.db.prepare('SELECT head_version, state FROM documents WHERE id = ?').get(documentId) as Row | undefined;
       if (!doc) throw new LibraryError(404, 'NOT_FOUND', `No document ${JSON.stringify(documentId)}`);
       const head = Number(doc.head_version);
+      const state = String(doc.state) as LifecycleState;
+      if (state === 'in_review') throw new LibraryError(409, 'LOCKED', 'The document is in review: return it to draft to save changes');
+      if (state === 'obsolete') throw new LibraryError(409, 'LOCKED', 'The document is obsolete: reactivate it (back to draft) to save changes');
       if (baseVersion !== undefined && baseVersion !== head) {
         throw new LibraryError(409, 'CONFLICT', `Version ${head} was saved after version ${baseVersion}, which this was based on; open version ${head} and save again`);
       }
       const t = now();
       this.db.prepare('INSERT INTO versions (document_id, number, message, created_at, size, sha256) VALUES (?, ?, ?, ?, ?, ?)').run(documentId, head + 1, msg, t, size, sha);
-      this.db.prepare('UPDATE documents SET head_version = ?, updated_at = ? WHERE id = ?').run(head + 1, t, documentId);
+      this.db.prepare(`UPDATE documents SET head_version = ?, updated_at = ?, state = 'draft' WHERE id = ?`).run(head + 1, t, documentId);
+      // Changing a released document starts work on its next revision
+      if (state === 'released') this.recordMove(documentId, 'released', 'draft', head + 1, `Version ${head + 1} saved: work on the next revision`, t);
       return head + 1;
     });
     return this.getVersion(documentId, number);
   }
 
-  /** Release a version: it gets the next revision letter. A version is released once. */
-  release(documentId: string, number: number): VersionRecord {
+  /**
+   * Release a version: it gets the next revision letter. A version is released
+   * once. Releasing the newest version makes the document released.
+   */
+  release(documentId: string, number: number, note = ''): VersionRecord {
     return this.transaction(() => {
       const v = this.getVersion(documentId, number);
+      const doc = this.getDocument(documentId);
+      if (doc.state === 'obsolete') throw new LibraryError(409, 'LOCKED', 'The document is obsolete: reactivate it before releasing');
       if (v.revision) throw new LibraryError(409, 'CONFLICT', `Version ${number} is already revision ${v.revision}`);
       const later = this.db.prepare('SELECT number, revision FROM versions WHERE document_id = ? AND revision IS NOT NULL AND number > ?').get(documentId, number) as Row | undefined;
       if (later) throw new LibraryError(409, 'CONFLICT', `A later version (${later.number}) is already revision ${later.revision}`);
       const count = Number((this.db.prepare('SELECT COUNT(*) AS n FROM versions WHERE document_id = ? AND revision IS NOT NULL').get(documentId) as Row).n);
-      this.db.prepare('UPDATE versions SET revision = ?, released_at = ? WHERE document_id = ? AND number = ?').run(revisionLetter(count), now(), documentId, number);
+      const t = now(), letter = revisionLetter(count);
+      this.db.prepare('UPDATE versions SET revision = ?, released_at = ? WHERE document_id = ? AND number = ?').run(letter, t, documentId, number);
+      if (number === doc.headVersion) {
+        this.db.prepare(`UPDATE documents SET state = 'released', updated_at = ? WHERE id = ?`).run(t, documentId);
+        this.recordMove(documentId, doc.state, 'released', number, note.trim() || `Version ${number} released as revision ${letter}`, t);
+      }
       return this.getVersion(documentId, number);
     });
+  }
+
+  // ---------------------------------------------------------------- lifecycle
+  private recordMove(documentId: string, from: LifecycleState | null, to: LifecycleState, version: number, note: string, at: string): void {
+    this.db.prepare('INSERT INTO lifecycle_events (document_id, from_state, to_state, version, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(documentId, from, to, version, note, at);
+  }
+
+  /**
+   * Move a document to another lifecycle state (LIFECYCLE_MOVES says which are
+   * allowed). Moving to released releases the newest version as the next revision.
+   */
+  setState(documentId: string, to: unknown, note: unknown = ''): { document: DocumentRecord; version: VersionRecord | null; newRevision: boolean } {
+    const target = Library.checkState(to);
+    const text = note === undefined || note === null ? '' : String(note).slice(0, 500).trim();
+    const doc = this.getDocument(documentId);
+    if (doc.state === target) throw new LibraryError(409, 'CONFLICT', `The document is already ${STATE_LABEL[target].toLowerCase()}`);
+    if (!LIFECYCLE_MOVES[doc.state].includes(target)) {
+      throw new LibraryError(409, 'CONFLICT', `A document that is ${STATE_LABEL[doc.state].toLowerCase()} cannot be moved to ${STATE_LABEL[target].toLowerCase()}`
+        + ` (it can go to: ${LIFECYCLE_MOVES[doc.state].map(s => STATE_LABEL[s].toLowerCase()).join(', ')})`);
+    }
+    if (target === 'released') {
+      const head = this.getVersion(documentId, doc.headVersion);
+      if (head.revision) {
+        // Already a revision (e.g. sent to review straight after a release): just mark it released again
+        this.transaction(() => {
+          this.db.prepare(`UPDATE documents SET state = 'released', updated_at = ? WHERE id = ?`).run(now(), documentId);
+          this.recordMove(documentId, doc.state, 'released', doc.headVersion, text || `Revision ${head.revision} (version ${head.number}) is current`, now());
+        });
+        return { document: this.getDocument(documentId), version: this.getVersion(documentId, doc.headVersion), newRevision: false };
+      }
+      const version = this.release(documentId, doc.headVersion, text);
+      return { document: this.getDocument(documentId), version, newRevision: true };
+    }
+    const defaults: Record<LifecycleState, string> = {
+      draft: doc.state === 'in_review' ? 'Returned to draft' : doc.state === 'obsolete' ? 'Reactivated' : 'Work on the next revision',
+      in_review: `Version ${doc.headVersion} sent for review`,
+      released: '',
+      obsolete: 'Made obsolete',
+    };
+    const t = now();
+    this.transaction(() => {
+      this.db.prepare('UPDATE documents SET state = ?, updated_at = ? WHERE id = ?').run(target, t, documentId);
+      this.recordMove(documentId, doc.state, target, doc.headVersion, text || defaults[target], t);
+    });
+    return { document: this.getDocument(documentId), version: null, newRevision: false };
+  }
+
+  /** The lifecycle history, newest first. */
+  listLifecycle(documentId: string): LifecycleEvent[] {
+    this.getDocument(documentId);
+    return (this.db.prepare('SELECT * FROM lifecycle_events WHERE document_id = ? ORDER BY id DESC').all(documentId) as Row[]).map(r => ({
+      id: Number(r.id), documentId: String(r.document_id), from: (r.from_state as LifecycleState | null) ?? null, to: String(r.to_state) as LifecycleState,
+      version: Number(r.version), note: String(r.note), createdAt: String(r.created_at),
+    }));
   }
 
   // ---------------------------------------------------------------- API keys

@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createLocalServer } from '../server/app.ts';
-import { revisionLetter } from '../server/library.ts';
+import { Library, revisionLetter } from '../server/library.ts';
+import { DatabaseSync } from 'node:sqlite';
 import { signature } from '../server/webhooks.ts';
 import { useCADStore } from '../src/store/cadStore.ts';
 import { createCommandRegistry } from '../src/commands/builtinCommands.ts';
@@ -142,6 +143,102 @@ test('Documents, versions, conflicts and revisions', async () => {
   }
 });
 
+test('Lifecycle: draft, in review, released, obsolete; saves locked or reopening work; history kept', async () => {
+  const s = await start();
+  try {
+    const content = projectOf('l_bracket');
+    const made = await s.call('POST', '/documents', { name: 'Bracket', content });
+    const id = made.data.document.id as string;
+    assert.equal(made.data.document.state, 'draft');
+    const move = (state: string, note?: string) => s.call('POST', `/documents/${id}/lifecycle`, { state, ...(note ? { note } : {}) });
+
+    assert.equal((await move('bogus')).status, 400);
+    assert.equal((await move('draft')).status, 409, 'already draft');
+
+    // In review: saving is locked until it goes back to draft
+    const review = await move('in_review', 'Check the hole sizes');
+    assert.equal(review.status, 200);
+    assert.equal(review.data.document.state, 'in_review');
+    assert.equal(review.data.event.note, 'Check the hole sizes');
+    const locked = await s.call('POST', `/documents/${id}/versions`, { content, baseVersion: 1 });
+    assert.equal(locked.status, 409);
+    assert.equal(locked.data.error.code, 'LOCKED');
+    assert.equal((await move('draft')).data.event.note, 'Returned to draft');
+    assert.equal((await s.call('POST', `/documents/${id}/versions`, { content, baseVersion: 1 })).data.number, 2);
+
+    // Approve: releases the newest version as revision A
+    await move('in_review');
+    const approved = await move('released');
+    assert.equal(approved.data.document.state, 'released');
+    assert.equal(approved.data.newRevision, true);
+    assert.deepEqual([approved.data.version.number, approved.data.version.revision], [2, 'A']);
+    assert.equal(approved.data.document.latestRevision, 'A');
+    assert.equal((await move('in_review')).status, 409, 'released cannot go straight to review');
+
+    // Saving a released document starts the next revision: back to draft
+    assert.equal((await s.call('POST', `/documents/${id}/versions`, { content, baseVersion: 2 })).status, 201);
+    assert.equal((await s.call('GET', `/documents/${id}`)).data.state, 'draft');
+    // Releasing an older version leaves the document in work; releasing the newest releases it
+    assert.equal((await s.call('POST', `/documents/${id}/versions/latest/release`)).data.revision, 'B');
+    assert.equal((await s.call('GET', `/documents/${id}`)).data.state, 'released');
+
+    // Revise without saving, then release again: the same revision is current, no new letter
+    await move('draft');
+    const again = await move('released');
+    assert.deepEqual([again.data.newRevision, again.data.version.revision], [false, 'B']);
+
+    // Obsolete: no saves, no releases, until reactivated
+    await move('obsolete', 'Replaced by the welded bracket');
+    assert.equal((await s.call('POST', `/documents/${id}/versions`, { content })).data.error.code, 'LOCKED');
+    assert.equal((await s.call('POST', `/documents/${id}/versions/1/release`)).data.error.code, 'LOCKED');
+    assert.equal((await move('released')).status, 409);
+    await s.call('POST', '/documents', { name: 'Other', content });
+    assert.deepEqual((await s.call('GET', '/documents?state=obsolete')).data.documents.map((d: { name: string }) => d.name), ['Bracket']);
+    assert.equal((await s.call('GET', '/documents?state=nope')).status, 400);
+    assert.equal((await move('draft')).data.event.note, 'Reactivated');
+
+    // The whole history, newest first
+    const history = await s.call('GET', `/documents/${id}/lifecycle`);
+    assert.equal(history.data.state, 'draft');
+    assert.deepEqual(history.data.events.map((e: { from: string | null; to: string }) => `${e.from ?? '-'}>${e.to}`).reverse(), [
+      '->draft', 'draft>in_review', 'in_review>draft', 'draft>in_review', 'in_review>released', 'released>draft',
+      'draft>released', 'released>draft', 'draft>released', 'released>obsolete', 'obsolete>draft',
+    ]);
+    assert.match(history.data.events.find((e: { to: string }) => e.to === 'obsolete').note, /welded/);
+    assert.equal((await s.call('DELETE', `/documents/${id}`)).status, 204);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('A version 1 library is upgraded: documents whose newest version is released start released', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'casiworks-migrate-'));
+  try {
+    const db = new DatabaseSync(join(dir, 'library.db'));
+    db.exec(`CREATE TABLE documents (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, head_version INTEGER NOT NULL);
+      CREATE TABLE versions (document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE, number INTEGER NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL,
+        size INTEGER NOT NULL, sha256 TEXT NOT NULL, revision TEXT, released_at TEXT, PRIMARY KEY (document_id, number));
+      CREATE UNIQUE INDEX versions_revision ON versions(document_id, revision) WHERE revision IS NOT NULL;
+      CREATE TABLE api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT);
+      CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, document_id TEXT NOT NULL, version INTEGER NOT NULL, format TEXT, status TEXT NOT NULL, error TEXT, result TEXT, created_at TEXT NOT NULL, finished_at TEXT);
+      CREATE TABLE webhooks (id TEXT PRIMARY KEY, url TEXT NOT NULL, events TEXT NOT NULL, secret TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL);
+      CREATE TABLE deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, webhook_id TEXT NOT NULL, event TEXT NOT NULL, status INTEGER, error TEXT, created_at TEXT NOT NULL);
+      INSERT INTO documents VALUES ('a', 'Released', 't', 't', 2), ('b', 'In work', 't', 't', 2);
+      INSERT INTO versions VALUES ('a', 1, '', 't', 1, 'x', NULL, NULL), ('a', 2, '', 't', 1, 'x', 'A', 't'),
+                                  ('b', 1, '', 't', 1, 'x', 'A', 't'), ('b', 2, '', 't', 1, 'x', NULL, NULL);
+      PRAGMA user_version = 1;`);
+    db.close();
+    const lib = new Library(dir);
+    try {
+      assert.equal(lib.getDocument('a').state, 'released');
+      assert.equal(lib.getDocument('b').state, 'draft');
+      assert.deepEqual(lib.listLifecycle('a'), []);
+    } finally { lib.close(); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Headless jobs: rebuild and export a saved version', async () => {
   const s = await start();
   try {
@@ -217,7 +314,7 @@ test('Webhooks: signed deliveries for saves, releases and jobs; failures retried
     assert.equal(made.status, 201);
     const secret = made.data.secret as string;
     const hookId = made.data.webhook.id as string;
-    assert.deepEqual(made.data.webhook.events, ['document.saved', 'revision.released', 'job.finished']);
+    assert.deepEqual(made.data.webhook.events, ['document.saved', 'revision.released', 'document.state_changed', 'job.finished']);
     assert.ok(!JSON.stringify((await s.call('GET', '/webhooks')).data).includes(secret));
 
     const id = (await s.call('POST', '/documents', { name: 'Bracket', content: projectOf('l_bracket') })).data.document.id as string;
@@ -225,11 +322,16 @@ test('Webhooks: signed deliveries for saves, releases and jobs; failures retried
     await s.call('POST', '/jobs', { kind: 'rebuild', documentId: id });
     await s.app.jobs.idle;
     await s.app.webhooks.settled();
-    assert.deepEqual(received.map(r => r.event).sort(), ['document.saved', 'job.finished', 'revision.released']);
+    assert.deepEqual(received.map(r => r.event).sort(), ['document.saved', 'document.state_changed', 'job.finished', 'revision.released']);
     for (const r of received) assert.equal(r.signature, signature(secret, r.body), 'HMAC of the body');
     const released = JSON.parse(received.find(r => r.event === 'revision.released')!.body);
     assert.equal(released.data.version.revision, 'A');
     assert.equal(released.data.document.id, id);
+    const moved = JSON.parse(received.find(r => r.event === 'document.state_changed')!.body);
+    assert.deepEqual([moved.data.from, moved.data.document.state], ['draft', 'released']);
+    // Back to draft, so the next save is only a save
+    await s.call('POST', `/documents/${id}/lifecycle`, { state: 'draft' });
+    await s.app.webhooks.settled();
 
     // A failing receiver: retried twice, every attempt logged
     received.length = 0;
@@ -239,7 +341,7 @@ test('Webhooks: signed deliveries for saves, releases and jobs; failures retried
     assert.equal(received.length, 3, 'one try and two retries');
     const log = (await s.call('GET', `/webhooks/${hookId}/deliveries`)).data.deliveries;
     assert.deepEqual(log.slice(0, 3).map((d: { status: number }) => d.status), [500, 500, 500]);
-    assert.equal(log.length, 6);
+    assert.equal(log.length, 8, '5 delivered before (2 of them state changes) and 3 failed attempts');
 
     assert.equal((await s.call('DELETE', `/webhooks/${hookId}`)).status, 204);
     received.length = 0;

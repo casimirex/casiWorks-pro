@@ -10,13 +10,13 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { Library, LibraryError, WEBHOOK_EVENTS } from './library.ts';
+import { LIFECYCLE_STATES, Library, LibraryError, WEBHOOK_EVENTS } from './library.ts';
 import type { JobKind } from './library.ts';
 import { EXPORT_FORMATS, JobRunner } from './jobs.ts';
 import type { ExportFormat } from './jobs.ts';
 import { Webhooks } from './webhooks.ts';
 
-export const SERVER_API_VERSION = '1.0.0';
+export const SERVER_API_VERSION = '1.1.0';
 const MAX_BODY = 25 * 1024 * 1024;
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -106,8 +106,8 @@ export function createLocalServer(options: ServerOptions): LocalServer {
       handler: () => openapi() },
 
     // ------------------------------------------------------------ documents
-    { method: 'GET', path: '/documents', tag: 'Documents', summary: 'List documents, newest change first (?q= filters by name)', response: 'DocumentList',
-      handler: ({ query }) => ({ documents: library.listDocuments(query.get('q') ?? undefined) }) },
+    { method: 'GET', path: '/documents', tag: 'Documents', summary: 'List documents, newest change first (?q= filters by name, ?state= by lifecycle state)', response: 'DocumentList',
+      handler: ({ query }) => ({ documents: library.listDocuments(query.get('q') ?? undefined, query.get('state') ?? undefined) }) },
     { method: 'POST', path: '/documents', tag: 'Documents', summary: 'Create a document with its first version', request: 'NewDocument', response: 'DocumentAndVersion', status: 201,
       handler: async ({ body }) => {
         const b = await body();
@@ -130,8 +130,11 @@ export function createLocalServer(options: ServerOptions): LocalServer {
         const b = await body();
         const base = b.baseVersion === undefined ? undefined : Number(b.baseVersion);
         if (base !== undefined && !(Number.isInteger(base) && base > 0)) fail(400, 'INVALID_ARGUMENT', 'baseVersion must be a positive whole number');
+        const before = library.getDocument(params.id).state;
         const version = library.addVersion(params.id, b.content, b.message, base);
-        webhooks.emit('document.saved', { document: library.getDocument(params.id), version });
+        const document = library.getDocument(params.id);
+        webhooks.emit('document.saved', { document, version });
+        if (document.state !== before) webhooks.emit('document.state_changed', { document, from: before, event: library.listLifecycle(params.id)[0] });
         return version;
       } },
     { method: 'GET', path: '/documents/{id}/versions/{version}', tag: 'Versions', summary: 'One version ("latest" for the newest)', response: 'Version',
@@ -144,9 +147,29 @@ export function createLocalServer(options: ServerOptions): LocalServer {
       } },
     { method: 'POST', path: '/documents/{id}/versions/{version}/release', tag: 'Versions', summary: 'Release a version as the next revision (A, B, …)', response: 'Version',
       handler: ({ params }) => {
+        const before = library.getDocument(params.id).state;
         const version = library.release(params.id, versionNumber(params.id, params.version));
-        webhooks.emit('revision.released', { document: library.getDocument(params.id), version });
+        const document = library.getDocument(params.id);
+        webhooks.emit('revision.released', { document, version });
+        if (document.state !== before) webhooks.emit('document.state_changed', { document, from: before, event: library.listLifecycle(params.id)[0] });
         return version;
+      } },
+
+    // ------------------------------------------------------------ lifecycle
+    { method: 'GET', path: '/documents/{id}/lifecycle', tag: 'Lifecycle', summary: 'The lifecycle state history, newest first', response: 'LifecycleList',
+      handler: ({ params }) => ({ state: library.getDocument(params.id).state, events: library.listLifecycle(params.id) }) },
+    { method: 'POST', path: '/documents/{id}/lifecycle', tag: 'Lifecycle',
+      summary: 'Move a document to another state (draft, in_review, released, obsolete); released releases the newest version', request: 'StateChange', response: 'StateChanged',
+      handler: async ({ params, body }) => {
+        const b = await body();
+        const before = library.getDocument(params.id).state;
+        const out = library.setState(params.id, b.state, b.note);
+        const event = library.listLifecycle(params.id)[0];
+        if (out.newRevision && out.version) {
+          webhooks.emit('revision.released', { document: out.document, version: out.version });
+        }
+        webhooks.emit('document.state_changed', { document: out.document, from: before, event });
+        return { ...out, event };
       } },
 
     // ------------------------------------------------------------ jobs
@@ -213,7 +236,10 @@ export function createLocalServer(options: ServerOptions): LocalServer {
         summary: r.summary,
         tags: [r.tag],
         ...(params.length ? { parameters: params } : {}),
-        ...(r.path === '/documents' && r.method === 'GET' ? { parameters: [{ name: 'q', in: 'query', required: false, schema: { type: 'string' } }] } : {}),
+        ...(r.path === '/documents' && r.method === 'GET' ? { parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' } },
+          { name: 'state', in: 'query', required: false, schema: { enum: LIFECYCLE_STATES } },
+        ] } : {}),
         ...(r.auth === false ? { security: [] } : {}),
         ...(r.request ? { requestBody: { required: true, content: { 'application/json': { schema: { $ref: `#/components/schemas/${r.request}` } } } } } : {}),
         responses: {
@@ -347,7 +373,7 @@ const SCHEMAS: Record<string, unknown> = {
   Error: obj({ error: obj({ code: s, message: s }) }),
   Health: obj({ ok: { type: 'boolean' }, apiVersion: s }),
   Session: obj({ token: s }),
-  Document: obj({ id: s, name: s, createdAt: s, updatedAt: s, headVersion: i, latestRevision: nullable(s) }),
+  Document: obj({ id: s, name: s, createdAt: s, updatedAt: s, headVersion: i, latestRevision: nullable(s), state: { enum: LIFECYCLE_STATES } }),
   DocumentList: list('documents', 'Document'),
   Version: obj({ documentId: s, number: i, message: s, createdAt: s, size: i, sha256: s, revision: nullable(s), releasedAt: nullable(s) }),
   VersionList: list('versions', 'Version'),
@@ -355,6 +381,10 @@ const SCHEMAS: Record<string, unknown> = {
   NewDocument: obj({ name: s, content: { type: 'string', description: 'The project file text (.casiproj JSON)' }, message: s }, ['name', 'content']),
   Rename: obj({ name: s }),
   NewVersion: obj({ content: s, message: s, baseVersion: { ...i, description: 'The version this was based on; refused (409) if it is not the newest' } }, ['content']),
+  LifecycleEvent: obj({ id: i, documentId: s, from: nullable({ enum: LIFECYCLE_STATES }), to: { enum: LIFECYCLE_STATES }, version: i, note: s, createdAt: s }),
+  LifecycleList: obj({ state: { enum: LIFECYCLE_STATES }, events: { type: 'array', items: ref('LifecycleEvent') } }),
+  StateChange: obj({ state: { enum: LIFECYCLE_STATES }, note: s }, ['state']),
+  StateChanged: obj({ document: ref('Document'), version: nullable(ref('Version')), newRevision: { type: 'boolean', description: 'true when this released the newest version as a new revision' }, event: ref('LifecycleEvent') }),
   Job: obj({ id: s, kind: { enum: ['rebuild', 'export'] }, documentId: s, version: i, format: nullable(s), status: { enum: ['queued', 'running', 'done', 'failed'] },
     error: nullable(s), result: nullable({ type: 'object' }), createdAt: s, finishedAt: nullable(s) }),
   JobList: list('jobs', 'Job'),

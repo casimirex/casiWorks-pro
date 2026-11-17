@@ -15,6 +15,8 @@ import { TOOLS } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { macroRecorder, runCommand } from '../../commands/index.ts';
 import { pluginManager } from '../../plugins/index.ts';
+import { STATE_LABEL } from '../../library/client.ts';
+import type { LifecycleState } from '../../library/client.ts';
 
 /** Same colours as the reference planes in the viewport and tree. */
 const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
@@ -166,9 +168,10 @@ export default function CommandManager() {
           <span className={`doc-status-dot ${isModified ? 'modified' : 'saved'}`} />
           <span className="doc-title-text">{documentName}</span>
           {libraryRef && (
-            <button className="doc-unit-tag doc-library-tag" onClick={() => runCommand('library.open')} title={`Library document ${libraryRef.name}, version ${libraryRef.opened}: open the Library`}
-              style={{ cursor: 'pointer', border: 'none' }}>
-              v{libraryRef.opened}
+            <button className="doc-unit-tag doc-library-tag" onClick={() => runCommand('library.open')} title={`Library document ${libraryRef.name}${libraryRef.state ? ` (${STATE_LABEL[libraryRef.state as LifecycleState] ?? libraryRef.state})` : ''}, version ${libraryRef.opened}${libraryRef.opened !== libraryRef.version ? ` of ${libraryRef.version}` : ''}: open the Library`}
+              style={{ cursor: 'pointer', border: 'none', whiteSpace: 'nowrap' }}>
+              v{libraryRef.opened}{libraryRef.state && libraryRef.state !== 'draft' && libraryRef.opened === libraryRef.version
+                ? ` · ${STATE_LABEL[libraryRef.state as LifecycleState] ?? libraryRef.state}` : ''}
             </button>
           )}
           {activeConfiguration && <span className="doc-unit-tag doc-config-tag" title="Active configuration">{activeConfiguration}</span>}

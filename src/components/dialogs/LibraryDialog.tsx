@@ -1,9 +1,9 @@
 // CasiWorks Pro - Library dialog: documents and versions in the local library (npm run server)
 import { useCallback, useEffect, useState } from 'react';
-import { Library as LibraryIcon, X, FolderOpen, Save, BadgeCheck, RefreshCw } from 'lucide-react';
+import { Library as LibraryIcon, X, FolderOpen, Save, BadgeCheck, RefreshCw, History } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { library, LibraryUnavailable } from '../../library/client.ts';
-import type { LibraryDocument, LibraryVersion } from '../../library/client.ts';
+import { library, LibraryUnavailable, LIFECYCLE_MOVES, STATE_LABEL } from '../../library/client.ts';
+import type { LibraryDocument, LibraryVersion, LifecycleEvent, LifecycleState } from '../../library/client.ts';
 import { openFromLibrary, saveToLibrary } from '../../library/actions.ts';
 import { useDialog } from '../common/useDialog.ts';
 
@@ -14,6 +14,23 @@ interface DialogProps {
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const kb = (bytes: number) => `${(bytes / 1024).toFixed(1)} KB`;
+const STATE_COLOR: Record<LifecycleState, string> = { draft: '#94a3b8', in_review: '#fbbf24', released: '#4ade80', obsolete: '#f87171' };
+
+function StateBadge({ state }: { state: LifecycleState }) {
+  const color = STATE_COLOR[state];
+  return <span className={`library-state library-state-${state}`} style={{ fontSize: 10, color, border: `1px solid ${color}`, borderRadius: 3, padding: '0 4px', whiteSpace: 'nowrap' }}>{STATE_LABEL[state]}</span>;
+}
+
+/** What the button that moves a document from `from` to `to` says. */
+function moveLabel(from: LifecycleState, to: LifecycleState, head: LibraryVersion | undefined): string {
+  if (to === 'in_review') return 'Send for review';
+  if (to === 'obsolete') return 'Make obsolete';
+  if (to === 'released') {
+    if (head?.revision) return `Mark revision ${head.revision} current`;
+    return from === 'in_review' ? `Approve: release version ${head?.number ?? ''}` : `Release version ${head?.number ?? ''}`;
+  }
+  return from === 'in_review' ? 'Return to draft' : from === 'obsolete' ? 'Reactivate' : 'Start next revision';
+}
 
 export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   const libraryRef = useCADStore(s => s.libraryRef);
@@ -28,6 +45,8 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [history, setHistory] = useState<LifecycleEvent[]>([]);
+  const [note, setNote] = useState('');
   const dialog = useDialog(isOpen, onClose, 'Library');
 
   const run = useCallback(async (fn: () => Promise<void>) => {
@@ -56,10 +75,12 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !selected) { setVersions([]); return; }
+    if (!isOpen || !selected) { setVersions([]); setHistory([]); return; }
+    setNote('');
     void run(async () => {
-      const v = await library.versions(selected);
+      const [v, h] = await Promise.all([library.versions(selected), library.lifecycle(selected)]);
       setVersions(v);
+      setHistory(h);
       setChosenVersion(v[0]?.number ?? null);
     });
   }, [isOpen, selected, run]);
@@ -73,7 +94,7 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
     const docs = await library.documents(query || undefined);
     setDocuments(docs);
     setSelected(v.documentId);
-    setVersions(await library.versions(v.documentId));
+    await refresh(v.documentId);
     setChosenVersion(v.number);
   });
   const open = () => selectedDoc && chosenVersion !== null && run(async () => {
@@ -84,11 +105,34 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
   const release = () => selectedDoc && chosenVersion !== null && run(async () => {
     const v = await library.release(selectedDoc.id, chosenVersion);
     useCADStore.getState().setStatus(`${selectedDoc.name} version ${v.number} released as revision ${v.revision}`);
-    setVersions(await library.versions(selectedDoc.id));
-    setDocuments(await library.documents(query || undefined));
+    await refresh(selectedDoc.id);
+  });
+
+  /** Lists and the open document's state after a change on the server. */
+  const refresh = async (documentId: string) => {
+    const [docs, v, h] = await Promise.all([library.documents(query || undefined), library.versions(documentId), library.lifecycle(documentId)]);
+    setDocuments(docs);
+    setVersions(v);
+    setHistory(h);
+    const ref = useCADStore.getState().libraryRef;
+    const doc = docs.find(d => d.id === documentId);
+    if (ref && doc && ref.documentId === documentId && ref.state !== doc.state) {
+      useCADStore.getState().setLibraryRef({ ...ref, state: doc.state });
+    }
+  };
+  const move = (to: LifecycleState) => selectedDoc && run(async () => {
+    if (to === 'obsolete' && !window.confirm(`Make ${selectedDoc.name} obsolete? It cannot be saved or released until it is reactivated.`)) return;
+    const out = await library.setState(selectedDoc.id, to, note.trim() || undefined);
+    setNote('');
+    useCADStore.getState().setStatus(out.newRevision && out.version
+      ? `${selectedDoc.name} version ${out.version.number} released as revision ${out.version.revision}`
+      : `${selectedDoc.name} is ${STATE_LABEL[to].toLowerCase()} now`);
+    await refresh(selectedDoc.id);
   });
 
   const chosen = versions.find(v => v.number === chosenVersion) ?? null;
+  const openDoc = libraryRef ? documents.find(d => d.id === libraryRef.documentId) : undefined;
+  const saveLocked = openDoc && (openDoc.state === 'in_review' || openDoc.state === 'obsolete') ? openDoc : undefined;
   const field = { background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 4, padding: '5px 8px', fontSize: 12 } as const;
   const row = (active: boolean) => ({ display: 'flex', flexDirection: 'column' as const, gap: 2, width: '100%', textAlign: 'left' as const, padding: '6px 8px',
     background: active ? 'var(--bg-active)' : 'transparent', border: 'none', borderBottom: '1px solid #2a2a2e', color: '#fff', cursor: 'pointer', fontSize: 12 });
@@ -123,7 +167,10 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
                   <div role="listbox" aria-label="Documents" className="library-documents" style={{ border: '1px solid #333', borderRadius: 4, overflowY: 'auto', maxHeight: 300 }}>
                     {documents.map(d => (
                       <button key={d.id} role="option" aria-selected={d.id === selected} className="library-document" style={row(d.id === selected)} onClick={() => setSelected(d.id)}>
-                        <span style={{ fontWeight: 600 }}>{d.name}</span>
+                        <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                          <StateBadge state={d.state} />
+                        </span>
                         <span style={{ fontSize: 11, color: '#94a3b8' }}>v{d.headVersion}{d.latestRevision ? ` · rev ${d.latestRevision}` : ''} · {when(d.updatedAt)}</span>
                       </button>
                     ))}
@@ -148,7 +195,7 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button className="btn-secondary library-release" disabled={busy || !chosen || !!chosen.revision} onClick={() => void release()}
+                    <button className="btn-secondary library-release" disabled={busy || !chosen || !!chosen.revision || selectedDoc?.state === 'obsolete'} onClick={() => void release()}
                       title="Freeze this version as the next revision (A, B, …)">
                       <BadgeCheck size={14} /> Release
                     </button>
@@ -159,11 +206,55 @@ export default function LibraryDialog({ isOpen, onClose }: DialogProps) {
                 </div>
               </div>
 
+              {selectedDoc && (
+                <section className="library-lifecycle" aria-label={`Status of ${selectedDoc.name}`} style={{ borderTop: '1px solid #333', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>Status</span>
+                    <StateBadge state={selectedDoc.state} />
+                    <span style={{ fontSize: 11, color: '#71717a', flex: 1, minWidth: 160 }}>
+                      {selectedDoc.state === 'in_review' ? 'Saving is locked while it is in review.'
+                        : selectedDoc.state === 'obsolete' ? 'No longer used: saving and releasing are locked.'
+                          : selectedDoc.state === 'released' ? `Revision ${selectedDoc.latestRevision ?? ''} is current; saving starts the next revision.`
+                            : 'Being worked on.'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input className="library-note" aria-label="Note for the status change" placeholder="Note (optional)" value={note} style={{ ...field, flex: 1, minWidth: 160 }}
+                      onChange={(e) => setNote(e.target.value)} />
+                    {LIFECYCLE_MOVES[selectedDoc.state].map(to => (
+                      <button key={to} className={`btn-secondary library-move library-move-${to}`} disabled={busy} onClick={() => void move(to)}>
+                        {moveLabel(selectedDoc.state, to, versions[0])}
+                      </button>
+                    ))}
+                  </div>
+                  {history.length > 0 && (
+                    <details className="library-history">
+                      <summary style={{ fontSize: 11, color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <History size={12} /> History ({history.length})
+                      </summary>
+                      <ol style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, maxHeight: 120, overflowY: 'auto', fontSize: 11 }}>
+                        {history.map(e => (
+                          <li key={e.id} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '2px 0', borderBottom: '1px solid #2a2a2e' }}>
+                            <span style={{ color: '#71717a', whiteSpace: 'nowrap' }}>{when(e.createdAt)}</span>
+                            {e.from && <><StateBadge state={e.from} /><span aria-hidden="true">→</span></>}
+                            <StateBadge state={e.to} />
+                            <span style={{ color: '#71717a' }}>v{e.version}</span>
+                            <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.note}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </details>
+                  )}
+                </section>
+              )}
+
               <div style={{ borderTop: '1px solid #333', paddingTop: 10, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input className="library-message" aria-label="Version message" placeholder="What changed? (optional)" value={message} style={{ ...field, flex: 1, minWidth: 200 }}
-                  onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(false); }} />
-                <button className="btn-primary library-save" disabled={busy || !available} onClick={() => void save(false)}
-                  title={libraryRef ? `Save as version ${libraryRef.version + 1} of ${libraryRef.name}` : `Add ${documentName} to the library`}>
+                  onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !saveLocked) void save(false); }} />
+                <button className="btn-primary library-save" disabled={busy || !available || !!saveLocked} onClick={() => void save(false)}
+                  title={saveLocked ? `${saveLocked.name} is ${STATE_LABEL[saveLocked.state].toLowerCase()}: return it to draft to save, or save as a new document`
+                    : libraryRef ? `Save as version ${libraryRef.version + 1} of ${libraryRef.name}${openDoc?.state === 'released' ? ' (starts the next revision)' : ''}`
+                      : `Add ${documentName} to the library`}>
                   <Save size={14} /> {libraryRef ? `Save version ${libraryRef.version + 1}` : 'Save to library'}
                 </button>
                 {libraryRef && (

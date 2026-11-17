@@ -499,8 +499,9 @@ npm run server -- key create "script"  # an API key for scripts (shown once); ke
 A small Node server for one person on one machine: it listens on 127.0.0.1 only, keeps its data in `~/.casiworks` (`CASIWORKS_DATA` or `--data` to change), and needs no extra packages (SQLite is built into Node 22+).
 
 - **Library** (File ▸ Library, `Ctrl+Shift+O`; Save to library `Ctrl+Shift+S`): every saved version is kept; a save on top of a version someone saved after you opened is refused (409); releasing a version gives it the next revision letter (A, B, …).
-- **REST API v1** (`/api/v1`, described in `/api/v1/openapi.json`): documents, versions, version content, release, jobs, API keys, webhooks. Every call needs `Authorization: Bearer <API key>`; the app uses a session token only its own pages can read. Other host names and other web sites are refused.
+- **Lifecycle**: each document is *Draft*, *In review*, *Released* or *Obsolete*, shown in the Library and next to the version in the title bar. In review and Obsolete lock saving; approving a review releases the newest version; saving a released document starts its next revision (back to Draft). Every change of status is kept with an optional note (`GET/POST /api/v1/documents/{id}/lifecycle`, `?state=` filters the document list).
+- **REST API v1** (`/api/v1`, described in `/api/v1/openapi.json`): documents, versions, version content, release, lifecycle, jobs, API keys, webhooks. Every call needs `Authorization: Bearer <API key>`; the app uses a session token only its own pages can read. Other host names and other web sites are refused.
 - **Jobs**: `rebuild` (rebuild warnings and mass properties) or `export` (STL, OBJ, STEP, IGES, DXF) of a saved version, run on the app's own kernel without a browser.
-- **Webhooks**: `document.saved`, `revision.released`, `job.finished`, POSTed as JSON signed with `X-CasiWorks-Signature: sha256=<HMAC-SHA256 of the body>`; retried twice on failure; every attempt is logged (`GET /api/v1/webhooks/{id}/deliveries`).
+- **Webhooks**: `document.saved`, `revision.released`, `document.state_changed`, `job.finished`, POSTed as JSON signed with `X-CasiWorks-Signature: sha256=<HMAC-SHA256 of the body>`; retried twice on failure; every attempt is logged (`GET /api/v1/webhooks/{id}/deliveries`).
 
 In development, `npm run dev` proxies `/api/v1` to a running `npm run server`.

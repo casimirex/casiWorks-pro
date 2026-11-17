@@ -1060,7 +1060,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
 
 <section class="chapter" id="ch18" data-title="Your document library" data-part="pro" data-n="18">
   <div class="chapter-head"><span class="badge pro">Professional</span><span class="meta">Chapter 18 · about 20 min</span></div>
-  <h2 class="title">Your document library: versions, revisions and the REST API</h2>
+  <h2 class="title">Your document library: versions, revisions, status and the REST API</h2>
   <p class="lead">Saving to a file keeps one copy. The library keeps every version you save, lets you release one as a revision (A, B, C…), and lets scripts and other programs reach your parts. It runs on your own computer: nothing leaves it.</p>
   <div class="example">
     <div class="example-head"><span class="tag">Example 18.1</span><h4>Start the library and save two versions</h4><div class="specs"><span>npm run server</span><span>Ctrl+Shift+S</span></div></div>
@@ -1077,7 +1077,28 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     </div>
   </div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 18.2</span><h4>Export a revision from a script</h4><div class="specs"><span>REST API v1</span><span>API key</span></div></div>
+    <div class="example-head"><span class="tag">Example 18.2</span><h4>Review and release</h4><div class="specs"><span>Draft → In review → Released</span></div></div>
+    <div class="example-body">
+      <p>Every library document has a status, shown next to its name in the Library and next to the version in the title bar:</p>
+      <div class="table-wrap"><table>
+        <tr><th>Status</th><th>Meaning</th><th>Saving</th></tr>
+        <tr><td><b>Draft</b></td><td>Being worked on.</td><td>Allowed</td></tr>
+        <tr><td><b>In review</b></td><td>Frozen while it is checked.</td><td>Locked (<b>Return to draft</b> to change it)</td></tr>
+        <tr><td><b>Released</b></td><td>The newest version is a released revision.</td><td>Allowed: the save starts the next revision and the status goes back to Draft</td></tr>
+        <tr><td><b>Obsolete</b></td><td>No longer used.</td><td>Locked, and so is releasing (<b>Reactivate</b> to use it again)</td></tr>
+      </table></div>
+      <ol class="steps">
+        <li>In the Library, pick the bracket. Under <b>Status</b>, type <i>Check the bolt holes clear M8</i> as the note and click <b>Send for review</b>. The <b>Save version</b> button is now locked.</li>
+        <li>Once checked, type <i>Holes OK, approved</i> and click <b>Approve: release version 2</b>. Version 2 becomes <b>Rev B</b> and the bracket is <b>Released</b>.</li>
+        <li>Open <b>History</b> to see every change of status with its note and the version it applied to.</li>
+        <li>Change the part and save: the bracket goes back to <b>Draft</b>, as the start of revision C. Revision B stays exactly as it was.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/37-library-lifecycle.webp" alt="The Library dialog: the bracket released as revision B, with its status history open"><figcaption>Sent for review, approved and released as revision B; the history keeps each step and its note.</figcaption></figure>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Not on its own?</b><p>When review means something to you, use it. When it doesn't, <b>Release version N</b> works straight from Draft. Scripts can do the same with <code>POST /api/v1/documents/{id}/lifecycle</code> and <code>{"state": "released", "note": "…"}</code>, and a <code>document.state_changed</code> webhook fires on every change.</p></div></div>
+    </div>
+  </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 18.3</span><h4>Export a revision from a script</h4><div class="specs"><span>REST API v1</span><span>API key</span></div></div>
     <div class="example-body split single">
       <div class="code"><span class="lang">Terminal</span><button type="button">Copy</button><pre><span class="tok-c"># once: a key for your scripts (shown only now)</span>
 npm run server -- key create "export script"
@@ -1091,11 +1112,11 @@ curl -s -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
 curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
   http://127.0.0.1:5180/api/v1/jobs/&lt;job id&gt;/result</pre></div>
       <p>Jobs rebuild the saved version on the same kernel the app uses, without a browser. A <code>rebuild</code> job reports rebuild warnings and the mass properties; an <code>export</code> job writes STL, OBJ, STEP, IGES or DXF. The whole API is described at <code>/api/v1/openapi.json</code> (OpenAPI 3.1).</p>
-      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Webhooks</b><p><code>POST /api/v1/webhooks</code> with a <code>url</code> and the library will POST to it when a version is saved, a revision released or a job finished, signed with <code>X-CasiWorks-Signature: sha256=…</code> (HMAC of the body with the secret you get back). Use it to start a slicer, copy released parts to a shared folder, or post to a chat.</p></div></div>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Webhooks</b><p><code>POST /api/v1/webhooks</code> with a <code>url</code> and the library will POST to it when a version is saved, a revision released, a status changed or a job finished, signed with <code>X-CasiWorks-Signature: sha256=…</code> (HMAC of the body with the secret you get back). Use it to start a slicer, copy released parts to a shared folder, or post to a chat.</p></div></div>
     </div>
   </div>
   <div class="callout check"><span class="ic">✓</span><div><b class="label">Only you, only this computer</b><p>The server listens on <code>127.0.0.1</code> only, refuses other web sites and other host names, and every API call needs your API key (the app uses its own session). Revoke a key with <code>npm run server -- key delete &lt;id&gt;</code>.</p></div></div>
-  <div class="exercise"><b>Exercise 18.</b> Write a small script that lists every document whose newest version is not released yet.<label><input type="checkbox" data-done="ch18"> I've done this</label></div>
+  <div class="exercise"><b>Exercise 18.</b> Write a small script that lists every document that is still a draft (hint: <code>GET /api/v1/documents?state=draft</code>), with its newest version and latest revision.<label><input type="checkbox" data-done="ch18"> I've done this</label></div>
 </section>
 
 <!-- ======================================================= APPENDICES -->

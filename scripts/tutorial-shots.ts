@@ -542,6 +542,22 @@ const SHOTS: Shot[] = [
         await waitFor(() => p.eval<boolean>(`!!document.querySelector('.library-revision')`), 'Rev A');
         await sleep(300);
         await p.screenshot('36-library');
+        // Review and release version 2 (the same run makes the lifecycle shot)
+        const note = (text: string) => p.eval(`(() => { const el = document.querySelector('.library-note');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+        const press = async (cls: string) => {
+          await waitFor(() => p.eval<boolean>(`!!document.querySelector('${cls}:not(:disabled)')`), cls);
+          await p.eval(`document.querySelector('${cls}').click()`);
+        };
+        await note('Check the bolt holes clear M8');
+        await press('.library-move-in_review');
+        await waitFor(() => p.eval<boolean>(`document.querySelector('.library-lifecycle .library-state')?.textContent === 'In review' || null`), 'in review');
+        await note('Holes OK, approved');
+        await press('.library-move-released');
+        await waitFor(() => p.eval<boolean>(`document.querySelector('.library-lifecycle .library-state')?.textContent === 'Released' || null`), 'released');
+        await p.eval(`document.querySelector('.library-history').open = true`);
+        await sleep(300);
+        await p.screenshot('37-library-lifecycle');
         await closeDialog(p);
       } finally {
         server.kill();
