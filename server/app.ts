@@ -94,6 +94,12 @@ export function createLocalServer(options: ServerOptions): LocalServer {
   };
 
   const routes: Route[] = [
+    { method: 'GET', path: '/', tag: 'Server', summary: 'Where to start: links to the API description and the main collections', auth: false, response: 'Index',
+      handler: () => ({
+        name: 'CasiWorks local API', apiVersion: SERVER_API_VERSION,
+        description: 'Every call except this one, /health and /openapi.json needs Authorization: Bearer <API key> (npm run server -- key create NAME)',
+        links: { openapi: '/api/v1/openapi.json', health: '/api/v1/health', documents: '/api/v1/documents', jobs: '/api/v1/jobs', keys: '/api/v1/keys', webhooks: '/api/v1/webhooks' },
+      }) },
     { method: 'GET', path: '/health', tag: 'Server', summary: 'Is the server up', auth: false, response: 'Health',
       handler: () => ({ ok: true, apiVersion: SERVER_API_VERSION }) },
     { method: 'GET', path: '/session', tag: 'Server', summary: 'The session token for the app (readable only by the app\'s own pages)', auth: false, response: 'Session',
@@ -331,7 +337,8 @@ export function createLocalServer(options: ServerOptions): LocalServer {
         if (origin && origin !== `http://${req.headers.host}` && !allowedOrigins.has(origin)) {
           return sendError(res, 403, 'FORBIDDEN', `Requests from ${origin} are not allowed`);
         }
-        const hit = matchers.map(m => ({ m, match: m.re.exec(url.pathname) })).filter(x => x.match);
+        const path = url.pathname === '/api/v1' ? '/api/v1/' : url.pathname;
+        const hit = matchers.map(m => ({ m, match: m.re.exec(path) })).filter(x => x.match);
         if (hit.length === 0) return sendError(res, 404, 'NOT_FOUND', `No API route ${url.pathname}`);
         const found = hit.find(x => x.m.route.method === req.method);
         if (!found) return sendError(res, 405, 'METHOD_NOT_ALLOWED', `${req.method} is not allowed here (allowed: ${hit.map(x => x.m.route.method).join(', ')})`);
@@ -372,6 +379,7 @@ const list = (key: string, item: string) => obj({ [key]: { type: 'array', items:
 const SCHEMAS: Record<string, unknown> = {
   Error: obj({ error: obj({ code: s, message: s }) }),
   Health: obj({ ok: { type: 'boolean' }, apiVersion: s }),
+  Index: obj({ name: s, apiVersion: s, description: s, links: { type: 'object', additionalProperties: s } }),
   Session: obj({ token: s }),
   Document: obj({ id: s, name: s, createdAt: s, updatedAt: s, headVersion: i, latestRevision: nullable(s), state: { enum: LIFECYCLE_STATES } }),
   DocumentList: list('documents', 'Document'),

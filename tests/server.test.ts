@@ -365,6 +365,12 @@ test('OpenAPI document covers every route and every schema it names', async () =
     const refs = [...JSON.stringify(spec).matchAll(/#\/components\/schemas\/(\w+)/g)].map(m => m[1]);
     for (const name of refs) assert.ok(name in spec.components.schemas, `schema ${name}`);
     assert.deepEqual(spec.paths['/health'].get.security, [], 'open routes are marked');
+    // The base address answers with where to go, with or without the trailing slash
+    for (const path of ['', '/']) {
+      const index = await s.call('GET', path, undefined, { authorization: '' });
+      assert.equal(index.status, 200, `/api/v1${path}`);
+      assert.equal(index.data.links.openapi, '/api/v1/openapi.json');
+    }
   } finally {
     await s.stop();
   }
