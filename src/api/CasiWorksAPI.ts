@@ -23,6 +23,7 @@ import type { EditResult } from '../kernel/sketchEdit.ts';
 import { buildBom } from '../assembly/bom.ts';
 import type { Bom, BomComponent } from '../assembly/bom.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
+import { findInterferences } from '../assembly/interference.ts';
 import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
@@ -53,7 +54,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.12.0';
+export const API_VERSION = '1.13.0';
 
 // =====================================================================
 // Public types
@@ -545,6 +546,11 @@ export interface AssemblyAPI {
   collapse(): void;
   /** Remove all components and mates. */
   clear(): void;
+  /**
+   * Components that overlap at their assembled positions, largest overlap first,
+   * with the shared volume in mm³ (parts that only touch are not listed). Since 1.13.
+   */
+  interference(): Array<{ a: string; b: string; aName: string; bName: string; volume: number }>;
 }
 
 /** What the drawing sheet shows. */
@@ -1521,6 +1527,12 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
     collapse: () => get().setExplodedView(null),
     clear: () => get().clearAssembly(),
+    interference() {
+      const found = findInterferences(get().assemblyComponents);
+      const out = found.map(f => ({ a: f.a, b: f.b, aName: f.aName, bName: f.bName, volume: f.volume }));
+      for (const f of found) f.geometry.dispose();
+      return out;
+    },
   });
 
   const SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'];

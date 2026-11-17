@@ -474,6 +474,9 @@ const SHOTS: Shot[] = [
       await p.screenshot('23-assembly-mate');
       await p.click('Re-solve all assembly mates numerically', 800);
       await p.screenshot('24-assembly-solved');
+      await run(p, 'assembly.interference', undefined, 600);
+      await p.screenshot('24b-interference');
+      await run(p, 'assembly.clearInterference', undefined, 200);
       await p.click('Configure Exploded View', 600);
       await p.eval(`(() => {
         const el = document.querySelector('.explode-distance');

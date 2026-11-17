@@ -754,6 +754,34 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'interference detection: none side by side, the pin through the plate once mated',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Assembly');
+      await p.click('Insert Base Mounting Plate', 300);
+      await p.click('Insert Cylindrical Alignment Pin', 300);
+      await p.click('Interference detection: find components that overlap', 500);
+      const none = await p.eval<string>(`document.querySelector('.interference-none')?.textContent ?? ''`);
+      await p.click('Concentric Mate (Align cylindrical axes)', 300);
+      await p.click('Re-solve all assembly mates numerically', 500);
+      const stale = await p.eval<boolean>(`!!document.querySelector('.interference-panel')?.textContent.includes('The assembly changed')`);
+      await p.click('Check again', 600);
+      const rows = await p.eval<string[]>(`[...document.querySelectorAll('.interference-row')].map(r => r.textContent)`);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(500);
+      await p.screenshot('08d-interference');
+      const pinArea = 16 * 36 * Math.sin(Math.PI / 16);
+      const volume = Number((rows[0] ?? '').match(/([\d.]+) mm³/)?.[1]);
+      assert(none === 'No components overlap.' && stale, `before: "${none}", stale after the mate: ${stale}`);
+      assert(rows.length === 1 && rows[0].startsWith('Base_Plate ↔ Pin_Shaft') && Math.abs(volume - pinArea * 12) < 1, `rows ${rows}`);
+      await p.click('Close', 200).catch(() => {});
+      await p.eval(`window.casiworks.commands.execute('assembly.clearInterference')`);
+      await p.eval(`window.casiworks.commands.execute('file.loadExample', { id: 'l_bracket' })`);
+      await p.click('Features', 1500);
+      return `side by side: none; mated: ${rows[0]} (32-gon pin × 12 mm plate = ${(pinArea * 12).toFixed(1)} mm³)`;
+    },
+  },
+  {
     name: 'commands, keyboard and events',
     async run(p) {
       await p.eval(`window.__events = []; ['featureAdded', 'featureRemoved', 'commandExecuted'].forEach(n => window.casiworks.on(n, e => window.__events.push(n + ':' + (e.feature?.type ?? e.id))));`);

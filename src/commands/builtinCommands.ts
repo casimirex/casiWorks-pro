@@ -6,6 +6,7 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
+import { findInterferences } from '../assembly/interference.ts';
 import { RELATIONS, dimensionConstraint, measureForDimension } from '../kernel/sketchSolve.ts';
 import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
@@ -687,6 +688,22 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       return { filename };
     },
   },
+  {
+    id: 'assembly.interference', label: 'Interference detection', category: 'Assembly', record: false,
+    description: 'Checks every pair of components for overlap at their assembled positions; shows the overlaps in red. Returns { pairs: [{ a, b, aName, bName, volume (mm³) }] }',
+    run: ({ state }) => {
+      const comps = state().assemblyComponents;
+      if (comps.length < 2) throw new CommandError('NOT_AVAILABLE', 'Insert at least two components to check');
+      const found = findInterferences(comps);
+      state().setInterference(found);
+      const total = found.reduce((v, f) => v + f.volume, 0);
+      state().setStatus(found.length === 0
+        ? `No interference between ${comps.length} components`
+        : `${found.length} interference${found.length === 1 ? '' : 's'}, ${total.toFixed(1)} mm³ in all`);
+      return { pairs: found.map(f => ({ a: f.a, b: f.b, aName: f.aName, bName: f.bName, volume: f.volume })) };
+    },
+  },
+  { id: 'assembly.clearInterference', label: 'Hide interference', category: 'Assembly', record: false, run: ({ state }) => state().setInterference(null) },
   { id: 'assembly.clear', label: 'Clear assembly', category: 'Assembly', run: ({ state }) => state().clearAssembly() },
 ] as Array<Def<never>>;
 

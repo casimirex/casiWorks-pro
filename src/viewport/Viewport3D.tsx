@@ -343,6 +343,36 @@ function DimensionPrompt({ value, label, diameter, expression, onCommit, onCance
   );
 }
 
+/** The interference results card over the viewport. */
+function InterferencePanel({ current, results }: { current: boolean; results: Array<{ a: string; b: string; aName: string; bName: string; volume: number }> }) {
+  return (
+    <div className="measure-panel interference-panel" role="status">
+      <div className="measure-head" style={{ color: results.length && current ? '#f87171' : '#4ade80' }}>
+        <span>Interference</span>
+        <button className="icon-btn" onClick={() => runCommand('assembly.clearInterference')} aria-label="Close">✕</button>
+      </div>
+      {!current && (
+        <div className="measure-hint" style={{ color: '#fbbf24' }}>
+          The assembly changed. <button className="btn-secondary" style={{ padding: '1px 6px', fontSize: 11 }} onClick={() => runCommand('assembly.interference')}>Check again</button>
+        </div>
+      )}
+      {results.length === 0 ? (
+        <div className="measure-hint interference-none">No components overlap.</div>
+      ) : (
+        <>
+          {results.map(r => (
+            <div key={`${r.a}-${r.b}`} className="measure-row interference-row">
+              <span>{r.aName} ↔ {r.bName}</span>
+              <span>{formatMm(r.volume)} mm³</span>
+            </div>
+          ))}
+          <div className="measure-hint">Overlaps are shown in red. Fix them with mates, positions or sizes, then check again.</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** The Measure results card over the viewport. */
 function MeasurePanel({ picks }: { picks: MeasurePick[] }) {
   const m = picks.length === 2 ? measure(picks[0], picks[1]) : null;
@@ -754,6 +784,7 @@ export default function Viewport3D() {
   const bodies = useCADStore(s => s.bodies);
   const feaPlot = useCADStore(s => s.feaPlot);
   const feaProbes = useCADStore(s => s.feaProbes);
+  const interference = useCADStore(s => s.interference);
   const addFeaProbe = useCADStore(s => s.addFeaProbe);
   const feaSetupMarkers = useCADStore(s => s.feaSetupMarkers);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
@@ -1066,6 +1097,13 @@ export default function Viewport3D() {
         ))}
         {exploded && exploded.leaderLines.length > 0 && <ExplodeLeaderLines lines={exploded.leaderLines} />}
 
+        {/* Interference: the shared volumes in red, seen through the parts (only while still current) */}
+        {interference && interference.components === assemblyComponents && !exploded && interference.results.map(r => (
+          <mesh key={`${r.a}-${r.b}`} geometry={r.geometry} renderOrder={SKETCH_ON_TOP} name="Interference">
+            <meshBasicMaterial color="#ef4444" transparent opacity={0.85} depthTest={false} />
+          </mesh>
+        ))}
+
         {activeTool === TOOLS.MEASURE && measurePicks.length > 0 && <MeasureMarks picks={measurePicks} />}
 
         {/* Active Sketch Overlay */}
@@ -1100,6 +1138,7 @@ export default function Viewport3D() {
 
       <OrientationCubeHUD />
       {activeTool === TOOLS.MEASURE && <MeasurePanel picks={measurePicks} />}
+      {interference && <InterferencePanel current={interference.components === assemblyComponents} results={interference.results} />}
       {dimPrompt && <DimensionPrompt key={`${dimPrompt.editId ?? 'new'}-${dimPrompt.value}`} {...dimPrompt} onCommit={commitDimension} onCancel={() => setDimPrompt(null)} />}
     </div>
   );

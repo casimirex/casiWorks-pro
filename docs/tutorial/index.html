@@ -712,7 +712,7 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
 <section class="chapter" id="ch10" data-title="Assemblies & mates" data-part="advanced" data-n="10">
   <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 10 · about 15 min</span></div>
   <h2 class="title">Assemblies and mates</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li><li>List the parts in a bill of materials and export it</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Insert components into an assembly</li><li>Position them with mates</li><li>Solve the assembly and set up an exploded view</li><li>List the parts in a bill of materials and export it</li><li>Find parts that overlap with interference detection</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 10.1</span><h4>Pin a shaft into a base plate</h4><div class="specs"><span>Base plate 50 × 12 × 50</span><span>Alignment pin</span><span>Concentric mate</span></div></div>
     <div class="example-body">
@@ -745,6 +745,10 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
   </table></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Display only</b><p>The exploded view only changes what you see. Components keep their real positions and mates, so saving, solving and exporting all use the assembled positions. Each mated part moves away from its partner; parts later in the list move further.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p>Add the fewest mates that fix the position. Extra mates that fight each other leave a residual above zero after <b>Solve</b>, and that number tells you something is over-constrained. <b>Clear</b> removes all components and mates.</p></div></div>
+  <h3>Interference detection</h3>
+  <p>Click <b>Interference</b> in the Actions group to check whether any two components overlap at their assembled positions. Overlapping volumes are shown in red, seen through the parts, and a card lists each pair with its shared volume. Parts that only touch are not counted.</p>
+  <figure class="shot"><img loading="lazy" src="img/24b-interference.webp" alt="Interference between the plate and the pin"><figcaption>Example 10.1 checked: the pin passes through the solid plate (1,348 mm³). A hole in the plate would fix it.</figcaption></figure>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Check again after changes</b><p>When you move, mate or add a component, the card says the assembly changed. Click <b>Check again</b>. The check uses the real positions, so turn the exploded view off before you look at the red volumes. <code>casiworks.assembly.interference()</code> gives the same list in a script.</p></div></div>
   <h3>Bill of materials</h3>
   <p>Click <b>BOM</b> in the Actions group to list the parts in the assembly. Identical parts (same name, size and material) share one row with their quantity. Each row gives a description of the shape and its size, the material, and the mass of one part and of all of them. Use the <b>Material</b> picker in a row to give those parts their own material. The parts change colour in the viewport, and the masses update. <b>Export CSV</b> saves the table for a spreadsheet or a purchasing system.</p>
   <figure class="shot"><img loading="lazy" src="img/25b-bom.webp" alt="Bill of materials with a base plate and two pins"><figcaption>Example 10.1 with a second pin, both made brass: the pins share row 2, quantity 2.</figcaption></figure>
@@ -899,7 +903,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.12</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.13</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -944,7 +948,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
-    <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
+    <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5), <code>interference()</code> (since 1.13)</td></tr>
     <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5)</td></tr>
     <tr><td><code>api.commands</code></td><td><code>list()</code>, <code>execute(id, args)</code>. Every ribbon button is a command.</td></tr>
     <tr><td><code>api.macros</code> · <code>api.plugins</code></td><td><code>start()</code>, <code>stop()</code>, <code>run(macro)</code> · <code>load(url)</code>, <code>unload(id)</code></td></tr>
@@ -1069,6 +1073,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
     <tr><td>Configuration</td><td>A named version of a part that changes some variable values (Tools ▸ Configs). Default is the plain values.</td></tr>
+    <tr><td>Interference</td><td>Two assembly components occupying the same space. Shown in red by Assembly ▸ Interference.</td></tr>
     <tr><td>Relation</td><td>A rule a sketch keeps, such as horizontal, equal or tangent. Shown as a green tag.</td></tr>
     <tr><td>Driving dimension</td><td>A size typed into a sketch (length, diameter, radius or distance). Change it and the sketch follows.</td></tr>
     <tr><td>Centreline</td><td>A construction line in a sketch, used as the axis of a revolve.</td></tr>

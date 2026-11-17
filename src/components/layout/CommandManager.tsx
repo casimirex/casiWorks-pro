@@ -7,7 +7,7 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, ShieldAlert, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { RELATIONS } from '../../kernel/sketchSolve.ts';
@@ -742,6 +742,14 @@ export default function CommandManager() {
                   >
                     <Move size={19} color="#38bdf8" />
                     <span>Explode</span>
+                  </button>
+                  <button
+                    className="ribbon-btn"
+                    onClick={() => runCommand('assembly.interference')}
+                    title="Interference detection: find components that overlap"
+                  >
+                    <ShieldAlert size={19} color="#f87171" />
+                    <span>Interference</span>
                   </button>
                   <button
                     className="ribbon-btn"

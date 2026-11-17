@@ -19,6 +19,7 @@ import { liveConstraints, solveSketch } from '../kernel/sketchSolve.ts';
 import type { RelationKind } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { FeaProbe } from '../simulation/resultPlot.ts';
+import type { Interference } from '../assembly/interference.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
   ExampleModel,
@@ -203,6 +204,11 @@ export interface CADState {
   mates: AssemblyMate[];
   /** Set while the assembly is shown exploded; null when collapsed. */
   explodedView: ExplodedViewSettings | null;
+  /**
+   * The last interference check: the overlaps (with their solids, for display) and
+   * the component list it was made for. It is out of date when the assembly changes.
+   */
+  interference: { results: Interference[]; components: unknown[] } | null;
   /** FEA result probes (values at picked mesh nodes); shown while the result plot is. Not saved. */
   feaProbes: FeaProbe[];
   /** The active sketch's solve state: fully / under / over defined, for the status bar and colours. */
@@ -315,6 +321,7 @@ export interface CADActions {
   /** Replace the global variables and update every parameter linked to them (one undo step). */
   setVariables(variables: GlobalVariable[]): void;
   /** Add an FEA probe (a node already probed is not added twice; at most 12, oldest dropped). */
+  setInterference(results: Interference[] | null): void;
   addFeaProbe(probe: FeaProbe): void;
   clearFeaProbes(): void;
   /** Add a Measure pick; after two, the next one starts a new measurement. */
@@ -567,6 +574,7 @@ function initialState(): CADState {
     mates: [],
     explodedView: null,
     measurePicks: [],
+    interference: null,
     sketchSolveState: null,
     feaProbes: [],
     variables: [],
@@ -1098,6 +1106,11 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = settings
         ? `Exploded view: ${settings.distance} mm step${settings.leaderLines ? ', with leader lines' : ''}`
         : 'Exploded view collapsed';
+    }),
+
+    setInterference: (results) => set(state => {
+      for (const r of (state.interference?.results ?? []) as Interference[]) r.geometry.dispose();
+      state.interference = results ? { results: results as Draft<Interference>[], components: state.assemblyComponents as unknown[] } : null;
     }),
 
     addFeaProbe: (probe) => set(state => {

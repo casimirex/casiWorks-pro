@@ -117,7 +117,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 - [ ] **4.1** Multi-document workspace: parts and assemblies as separate documents
 - [ ] **4.2** Insert real part documents as components (with references, not copies)
 - [ ] **4.3** Mates picked on real faces/edges; under/over-defined feedback
-- [ ] **4.4** Interference detection
+- [x] **4.4** Interference detection (Assembly ▸ Interference: every pair at its assembled position, shared volume by solid intersection, shown in red with a results card that notices when the assembly changed; touching parts are not reported; `api.assembly.interference`, API 1.13)
 - [x] **4.5** Bill of materials (BOM button on the Assembly tab: identical parts grouped with quantities, exact masses, a material per component (picked in the BOM, shown in the viewport, saved with the project; unset follows the document material), CSV export; `assembly.bom` / `assembly.setMaterial` from scripts)
 - [ ] **4.6** Exploded views with steps; motion along mates
 

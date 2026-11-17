@@ -223,7 +223,7 @@ console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
 shown. Or use the browser's developer console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.12.0'
+const api = window.casiworks;          // api.version === '1.13.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -295,6 +295,9 @@ on it (a sketch on a reference plane follows the plane when it changes).
 **New in 1.12**: a sketch dimension can be an equation: `setDimension(sketchId, id, 'wall * 2')` or
 `constrain(sketchId, { type: 'dimension', entity1Id, value: 'wall * 2' })`; it follows the variables and
 configurations. `equations.list().links` lists such dimensions too.
+
+**New in 1.13**: `api.assembly.interference()` lists overlapping components with their shared
+volume (mm³), largest first; touching parts are not listed.
 
 **Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
 object; it gets the public API and can add commands and Add-ins ribbon buttons.
