@@ -16,7 +16,7 @@ import type { CommandExecution, CommandInfo } from '../commands/CommandRegistry.
 import type { Macro } from '../commands/macros.ts';
 import { macroToScript, parseMacro } from '../commands/macros.ts';
 import type { BufferGeometry } from 'three';
-import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables, isPlainNumber, parseExpression, dimensionLinks } from '../features/equations.ts';
 import type { Configuration, GlobalVariable, LinkedParameter } from '../features/equations.ts';
 import { extendLine, mirrorEntities, offsetEntity, trimEntity } from '../kernel/sketchEdit.ts';
 import type { EditResult } from '../kernel/sketchEdit.ts';
@@ -53,7 +53,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.11.0';
+export const API_VERSION = '1.12.0';
 
 // =====================================================================
 // Public types
@@ -216,8 +216,12 @@ export interface SketchesAPI {
   constrain(sketchId: string, constraint: Record<string, unknown>): string;
   /** The sketch's relations and dimensions. Since 1.11. */
   constraints(sketchId: string): Array<Record<string, unknown>>;
-  /** Change a dimension (mm) and solve again. Since 1.11. */
-  setDimension(sketchId: string, constraintId: string, value: number): void;
+  /**
+   * Change a dimension and solve again. Since 1.11; since 1.12 `value` may be an
+   * expression of global variables ('wall * 2'): the dimension then follows the
+   * variables and the active configuration.
+   */
+  setDimension(sketchId: string, constraintId: string, value: number | string): void;
   /** Delete a relation or dimension. Since 1.11. */
   removeConstraint(sketchId: string, constraintId: string): void;
   /** How defined the sketch is: 'fully' | 'under' | 'over', with degrees of freedom. Since 1.11. */
@@ -925,6 +929,20 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   };
 
+  /** A dimension given as mm or as an expression of the variables. */
+  const dimensionValue = (input: unknown): { value: number; expression?: string } => {
+    if (typeof input === 'number') return { value: requireNumber(input, 'value', { positive: true }) };
+    if (typeof input !== 'string' || !input.trim()) return fail('INVALID_ARGUMENT', 'value must be a number or an expression');
+    const text = input.trim().replace(/^=\s*/, '');
+    let v: number;
+    try {
+      v = evaluateExpression(text, evaluateVariables(effectiveVariables(get().variables, get().configurations.find(x => x.name === get().activeConfiguration))).values);
+    } catch (e) {
+      return fail('INVALID_ARGUMENT', `${text}: ${(e as Error).message}`);
+    }
+    if (!(v > 0)) fail('INVALID_ARGUMENT', `${text} = ${v}: a dimension must be above 0`);
+    return isPlainNumber(text) || parseExpression(text).names.size === 0 ? { value: v } : { value: v, expression: text };
+  };
   const sketchConstraintList = (id: string) => (get().sketchConstraints[id] ?? []) as unknown as Array<Record<string, unknown> & { id: string; type: string; value?: number; diameter?: boolean }>;
   const applyConstraints = (id: string, list: unknown[], label: string) => {
     const error = get().applySketchConstraints(id, list as never, label);
@@ -939,9 +957,14 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       if (typeof c.type !== 'string' || !kinds.includes(c.type)) fail('INVALID_ARGUMENT', `type must be one of ${kinds.join(', ')}`);
       for (const k of ['entity1Id', 'entity2Id']) if (c[k] !== undefined) requireEntity(id, c[k]);
       if (c.entity1Id === undefined) fail('INVALID_ARGUMENT', 'entity1Id is required');
-      if (c.type === 'dimension') requireNumber(c.value, 'value', { positive: true });
+      let extra: Record<string, unknown> = {};
+      if (c.type === 'dimension') {
+        const d = dimensionValue(c.value);
+        const isCircle = (get().sketchEntities[id] ?? []).find(e => e.id === c.entity1Id)?.type === 'circle' && c.entity2Id === undefined && c.diameter === true;
+        extra = { value: isCircle ? d.value / 2 : d.value, ...(d.expression ? { expression: d.expression } : {}) };
+      }
       const newId = generateId(c.type === 'dimension' ? 'dim' : 'rel');
-      applyConstraints(id, [...sketchConstraintList(id), { ...c, id: newId }], `${c.type} added`);
+      applyConstraints(id, [...sketchConstraintList(id), { ...c, ...extra, id: newId }], `${c.type} added`);
       return newId;
     },
     constraints: (sketchId: string) => clone(sketchConstraintList(requireSketch(sketchId))),
@@ -949,8 +972,12 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       const id = requireSketch(sketchId);
       const list = sketchConstraintList(id);
       const c = list.find(x => x.id === constraintId && x.type === 'dimension') ?? fail('NOT_FOUND', `No dimension ${JSON.stringify(constraintId)}`);
-      const v = requireNumber(value, 'value', { positive: true });
-      applyConstraints(id, list.map(x => (x.id === c.id ? { ...x, value: x.diameter ? v / 2 : v } : x)), `Dimension ${v} mm`);
+      const d = dimensionValue(value);
+      applyConstraints(id, list.map(x => {
+        if (x.id !== c.id) return x;
+        const { expression: _old, ...rest } = x;
+        return { ...rest, value: x.diameter ? d.value / 2 : d.value, ...(d.expression ? { expression: d.expression } : {}) };
+      }), `Dimension ${d.expression ?? d.value} mm`);
     },
     removeConstraint(sketchId: string, constraintId: string) {
       const id = requireSketch(sketchId);
@@ -1363,7 +1390,7 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
           value: values[v.name] ?? null,
           ...(errors[v.name] ? { error: errors[v.name] } : {}),
         })),
-        links: evaluateLinks(get().features, values).links,
+        links: [...evaluateLinks(get().features, values).links, ...dimensionLinks(get().features, get().sketchConstraints, values)],
       });
     },
     set(variables: VariableSpec[]) {

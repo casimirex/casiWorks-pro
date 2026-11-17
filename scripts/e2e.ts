@@ -499,10 +499,15 @@ const CHECKS: Check[] = [
       // Equal: the left side takes the bottom's 60
       await kind('equal'); await sleep(200); await clickLine(bottom); await clickLine(left); log.push(await status(p));
       const solveTag = await p.eval<string>(`document.querySelector('.sketch-solve-tag')?.textContent ?? ''`);
-      // Change the dimension: double-click it, type 75
+      // Change the dimension to an equation: double-click it, type =wall*3 (wall = 20 → 60)
+      await p.eval(`window.casiworks.equations.set([{ name: 'wall', expression: '20' }])`);
       await p.eval(`document.querySelector('.sketch-dim').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
       await sleep(200);
-      await typeValue('75'); await sleep(300);
+      await typeValue('=wall*3'); await sleep(300);
+      const linked = await p.eval<string>(`document.querySelector('.sketch-dim span')?.textContent ?? ''`);
+      // The variable changes while the sketch is open: the sketch follows (25 × 3 = 75)
+      await p.eval(`window.casiworks.equations.set([{ name: 'wall', expression: '25' }])`);
+      await sleep(300);
       const dimText = await p.eval<string>(`document.querySelector('.sketch-dim span')?.textContent ?? ''`);
       await p.screenshot('02i-sketch-dimensions');
       const final = (await sketch()).entities;
@@ -513,9 +518,9 @@ const CHECKS: Check[] = [
       assert(tags.join() === 'H,V,H,V', `built-in rectangle relations ${tags}`);
       assert(log[0] === 'Already horizontal' && /^Equal added/.test(log[1]), `steps ${log.join(' | ')}`);
       assert(promptLabel.startsWith('Length'), `prompt "${promptLabel}"`);
-      assert(dimText === '75' && Math.abs(w - 75) < 1e-3 && Math.abs(h - 75) < 1e-3, `dimension ${dimText}; ${w} × ${h}`);
+      assert(linked === 'ƒ 60' && dimText === 'ƒ 75' && Math.abs(w - 75) < 1e-3 && Math.abs(h - 75) < 1e-3, `dimension ${linked} → ${dimText}; ${w} × ${h}`);
       assert(/^Under defined/.test(solveTag), `solve tag "${solveTag}"`);
-      return `rectangle relations ${tags}; duplicate refused; 60 then Equal, then 75 by double-click: ${w.toFixed(0)} × ${h.toFixed(0)} square; ${solveTag}`;
+      return `rectangle relations ${tags}; duplicate refused; 60, Equal, then =wall*3 (${linked}), wall 20 → 25: ${w.toFixed(0)} × ${h.toFixed(0)} square; ${solveTag}`;
     },
   },
   {

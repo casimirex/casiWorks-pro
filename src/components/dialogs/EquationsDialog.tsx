@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Sigma, Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
-import { effectiveVariables, evaluateLinks, evaluateVariables } from '../../features/equations.ts';
+import { dimensionLinks, effectiveVariables, evaluateLinks, evaluateVariables } from '../../features/equations.ts';
 import type { GlobalVariable } from '../../features/equations.ts';
 import { runCommand } from '../../commands/index.ts';
 
@@ -25,7 +25,8 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
 
   const config = configurations.find(c => c.name === activeConfiguration);
   const { values, errors } = useMemo(() => evaluateVariables(effectiveVariables(draft.filter(v => v.name || v.expression), config)), [draft, config]);
-  const links = useMemo(() => evaluateLinks(features, values).links, [features, values]);
+  const sketchConstraints = useCADStore(s => s.sketchConstraints);
+  const links = useMemo(() => [...evaluateLinks(features, values).links, ...dimensionLinks(features, sketchConstraints, values)], [features, values, sketchConstraints]);
   const changed = JSON.stringify(draft) !== JSON.stringify(variables);
   const blank = draft.some(v => !v.name.trim() || !v.expression.trim());
   const hasErrors = Object.keys(errors).length > 0 || blank;
@@ -94,7 +95,7 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
             <table className="equation-links" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 4 }}>
               <tbody>
                 {links.map(l => (
-                  <tr key={`${l.featureId}-${l.parameter}`}>
+                  <tr key={`${l.featureId}-${l.parameter}-${l.expression}`}>
                     <td style={td}>{l.featureName}</td>
                     <td style={td}>{l.parameter}</td>
                     <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>= {l.expression}</td>

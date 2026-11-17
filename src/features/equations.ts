@@ -267,3 +267,25 @@ export function configurationProblems(variables: GlobalVariable[], configuration
   }
   return problems;
 }
+
+/** Sketch dimensions linked to expressions, listed like feature parameters (parameter 'dimension'). */
+export function dimensionLinks(
+  features: Array<{ id: string; name: string; type: string; sketchId?: string }>,
+  sketchConstraints: Record<string, unknown[]>,
+  values: Record<string, number>,
+): LinkedParameter[] {
+  const out: LinkedParameter[] = [];
+  for (const f of features) {
+    if (f.type !== 'sketch' || !f.sketchId) continue;
+    for (const c of (sketchConstraints[f.sketchId] ?? []) as Array<{ type?: string; expression?: string; diameter?: boolean }>) {
+      if (c.type !== 'dimension' || !c.expression) continue;
+      const parameter = c.diameter ? 'dimension Ø' : 'dimension';
+      try {
+        out.push({ featureId: f.id, featureName: f.name, parameter, expression: c.expression, value: evaluateExpression(c.expression, values) });
+      } catch (e) {
+        out.push({ featureId: f.id, featureName: f.name, parameter, expression: c.expression, value: null, error: (e as Error).message });
+      }
+    }
+  }
+  return out;
+}

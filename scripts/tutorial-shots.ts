@@ -253,7 +253,8 @@ const SHOTS: Shot[] = [
       const lines = ents.filter(e => e.type === 'line');
       const bottom = lines.reduce((a, b) => (b.p1!.y < a.p1!.y ? b : a));
       const circle = ents.find(e => e.type === 'circle')!;
-      await run(p, 'sketch.dimensionPicks', { picks: [{ id: bottom.id }], value: 80 }, 300);
+      await run(p, 'equations.set', { variables: [{ name: 'plate', expression: '80' }] }, 100);
+      await run(p, 'sketch.dimensionPicks', { picks: [{ id: bottom.id }], value: 'plate' }, 300);
       await run(p, 'sketch.dimensionPicks', { picks: [{ id: lines[1].id }], value: 50 }, 300);
       await run(p, 'sketch.dimensionPicks', { picks: [{ id: circle.id }], value: 20 }, 300);
       await p.click('Snap', 100);

@@ -11,7 +11,7 @@ import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import { faceFrame, isPlaneFrame, referencePlaneFrame } from '../utils/math.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
-import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables, isPlainNumber, parseExpression, dimensionLinks } from '../features/equations.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
@@ -24,6 +24,23 @@ const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANS
 
 /** The variables as the active configuration sees them. */
 const activeVariables = (s: CADStore) => effectiveVariables(s.variables, s.configurations.find(c => c.name === s.activeConfiguration));
+
+/** A dimension value given as a number or an expression ('wall * 2'): the value, and the expression to keep when it uses variables. */
+function dimensionInput(s: CADStore, input: unknown): { value: number; expression?: string } {
+  if (typeof input === 'number') {
+    if (!(input > 0) || !Number.isFinite(input)) throw new CommandError('INVALID_ARGUMENT', 'value must be a number above 0');
+    return { value: input };
+  }
+  if (typeof input !== 'string' || !input.trim()) throw new CommandError('INVALID_ARGUMENT', 'value must be a number or an expression');
+  const text = input.trim().replace(/^=\s*/, '');
+  let value: number;
+  try { value = evaluateExpression(text, evaluateVariables(activeVariables(s)).values); } catch (e) {
+    throw new CommandError('INVALID_ARGUMENT', `${text}: ${(e as Error).message}`);
+  }
+  if (!(value > 0)) throw new CommandError('INVALID_ARGUMENT', `${text} = ${value}: a dimension must be above 0`);
+  // Keep the expression only when it uses variables; plain arithmetic is just a number
+  return isPlainNumber(text) || parseExpression(text).names.size === 0 ? { value } : { value, expression: text };
+}
 
 /** Check a feature's `expressions` against the current variables; throws INVALID_ARGUMENT naming the bad one. */
 function requireExpressions(state: CADStore, expressions: unknown): void {
@@ -396,17 +413,16 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   {
     id: 'sketch.dimensionPicks', label: 'Dimension picked items', category: 'Sketch',
-    description: 'args: { picks: [{ id, ref? }], value? } — dimensions the open sketch (value default: the current size, a circle: its diameter); returns { id }',
-    run: ({ state }, args: { picks?: SketchPick[]; value?: number }) => {
+    description: "args: { picks: [{ id, ref? }], value? } — dimensions the open sketch; value: mm or an expression such as 'wall * 2' (default: the current size; a circle: its diameter); returns { id }",
+    run: ({ state }, args: { picks?: SketchPick[]; value?: number | string }) => {
       const sketchId = state().activeSketchId;
       if (!sketchId) throw new CommandError('NOT_AVAILABLE', 'Open a sketch first');
       const entities = state().sketchEntities[sketchId] ?? [];
       const picks = args?.picks ?? [];
       const m = measureForDimension(picks, entities);
       if (typeof m === 'string') throw new CommandError('INVALID_ARGUMENT', m);
-      const value = args?.value ?? m.value;
-      if (typeof value !== 'number' || !(value > 0)) throw new CommandError('INVALID_ARGUMENT', 'value must be above 0');
-      const c = dimensionConstraint(picks, value, entities);
+      const { value, expression } = dimensionInput(state(), args?.value ?? m.value);
+      const c = { ...dimensionConstraint(picks, value, entities), ...(expression ? { expression } : {}) };
       const error = state().applySketchConstraints(sketchId, [...(state().sketchConstraints[sketchId] ?? []) as SketchConstraint[], c], `${m.label} ${+value.toFixed(4)} mm`);
       if (error) throw new CommandError('FAILED', error);
       return { id: c.id };
@@ -414,16 +430,19 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   {
     id: 'sketch.setDimension', label: 'Change a sketch dimension', category: 'Sketch',
-    description: 'args: { sketchId?, id, value } — value in mm (a circle: its diameter); the sketch is solved again',
-    run: ({ state }, args: { sketchId?: string; id?: string; value?: number }) => {
+    description: "args: { sketchId?, id, value } — value in mm or an expression such as 'wall * 2' (a circle: its diameter); the sketch is solved again",
+    run: ({ state }, args: { sketchId?: string; id?: string; value?: number | string }) => {
       const sketchId = args?.sketchId ?? state().activeSketchId;
       if (!sketchId) throw new CommandError('INVALID_ARGUMENT', 'No sketch: open one or give sketchId');
       const list = (state().sketchConstraints[sketchId] ?? []) as Array<SketchConstraint & { diameter?: boolean }>;
       const c = list.find(x => x.id === args?.id && x.type === 'dimension');
       if (!c) throw new CommandError('INVALID_ARGUMENT', `No dimension ${JSON.stringify(args?.id)} in the sketch`);
-      const value = args?.value;
-      if (typeof value !== 'number' || !(value > 0)) throw new CommandError('INVALID_ARGUMENT', 'value must be a number above 0');
-      const next = list.map(x => (x.id === c.id ? { ...x, value: x.diameter ? value / 2 : value } : x));
+      const { value, expression } = dimensionInput(state(), args?.value);
+      const next = list.map(x => {
+        if (x.id !== c.id) return x;
+        const { expression: _old, ...rest } = x as typeof x & { expression?: string };
+        return { ...rest, value: x.diameter ? value / 2 : value, ...(expression ? { expression } : {}) };
+      });
       const error = state().applySketchConstraints(sketchId, next, `Dimension ${+value.toFixed(4)} mm`);
       if (error) throw new CommandError('FAILED', error);
     },
@@ -609,7 +628,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       return {
         configuration: state().activeConfiguration,
         variables: state().variables.map((v, i) => ({ ...v, ...(active[i].expression !== v.expression ? { override: active[i].expression } : {}), value: values[v.name] ?? null, ...(errors[v.name] ? { error: errors[v.name] } : {}) })),
-        links: evaluateLinks(state().features, values).links,
+        links: [...evaluateLinks(state().features, values).links, ...dimensionLinks(state().features, state().sketchConstraints, values)],
       };
     },
   },

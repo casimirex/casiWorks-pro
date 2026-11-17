@@ -13,7 +13,7 @@ import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '..
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
-import { effectiveVariables, evaluateLinks, evaluateVariables } from '../features/equations.ts';
+import { effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
 import { liveConstraints, solveSketch } from '../kernel/sketchSolve.ts';
 import type { RelationKind } from '../kernel/sketchSolve.ts';
@@ -454,9 +454,11 @@ function lookAtSketchPlane(state: Draft<CADStore>, plane: SketchPlaneRef): void 
  * Links that do not evaluate keep the last good number (the Equations dialog shows why).
  */
 function applyEquations(state: Draft<CADStore>): void {
-  if (state.variables.length === 0 && !state.features.some(f => f.expressions && Object.keys(f.expressions).length)) return;
+  const hasDimLinks = Object.values(state.sketchConstraints).some(list => (list as Array<{ expression?: string }>).some(c => c.expression));
+  if (state.variables.length === 0 && !hasDimLinks && !state.features.some(f => f.expressions && Object.keys(f.expressions).length)) return;
   const config = state.configurations.find(c => c.name === state.activeConfiguration) as Configuration | undefined;
   const { values } = evaluateVariables(effectiveVariables(state.variables as GlobalVariable[], config));
+  if (hasDimLinks) applyDimensionEquations(state, values);
   const { updates } = evaluateLinks(state.features as Feature[], values);
   for (const f of state.features) {
     const u = updates[f.id];
@@ -476,6 +478,33 @@ function applyEquations(state: Draft<CADStore>): void {
         state.needsRebuild = true;
       }
     }
+  }
+}
+
+/**
+ * Sketch dimensions linked to expressions: new values, then each changed sketch
+ * is solved again. A sketch that cannot be solved keeps its geometry and values.
+ */
+function applyDimensionEquations(state: Draft<CADStore>, values: Record<string, number>): void {
+  for (const [sketchId, list] of Object.entries(state.sketchConstraints)) {
+    const constraints = list as Array<SketchConstraint & { expression?: string; diameter?: boolean }>;
+    let changed = false;
+    const next = constraints.map(c => {
+      if (c.type !== 'dimension' || !c.expression) return c;
+      let v: number;
+      try { v = evaluateExpression(c.expression, values); } catch { return c; }
+      if (!(v > 0)) return c;
+      const stored = c.diameter ? v / 2 : v;
+      if (Math.abs((c.value ?? 0) - stored) < 1e-12) return c;
+      changed = true;
+      return { ...c, value: stored };
+    });
+    if (!changed) continue;
+    const solved = solveSketch(JSON.parse(JSON.stringify(state.sketchEntities[sketchId] ?? [])), JSON.parse(JSON.stringify(next)));
+    if (!solved.ok) continue;
+    state.sketchEntities[sketchId] = solved.entities as Draft<SketchEntity>[];
+    state.sketchConstraints[sketchId] = JSON.parse(JSON.stringify(next));
+    state.needsRebuild = true;
   }
 }
 

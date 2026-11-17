@@ -24,7 +24,8 @@ import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { LeaderLine } from '../assembly/AssemblyManager.ts';
 import { formatMm, measure, snapPick } from '../kernel/measure.ts';
-import { constraintLabel, dimensionConstraint } from '../kernel/sketchSolve.ts';
+import { constraintLabel } from '../kernel/sketchSolve.ts';
+import { isPlainNumber } from '../features/equations.ts';
 import type { SketchPick } from '../kernel/sketchSolve.ts';
 import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
@@ -319,9 +320,10 @@ function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] 
 }
 
 /** The value box for a new or changed sketch dimension. */
-function DimensionPrompt({ value, label, diameter, onCommit, onCancel }: { value: number; label: string; diameter?: boolean; onCommit(v: number): void; onCancel(): void }) {
-  const [text, setText] = useState(String(+value.toFixed(4)));
-  const commit = () => { const v = parseFloat(text); if (v > 0) onCommit(v); else onCancel(); };
+function DimensionPrompt({ value, label, diameter, expression, onCommit, onCancel }: { value: number; label: string; diameter?: boolean; expression?: string; onCommit(text: string): void; onCancel(): void }) {
+  // A linked dimension is edited as its expression; a number or an expression is accepted
+  const [text, setText] = useState(expression ? `=${expression}` : String(+value.toFixed(4)));
+  const commit = () => { if (text.trim()) onCommit(text.trim()); else onCancel(); };
   return (
     <div className="dim-prompt" role="dialog" aria-label="Dimension value">
       <span>{label}{diameter ? ' (Ø)' : ''}:</span>
@@ -335,6 +337,7 @@ function DimensionPrompt({ value, label, diameter, onCommit, onCancel }: { value
       />
       <span>mm</span>
       <button className="dim-prompt-ok" onClick={commit}>OK</button>
+      <span className="dim-prompt-hint">or an equation, e.g. =wall*2</span>
       <button className="icon-btn" onClick={onCancel} aria-label="Cancel">✕</button>
     </div>
   );
@@ -538,12 +541,12 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
             <div
               style={{ transform: isDim ? `translate(${6 + nth * 44}px, -22px)` : `translate(${8 + nth * 22}px, 6px)`, pointerEvents: 'auto' }}
               className={isDim ? 'sketch-dim' : 'sketch-rel'}
-              title={isDim ? 'Double-click to change' : `${c.type} relation`}
+              title={isDim ? ((c as { expression?: string }).expression ? `= ${(c as { expression?: string }).expression} · double-click to change` : 'Double-click to change') : `${c.type} relation`}
               onDoubleClick={(e) => { e.stopPropagation(); if (isDim) onEditDimension(c); }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerUp={(e) => e.stopPropagation()}
             >
-              <span>{label.text}</span>
+              <span>{(c as { expression?: string }).expression ? `ƒ ${label.text}` : label.text}</span>
               <button className="sketch-tag-x" onClick={(e) => { e.stopPropagation(); onRemoveConstraint(c.id!); }} aria-label={`Delete ${isDim ? 'dimension' : 'relation'}`}>✕</button>
             </div>
           </Html>
@@ -826,7 +829,7 @@ export default function Viewport3D() {
   const refreshSketchSolve = useCADStore(s => s.refreshSketchSolve);
   const activeConstraints = useMemo(() => (activeSketchId ? (sketchConstraints[activeSketchId] ?? []) as SketchConstraint[] : []), [activeSketchId, sketchConstraints]);
   // A dimension being entered: new (picks) or changed (editId)
-  const [dimPrompt, setDimPrompt] = useState<{ picks?: SketchPick[]; editId?: string; value: number; label: string; diameter?: boolean } | null>(null);
+  const [dimPrompt, setDimPrompt] = useState<{ picks?: SketchPick[]; editId?: string; value: number; label: string; diameter?: boolean; expression?: string } | null>(null);
   const activeEntities = useMemo(() => (activeSketchId && sketchEntities[activeSketchId]) || [], [activeSketchId, sketchEntities]);
   // Set when a click reported its result, so the next-step hint does not hide it
   const keepStatusRef = useRef(false);
@@ -868,19 +871,15 @@ export default function Viewport3D() {
   useEffect(() => { if (isSketchActive) refreshSketchSolve(); }, [isSketchActive, activeEntities, refreshSketchSolve]);
   useEffect(() => { if (!isSketchActive) setDimPrompt(null); }, [isSketchActive]);
 
-  const commitDimension = useCallback((value: number) => {
-    if (!dimPrompt || !activeSketchId || !(value > 0)) { setDimPrompt(null); return; }
-    let next: SketchConstraint[];
-    if (dimPrompt.editId) {
-      next = activeConstraints.map(c => (c.id === dimPrompt.editId ? { ...c, value: (c as { diameter?: boolean }).diameter ? value / 2 : value } : c));
-    } else {
-      next = [...activeConstraints, dimensionConstraint(dimPrompt.picks!, value, activeEntities)];
-    }
-    const error = applySketchConstraints(activeSketchId, next, `${dimPrompt.label} ${+value.toFixed(4)} mm`);
-    if (error) setStatus(`Not applied: ${error}`);
+  // A number or an expression ('wall * 2'); through the commands, which report problems in the status bar
+  const commitDimension = useCallback((text: string) => {
+    if (!dimPrompt || !activeSketchId) { setDimPrompt(null); return; }
+    const value = isPlainNumber(text) ? parseFloat(text) : text;
+    if (dimPrompt.editId) runCommand('sketch.setDimension', { id: dimPrompt.editId, value });
+    else runCommand('sketch.dimensionPicks', { picks: dimPrompt.picks, value });
     keepStatusRef.current = true;
     setDimPrompt(null);
-  }, [dimPrompt, activeSketchId, activeConstraints, activeEntities, applySketchConstraints, setStatus]);
+  }, [dimPrompt, activeSketchId]);
 
   // A new tool starts with no clicks
   useEffect(() => { setSketchClickPts([]); setEditSession(NEW_EDIT_SESSION); }, [activeTool, activeSketchId, setEditSession]);
@@ -1081,8 +1080,8 @@ export default function Viewport3D() {
             constraints={activeConstraints}
             solveState={sketchSolveState?.state ?? null}
             onEditDimension={(c) => {
-              const d = (c as { diameter?: boolean }).diameter;
-              setDimPrompt({ editId: c.id, value: d ? (c.value ?? 0) * 2 : c.value ?? 0, label: d ? 'Diameter' : 'Dimension', diameter: d });
+              const { diameter: d, expression } = c as { diameter?: boolean; expression?: string };
+              setDimPrompt({ editId: c.id, value: d ? (c.value ?? 0) * 2 : c.value ?? 0, label: d ? 'Diameter' : 'Dimension', diameter: d, expression });
             }}
             onRemoveConstraint={(id) => {
               if (!activeSketchId) return;

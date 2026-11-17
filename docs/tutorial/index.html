@@ -419,9 +419,10 @@ npm run dev</pre></div>
         <li>Press <kbd>D</kbd> (<b>Dimension</b>). Click the bottom side, then click in empty space. Type <code>80</code> and press <kbd>Enter</kbd>. The rectangle becomes 80 wide and stays a rectangle.</li>
         <li>Dimension a vertical side <code>50</code> and the circle <code>20</code>. A circle is dimensioned by its diameter (Ø), an arc by its radius (R). To dimension a distance, click two items instead of empty space: two end points, a point and a line, or two lines.</li>
         <li>Double-click a dimension to change it. The sketch updates straight away. Point at a tag or dimension and click its ✕ to delete it.</li>
+        <li>A dimension can also be an equation. Type <code>=plate</code> or <code>=wall*2</code> instead of a number, using the variables from chapter 7. The dimension shows <b>ƒ</b> and follows the variables and the active configuration, even while the sketch is open. Type a plain number to unlink it.</li>
         <li>For other relations, choose one in the <b>Relation</b> list (Horizontal, Vertical, Parallel, Perpendicular, Equal, Coincident, Concentric, Tangent, Fix) and click the item or items. For example, use <i>Equal</i> on two sides to make a square.</li>
       </ol>
-      <figure class="shot"><img loading="lazy" src="img/10g-sketch-dimensions.webp" alt="Sketch with dimensions and relation tags"><figcaption>Dimensions in blue, relations in green; the status bar says how defined the sketch is.</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="img/10g-sketch-dimensions.webp" alt="Sketch with dimensions and relation tags"><figcaption>Dimensions in blue (ƒ 80 follows the variable <i>plate</i>), relations in green; the status bar says how defined the sketch is.</figcaption></figure>
     </div>
   </div>
   <div class="cards">
@@ -630,7 +631,7 @@ npm run dev</pre></div>
     <tr><td>Operators, in the usual order</td><td><code>+ - * / ^</code> and brackets: <code>(width - 2 * wall) / 2</code></td></tr>
     <tr><td>Functions (angles in degrees)</td><td><code>sqrt</code> <code>abs</code> <code>round</code> <code>floor</code> <code>ceil</code> <code>sin</code> <code>cos</code> <code>tan</code> <code>min</code> <code>max</code>, and the constant <code>pi</code></td></tr>
   </table></div>
-  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Linked or not</b><p>A field linked to an expression shows <b>ƒ</b>, and clicking into it shows the expression. Type a plain number, or use the arrows, to unlink it. Arithmetic without variables, such as <code>25 * 2</code>, is just worked out once. Every size field can be linked, including a hole's X, Y and Z position. Counts are rounded to whole numbers. Variables are saved with the project, and undo covers them.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Linked or not</b><p>A field linked to an expression shows <b>ƒ</b>, and clicking into it shows the expression. Type a plain number, or use the arrows, to unlink it. Arithmetic without variables, such as <code>25 * 2</code>, is just worked out once. Every size field can be linked, including a hole's X, Y and Z position, and so can sketch dimensions (chapter 3). Counts are rounded to whole numbers. Variables are saved with the project, and undo covers them.</p></div></div>
   <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// The same from the scripting console (chapter 15)</span>
 casiworks.commands.execute(<span class="tok-s">'equations.set'</span>, { variables: [{ name: <span class="tok-s">'wall'</span>, expression: <span class="tok-s">'5'</span> }, { name: <span class="tok-s">'plate'</span>, expression: <span class="tok-s">'wall * 3'</span> }] });
 casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span class="tok-c">// values and linked sizes</span></pre></div>
@@ -898,7 +899,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.11</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.12</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -939,7 +940,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="table-wrap"><table>
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
-    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code>, <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
+    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code> (number or <code>'wall * 2'</code>, 1.12), <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>

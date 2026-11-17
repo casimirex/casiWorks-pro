@@ -154,3 +154,85 @@ test('API 1.11: relations and dimensions on a stored sketch; the part follows', 
   assert.equal(api.sketches.constraints(s.sketchId).length, 4);
   api.document.new();
 });
+
+test('Dimension equations: a sketch dimension follows variables and configurations, through save/load; a number unlinks it', async () => {
+  const { createCasiWorksAPI } = await import('../src/api/CasiWorksAPI.ts');
+  const api = createCasiWorksAPI(useCADStore);
+  const s = useCADStore.getState;
+  api.document.new();
+  api.equations.set([{ name: 'wall', expression: '10' }]);
+  const sk = api.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: 0, y: 0 }, corner2: { x: 40, y: 20 } }] });
+  const [bottom, right, top, left] = api.sketches.getEntities(sk.sketchId) as LineEntity[];
+  for (const [t, l] of [['horizontal', bottom], ['horizontal', top], ['vertical', left], ['vertical', right]] as const) api.sketches.constrain(sk.sketchId, { type: t, entity1Id: l.id });
+  const width = api.sketches.constrain(sk.sketchId, { type: 'dimension', entity1Id: bottom.id, value: 'wall * 5' });
+  api.features.extrude({ sketchId: sk.sketchId, depth: 5 });
+  const w = () => api.model.boundingBox()!.size.x;
+  near(w(), 50, 'wall * 5 = 50');
+  assert.equal(api.sketches.constraints(sk.sketchId).find(c => c.id === width)!.expression, 'wall * 5');
+
+  api.equations.set([{ name: 'wall', expression: '12' }]);
+  near(w(), 60, 'follows the variable');
+  api.configurations.set([{ name: 'Big', values: { wall: '20' } }]);
+  api.configurations.activate('Big');
+  near(w(), 100, 'follows the configuration');
+  api.configurations.activate('Default');
+  near(w(), 60);
+  s().undo();
+  near(w(), 100, 'undo of the switch');
+  s().redo();
+
+  const json = api.document.toJSON();
+  api.document.new();
+  api.document.load(json);
+  near(w(), 60, 'after load');
+  api.equations.set([{ name: 'wall', expression: '8' }]);
+  near(w(), 40, 'the link survived the load');
+
+  // A value the sketch cannot take leaves it as it was
+  api.equations.set([{ name: 'wall', expression: '-1' }]);
+  near(w(), 40, 'negative: unchanged');
+  api.equations.set([{ name: 'wall', expression: '8' }]);
+
+  // A plain number unlinks
+  api.sketches.setDimension(sk.sketchId, width, 33);
+  near(w(), 33);
+  assert.equal(api.sketches.constraints(sk.sketchId).find(c => c.id === width)!.expression, undefined);
+  api.equations.set([{ name: 'wall', expression: '9' }]);
+  near(w(), 33, 'no longer linked');
+  assert.throws(() => api.sketches.setDimension(sk.sketchId, width, 'nope * 2'), /Unknown variable "nope"/);
+  api.document.new();
+});
+
+test('Dimension equations through the open-sketch commands', () => {
+  const r = createCommandRegistry(useCADStore);
+  const s = useCADStore.getState;
+  s().newProject();
+  r.execute('equations.set', { variables: [{ name: 'd', expression: '7' }] });
+  r.execute('sketch.new', { plane: 'Front' });
+  const c = sketchEngine.createCircle({ x: 0, y: 0 }, 3);
+  s().addSketchEntity(c);
+  const { id } = r.execute('sketch.dimensionPicks', { picks: [{ id: c.id }], value: 'd * 2' }) as { id: string };
+  const circle = () => (s().sketchEntities[s().activeSketchId!] as Array<{ radius: number }>)[0];
+  near(circle().radius, 7, 'Ø = d * 2 = 14');
+  const dim = (s().sketchConstraints[s().activeSketchId!] as Array<{ id: string; expression?: string }>).find(x => x.id === id)!;
+  assert.equal(dim.expression, 'd * 2');
+  r.execute('sketch.setDimension', { id, value: '=d * 3' });
+  near(circle().radius, 10.5);
+  r.execute('sketch.setDimension', { id, value: 2 * 4 });
+  near(circle().radius, 4, 'a number: Ø8');
+  r.execute('sketch.discard');
+  s().newProject();
+});
+
+test('Equations list sketch dimensions among the linked sizes', async () => {
+  const { createCasiWorksAPI } = await import('../src/api/CasiWorksAPI.ts');
+  const api = createCasiWorksAPI(useCADStore);
+  api.document.new();
+  api.equations.set([{ name: 'w', expression: '30' }]);
+  const sk = api.sketches.create({ entities: [{ type: 'line', p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 } }] });
+  const line = api.sketches.getEntities(sk.sketchId)[0];
+  api.sketches.constrain(sk.sketchId, { type: 'dimension', entity1Id: line.id, value: 'w / 2' });
+  const links = api.equations.list().links;
+  assert.deepEqual(links.map(l => [l.featureName, l.parameter, l.expression, l.value]), [['Sketch1', 'dimension', 'w / 2', 15]]);
+  api.document.new();
+});
