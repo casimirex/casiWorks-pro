@@ -1288,3 +1288,46 @@ input:checked + .slider:before {
   pointer-events: none;
   text-shadow: 0 0 3px #000;
 }
+
+/* Sketch relations and dimensions */
+.sketch-dim, .sketch-rel {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(15, 15, 18, 0.9);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  user-select: none;
+}
+.sketch-dim { color: #93c5fd; border: 1px solid #3b82f6; }
+.sketch-rel { color: #86efac; border: 1px solid #16a34a; font-size: 10px; }
+.sketch-tag-x { display: none; background: none; border: none; color: #f87171; cursor: pointer; padding: 0 0 0 2px; font-size: 10px; }
+.sketch-dim:hover .sketch-tag-x, .sketch-rel:hover .sketch-tag-x { display: inline; }
+.dim-prompt {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(25, 25, 28, 0.97);
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #e5e7eb;
+  font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.dim-prompt input { width: 80px; background: #111; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 3px 6px; font-size: 12px; text-align: right; }
+.dim-prompt-ok { background: #2563eb; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+
+.sketch-solve-tag { margin-left: 8px; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid; }
+.sketch-solve-fully { color: #4ade80; border-color: #16a34a; }
+.sketch-solve-under { color: #fbbf24; border-color: #b45309; }
+.sketch-solve-over, .sketch-solve-failed { color: #f87171; border-color: #b91c1c; }

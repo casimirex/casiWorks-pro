@@ -28,6 +28,7 @@ import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
 import { MATERIALS, MATE_TYPES } from '../utils/constants.ts';
 import { measure as measurePicks } from '../kernel/measure.ts';
+import { solveSketch } from '../kernel/sketchSolve.ts';
 import { CLEARANCE_FITS, METRIC_SIZES, standardHole } from '../features/holeStandards.ts';
 import type { ClearanceFit, HoleKind, MetricSize } from '../features/holeStandards.ts';
 import type { Measurement } from '../kernel/measure.ts';
@@ -52,7 +53,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.10.0';
+export const API_VERSION = '1.11.0';
 
 // =====================================================================
 // Public types
@@ -204,6 +205,23 @@ export interface SketchesAPI {
   offset(sketchId: string, entityId: string, distance: number, side: Point2): SketchEntity[];
   /** Add mirrored copies of `entityIds` about the line `axisId`. Since 1.5. */
   mirror(sketchId: string, axisId: string, entityIds: string[]): SketchEntity[];
+  /**
+   * Add a relation or driving dimension and solve the sketch; returns its id. Since 1.11.
+   * Relations: horizontal, vertical, parallel, perpendicular, equal, coincident, concentric,
+   * tangent, fix. Dimensions: { type: 'dimension', entity1Id, entity2Id?, point1?, point2?, value }
+   * (a line's length, a circle's or arc's radius, or the distance between points / lines).
+   * Throws OPERATION_FAILED when it cannot be met or is already implied; nothing changes then.
+   * @example api.sketches.constrain(s.sketchId, { type: 'dimension', entity1Id: lineId, value: 60 })
+   */
+  constrain(sketchId: string, constraint: Record<string, unknown>): string;
+  /** The sketch's relations and dimensions. Since 1.11. */
+  constraints(sketchId: string): Array<Record<string, unknown>>;
+  /** Change a dimension (mm) and solve again. Since 1.11. */
+  setDimension(sketchId: string, constraintId: string, value: number): void;
+  /** Delete a relation or dimension. Since 1.11. */
+  removeConstraint(sketchId: string, constraintId: string): void;
+  /** How defined the sketch is: 'fully' | 'under' | 'over', with degrees of freedom. Since 1.11. */
+  status(sketchId: string): { state: string; dof: number; message: string };
 }
 
 /** The feature tree: create, inspect, edit, suppress and roll back features. */
@@ -646,6 +664,8 @@ export interface ApiStoreState extends RebuildState {
   // Since 1.5
   sketchEntities: Record<string, SketchEntity[]>;
   setSketchEntities(sketchId: string, entities: SketchEntity[]): void;
+  sketchConstraints: Record<string, unknown[]>;
+  applySketchConstraints(sketchId: string, constraints: never[], label?: string): string | null;
   variables: GlobalVariable[];
   configurations: Configuration[];
   activeConfiguration: string | null;
@@ -905,8 +925,44 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   };
 
+  const sketchConstraintList = (id: string) => (get().sketchConstraints[id] ?? []) as unknown as Array<Record<string, unknown> & { id: string; type: string; value?: number; diameter?: boolean }>;
+  const applyConstraints = (id: string, list: unknown[], label: string) => {
+    const error = get().applySketchConstraints(id, list as never, label);
+    if (error) fail('OPERATION_FAILED', error);
+  };
   const sketches: SketchesAPI = Object.freeze({
     ...sketchEdits,
+    constrain(sketchId: string, constraint: Record<string, unknown>) {
+      const id = requireSketch(sketchId);
+      const c = requireObject(constraint, 'constraint');
+      const kinds = ['horizontal', 'vertical', 'parallel', 'perpendicular', 'equal', 'coincident', 'concentric', 'tangent', 'fix', 'dimension', 'angle', 'midpoint', 'symmetric', 'colinear'];
+      if (typeof c.type !== 'string' || !kinds.includes(c.type)) fail('INVALID_ARGUMENT', `type must be one of ${kinds.join(', ')}`);
+      for (const k of ['entity1Id', 'entity2Id']) if (c[k] !== undefined) requireEntity(id, c[k]);
+      if (c.entity1Id === undefined) fail('INVALID_ARGUMENT', 'entity1Id is required');
+      if (c.type === 'dimension') requireNumber(c.value, 'value', { positive: true });
+      const newId = generateId(c.type === 'dimension' ? 'dim' : 'rel');
+      applyConstraints(id, [...sketchConstraintList(id), { ...c, id: newId }], `${c.type} added`);
+      return newId;
+    },
+    constraints: (sketchId: string) => clone(sketchConstraintList(requireSketch(sketchId))),
+    setDimension(sketchId: string, constraintId: string, value: number) {
+      const id = requireSketch(sketchId);
+      const list = sketchConstraintList(id);
+      const c = list.find(x => x.id === constraintId && x.type === 'dimension') ?? fail('NOT_FOUND', `No dimension ${JSON.stringify(constraintId)}`);
+      const v = requireNumber(value, 'value', { positive: true });
+      applyConstraints(id, list.map(x => (x.id === c.id ? { ...x, value: x.diameter ? v / 2 : v } : x)), `Dimension ${v} mm`);
+    },
+    removeConstraint(sketchId: string, constraintId: string) {
+      const id = requireSketch(sketchId);
+      const list = sketchConstraintList(id);
+      if (!list.some(x => x.id === constraintId)) fail('NOT_FOUND', `No relation or dimension ${JSON.stringify(constraintId)}`);
+      applyConstraints(id, list.filter(x => x.id !== constraintId), 'Removed');
+    },
+    status(sketchId: string) {
+      const id = requireSketch(sketchId);
+      const r = solveSketch(get().sketchEntities[id] ?? [], sketchConstraintList(id) as never);
+      return { state: r.state, dof: r.result.dof, message: r.message };
+    },
     create(spec: SketchSpec) {
       const s = requireObject(spec, 'spec');
       const where = resolveSketchPlane(s.plane);

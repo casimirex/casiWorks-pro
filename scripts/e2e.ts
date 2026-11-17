@@ -447,6 +447,78 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'sketch relations and driving dimensions with the mouse',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane');
+      await p.click('Snap', 100);
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const A = { x: r.left + r.width * 0.35, y: r.top + r.height * 0.35 };
+      const B = { x: r.left + r.width * 0.6, y: r.top + r.height * 0.65 };
+      await p.click('Corner Rectangle (R)'); await p.mouseClick(A.x, A.y); await p.mouseClick(B.x, B.y);
+      await sleep(300);
+      type Line = { id: string; type: string; p1: { x: number; y: number }; p2: { x: number; y: number } };
+      const sketch = () => p.eval<{ entities: Line[]; state: { message: string } }>(`window.casiworks.commands.execute('sketch.entities')`);
+      // Screen ↔ sketch from the two clicked corners (front view: a scale and an offset per axis)
+      const first = (await sketch()).entities;
+      const xs0 = first.flatMap(e => [e.p1.x, e.p2.x]), ys0 = first.flatMap(e => [e.p1.y, e.p2.y]);
+      const sx = (B.x - A.x) / (Math.max(...xs0) - Math.min(...xs0)), sy = (B.y - A.y) / (Math.min(...ys0) - Math.max(...ys0));
+      const toScreen = (q: { x: number; y: number }) => ({ x: A.x + (q.x - Math.min(...xs0)) * sx, y: A.y + (q.y - Math.max(...ys0)) * sy });
+      /** Click a line a third of the way along (clear of its ends and its tags). */
+      const clickLine = async (pick: (ls: Line[]) => Line) => {
+        const l = pick((await sketch()).entities);
+        const s = toScreen({ x: l.p1.x + (l.p2.x - l.p1.x) / 3, y: l.p1.y + (l.p2.y - l.p1.y) / 3 });
+        await p.mouseClick(s.x, s.y);
+        await sleep(200);
+      };
+      const bottom = (ls: Line[]) => ls.reduce((a, b) => (Math.max(b.p1.y, b.p2.y) < Math.max(a.p1.y, a.p2.y) ? b : a));
+      const left = (ls: Line[]) => ls.reduce((a, b) => (Math.max(b.p1.x, b.p2.x) < Math.max(a.p1.x, a.p2.x) ? b : a));
+      const kind = (k: string) => p.eval(`(() => {
+        const sel = document.querySelector('.relation-kind');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(k)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      const typeValue = (v: string) => p.eval(`(() => {
+        const el = document.querySelector('.dim-prompt-input');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(v)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      })()`);
+      const log: string[] = [];
+      const tags = await p.eval<string[]>(`[...document.querySelectorAll('.sketch-rel span')].map(e => e.textContent)`);
+      // A duplicate relation is refused
+      await kind('horizontal'); await sleep(200); await clickLine(bottom); log.push(await status(p));
+      // Dimension the bottom: click it, then empty space, type 60
+      await p.click('Smart Dimension (D): click a line, circle or arc, or two items, then type the size; double-click a dimension to change it');
+      await clickLine(bottom); await p.mouseClick(r.left + r.width * 0.15, r.top + r.height * 0.15);
+      await sleep(250);
+      const promptLabel = await p.eval<string>(`document.querySelector('.dim-prompt')?.textContent ?? ''`);
+      if (!promptLabel) throw new Error(`no dimension prompt; ${log.join(' | ')} | ${await status(p)}`);
+      await typeValue('60'); await sleep(300);
+      // Equal: the left side takes the bottom's 60
+      await kind('equal'); await sleep(200); await clickLine(bottom); await clickLine(left); log.push(await status(p));
+      const solveTag = await p.eval<string>(`document.querySelector('.sketch-solve-tag')?.textContent ?? ''`);
+      // Change the dimension: double-click it, type 75
+      await p.eval(`document.querySelector('.sketch-dim').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+      await sleep(200);
+      await typeValue('75'); await sleep(300);
+      const dimText = await p.eval<string>(`document.querySelector('.sketch-dim span')?.textContent ?? ''`);
+      await p.screenshot('02i-sketch-dimensions');
+      const final = (await sketch()).entities;
+      const xs = final.flatMap(e => [e.p1.x, e.p2.x]), ys = final.flatMap(e => [e.p1.y, e.p2.y]);
+      const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+      await p.click('Snap', 100);
+      await p.click('Confirm & Exit Sketch', 800);
+      assert(tags.join() === 'H,V,H,V', `built-in rectangle relations ${tags}`);
+      assert(log[0] === 'Already horizontal' && /^Equal added/.test(log[1]), `steps ${log.join(' | ')}`);
+      assert(promptLabel.startsWith('Length'), `prompt "${promptLabel}"`);
+      assert(dimText === '75' && Math.abs(w - 75) < 1e-3 && Math.abs(h - 75) < 1e-3, `dimension ${dimText}; ${w} × ${h}`);
+      assert(/^Under defined/.test(solveTag), `solve tag "${solveTag}"`);
+      return `rectangle relations ${tags}; duplicate refused; 60 then Equal, then 75 by double-click: ${w.toFixed(0)} × ${h.toFixed(0)} square; ${solveTag}`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume; Hole Wizard M8 counterbore',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

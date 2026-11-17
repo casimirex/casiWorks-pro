@@ -5,6 +5,9 @@
 // lands, what to preview while the mouse moves, and what to tell the user.
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { extendLine, mirrorEntities, offsetEntity, pickEntity, trimEntity } from '../kernel/sketchEdit.ts';
+import { RELATIONS, measureForDimension, relationConstraint } from '../kernel/sketchSolve.ts';
+import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
+import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import { TOOLS } from '../utils/constants.ts';
 import type { ToolId } from '../utils/constants.ts';
 import type { Point2, SketchEntity } from '../types/cad.ts';
@@ -38,6 +41,8 @@ const HINTS: Partial<Record<ToolId, string[]>> = {
   [TOOLS.SKETCH_EXTEND]: ['Extend: click a line near the end to lengthen'],
   [TOOLS.SKETCH_OFFSET]: ['Offset: click a line, arc or circle (a connected chain offsets together)', 'Offset: click the side to offset towards'],
   [TOOLS.SKETCH_MIRROR]: ['Mirror: click the mirror line', 'Mirror: click entities to mirror (Esc to finish)'],
+  [TOOLS.SKETCH_RELATION]: ['Relation: click the item to relate', 'Relation: click the second item'],
+  [TOOLS.SKETCH_DIMENSION]: ['Dimension: click a line, circle, arc or end point', 'Dimension: click a second item for a distance, or empty space to size the first'],
 };
 
 /** Status-bar guidance for the next click. */
@@ -108,7 +113,7 @@ export function previewFor(tool: ToolId, clicked: Point2[], mouse: Point2 | null
 // ------------------------------------------------------------------ editing tools and the spline
 
 /** Tools that work click by click on existing geometry (or, for the spline, any number of clicks). */
-export const EDIT_TOOLS: readonly ToolId[] = [TOOLS.SKETCH_SPLINE, TOOLS.SKETCH_TRIM, TOOLS.SKETCH_EXTEND, TOOLS.SKETCH_OFFSET, TOOLS.SKETCH_MIRROR];
+export const EDIT_TOOLS: readonly ToolId[] = [TOOLS.SKETCH_SPLINE, TOOLS.SKETCH_TRIM, TOOLS.SKETCH_EXTEND, TOOLS.SKETCH_OFFSET, TOOLS.SKETCH_MIRROR, TOOLS.SKETCH_RELATION, TOOLS.SKETCH_DIMENSION];
 
 /** A click in the sketch: the (grid-snapped) point, the exact point, and how far (mm) counts as "on" an entity. */
 export interface SketchClick { pt: Point2; raw: Point2; tol: number }
@@ -119,24 +124,59 @@ export interface EditSession {
   pickedId: string | null;
   /** Spline: the points so far. */
   points: Point2[];
+  /** Relation / Dimension: the items picked so far. */
+  picks?: SketchPick[];
 }
-export const NEW_EDIT_SESSION: EditSession = { pickedId: null, points: [] };
+export const NEW_EDIT_SESSION: EditSession = { pickedId: null, points: [], picks: [] };
+
+/**
+ * What a click picks for relations and dimensions: a line end, a point or a
+ * circle / arc centre when one is near (they win), otherwise the entity.
+ */
+export function pickSketchItem(entities: SketchEntity[], q: Point2, tol: number): SketchPick | null {
+  let best: SketchPick | null = null;
+  let bestD = tol;
+  const consider = (p: Point2, pick: SketchPick) => {
+    const d = dist(p, q);
+    if (d <= bestD) { best = pick; bestD = d; }
+  };
+  for (const e of entities) {
+    if (e.type === 'line') { consider(e.p1, { id: e.id, ref: 'p1' }); consider(e.p2, { id: e.id, ref: 'p2' }); }
+    else if (e.type === 'point') consider({ x: e.x, y: e.y }, { id: e.id, ref: 0 });
+    else if (e.type === 'circle' || e.type === 'arc') consider(e.center, { id: e.id, ref: 'center' });
+  }
+  if (best) return best;
+  const e = pickEntity(entities, q, tol);
+  return e ? { id: e.id } : null;
+}
+
+/** Stage of the relation / dimension tools, for hints. */
+export const pickStage = (s: EditSession) => s.picks?.length ?? 0;
 
 export interface EditOptions {
   offsetDistance: number;
+  /** The relation the Relation tool adds. */
+  relation?: RelationKind;
   /** New splines are construction geometry. */
   construction?: boolean;
 }
 
 /** Stage of an editing tool, for its hint. */
-export const editStage = (tool: ToolId, s: EditSession) => (tool === TOOLS.SKETCH_SPLINE ? s.points.length : s.pickedId ? 1 : 0);
+export const editStage = (tool: ToolId, s: EditSession) => (tool === TOOLS.SKETCH_SPLINE ? s.points.length
+  : tool === TOOLS.SKETCH_RELATION || tool === TOOLS.SKETCH_DIMENSION ? pickStage(s) : s.pickedId ? 1 : 0);
 
 /**
  * One click of an editing tool. Returns the next session and, when the click
  * changed the sketch, the new entity list; `status` explains what happened.
  */
 export function editClick(tool: ToolId, session: EditSession, click: SketchClick, entities: SketchEntity[], options: EditOptions):
-  { session: EditSession; entities?: SketchEntity[]; status?: string } {
+  {
+    session: EditSession; entities?: SketchEntity[]; status?: string;
+    /** Relation tool: the relation to add. */
+    constraint?: SketchConstraint;
+    /** Dimension tool: what to ask a value for. */
+    dimension?: { picks: SketchPick[]; value: number; label: string; diameter?: boolean };
+  } {
   const hit = () => pickEntity(entities, click.raw, click.tol);
   const apply = (r: { entities: SketchEntity[]; message: string } | { error: string }, next: EditSession) =>
     'error' in r ? { session: next, status: r.error } : { session: next, entities: r.entities, status: r.message };
@@ -179,6 +219,30 @@ export function editClick(tool: ToolId, session: EditSession, click: SketchClick
       if (e.id === session.pickedId) return { session, status: 'Mirror: that is the mirror line; click another entity' };
       return apply(mirrorEntities(entities, session.pickedId, [e.id]), session);
     }
+    case TOOLS.SKETCH_RELATION: {
+      const kind = options.relation ?? 'horizontal';
+      const spec = RELATIONS[kind];
+      const pick = pickSketchItem(entities, click.raw, click.tol);
+      if (!pick) return { session, status: `${spec.label}: nothing there` };
+      // Lines only for line relations: an end point pick means its line
+      const ent = entities.find(e => e.id === pick.id);
+      const usable = pick.ref !== undefined && !spec.accepts.includes('end') && ent?.type !== 'point' ? { id: pick.id } : pick;
+      const picks = [...(session.picks ?? []), usable];
+      if (picks.length < spec.picks) return { session: { ...session, picks }, status: `${spec.label}: pick the second item` };
+      const c = relationConstraint(kind, picks, entities);
+      return typeof c === 'string' ? { session: NEW_EDIT_SESSION, status: c } : { session: NEW_EDIT_SESSION, constraint: c };
+    }
+    case TOOLS.SKETCH_DIMENSION: {
+      const pick = pickSketchItem(entities, click.raw, click.tol);
+      const first = session.picks?.[0];
+      if (!first) {
+        if (!pick) return { session, status: 'Dimension: nothing there' };
+        return { session: { ...session, picks: [pick] } };
+      }
+      const picks = pick && !(pick.id === first.id && pick.ref === first.ref) ? [first, pick] : [first];
+      const m = measureForDimension(picks, entities);
+      return typeof m === 'string' ? { session: NEW_EDIT_SESSION, status: m } : { session: NEW_EDIT_SESSION, dimension: { picks, ...m } };
+    }
     default:
       return { session };
   }
@@ -194,6 +258,11 @@ export function editPreview(tool: ToolId, session: EditSession, mouse: SketchCli
     return { ...none, entities: pts.length >= 2 ? [sketchEngine.createSpline(pts)] : [], band: session.points };
   }
   if (!mouse) return none;
+  if (tool === TOOLS.SKETCH_RELATION || tool === TOOLS.SKETCH_DIMENSION) {
+    const h = pickSketchItem(entities, mouse.raw, mouse.tol);
+    const picked = (session.picks ?? []).map(p => p.id);
+    return { highlight: h ? [...picked, h.id] : picked, entities: [], band: [] };
+  }
   const hovered = pickEntity(entities, mouse.raw, mouse.tol);
   if (tool === TOOLS.SKETCH_OFFSET && session.pickedId) {
     const r = offsetEntity(entities, session.pickedId, options.offsetDistance, mouse.raw);
@@ -204,4 +273,21 @@ export function editPreview(tool: ToolId, session: EditSession, mouse: SketchCli
     return { highlight: [session.pickedId, hovered.id], entities: 'error' in r ? [] : r.entities.slice(entities.length), band: [] };
   }
   return { ...none, highlight: hovered ? [...none.highlight, hovered.id] : none.highlight };
+}
+
+/**
+ * Relations a drawing tool's result comes with, as in other CAD systems: a
+ * rectangle keeps its sides horizontal and vertical, a slot keeps its sides
+ * parallel, a polygon keeps its sides equal.
+ */
+export function builtInRelations(tool: ToolId, created: SketchEntity[]): SketchConstraint[] {
+  const lines = created.filter(e => e.type === 'line') as Array<SketchEntity & { type: 'line' }>;
+  const rel = (type: SketchConstraint['type'], a: string, b?: string): SketchConstraint =>
+    ({ id: `rel_${a}_${type}${b ? `_${b}` : ''}`, type, entity1Id: a, ...(b ? { entity2Id: b } : {}) });
+  if (tool === TOOLS.SKETCH_RECT && lines.length === 4) {
+    return lines.map(l => rel(Math.abs(l.p2.y - l.p1.y) < Math.abs(l.p2.x - l.p1.x) ? 'horizontal' : 'vertical', l.id));
+  }
+  if (tool === TOOLS.SKETCH_SLOT && lines.length === 2) return [rel('parallel', lines[0].id, lines[1].id)];
+  if (tool === TOOLS.SKETCH_POLYGON && lines.length >= 3) return lines.slice(1).map(l => rel('equal', lines[0].id, l.id));
+  return [];
 }

@@ -235,6 +235,35 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: '10g-sketch-dimensions', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await p.click('Sketch');
+      await p.click('Sketch on the Front plane', 800);
+      await p.click('Snap', 100);
+      const r = await canvasRect(p);
+      await p.click('Corner Rectangle (R)');
+      await p.mouseClick(r.left + r.width * 0.35, r.top + r.height * 0.35);
+      await p.mouseClick(r.left + r.width * 0.6, r.top + r.height * 0.65);
+      await p.click('Center Circle (C)');
+      await p.mouseClick(r.left + r.width * 0.47, r.top + r.height * 0.5);
+      await p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await sleep(300);
+      const ents = await p.eval<Array<{ id: string; type: string; p1?: { y: number } }>>(`window.casiworks.commands.execute('sketch.entities').entities`);
+      const lines = ents.filter(e => e.type === 'line');
+      const bottom = lines.reduce((a, b) => (b.p1!.y < a.p1!.y ? b : a));
+      const circle = ents.find(e => e.type === 'circle')!;
+      await run(p, 'sketch.dimensionPicks', { picks: [{ id: bottom.id }], value: 80 }, 300);
+      await run(p, 'sketch.dimensionPicks', { picks: [{ id: lines[1].id }], value: 50 }, 300);
+      await run(p, 'sketch.dimensionPicks', { picks: [{ id: circle.id }], value: 20 }, 300);
+      await p.click('Snap', 100);
+      await sleep(400);
+      await p.screenshot('10g-sketch-dimensions');
+      await p.click('Discard Sketch Changes', 400);
+      await p.click('Features');
+    },
+  },
+  {
     name: '10e-sketch-on-face', async run(p) {
       await fresh(p);
       await feaPanel(p, false);

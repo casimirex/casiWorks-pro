@@ -342,7 +342,7 @@ npm run dev</pre></div>
   <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 3 · about 15 min</span></div>
   <h2 class="title">Your first part: sketch and extrude</h2>
   <p class="lead">Almost every CAD part starts the same way. You draw a flat 2D profile (a <b>sketch</b>) on a plane, then give it thickness (an <b>extrude</b>).</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li><li>Edit a sketch with Trim, Extend, Offset and Mirror</li><li>Sketch on a face of the part or on a reference plane</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li><li>Edit a sketch with Trim, Extend, Offset and Mirror</li><li>Sketch on a face of the part or on a reference plane</li><li>Fix a sketch's shape with relations and driving dimensions</li></ul></div>
 
   <div class="example">
     <div class="example-head"><span class="tag">Example 3.1</span><h4>A spacer block with a through hole</h4><div class="specs"><span>Front plane</span><span>Depth 20 mm</span><span>1 sketch · 1 extrude</span></div></div>
@@ -409,6 +409,27 @@ npm run dev</pre></div>
       <figure class="shot"><img loading="lazy" src="img/10d-keyhole-part.webp" alt="Extruded keyhole part"><figcaption>The extruded keyhole.</figcaption></figure>
     </div>
   </div>
+  <h3>Relations and dimensions</h3>
+  <p>A sketch you draw is approximate. <b>Relations</b> and <b>dimensions</b> make it exact, and they let you change a size later by typing a number.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 3.4</span><h4>An 80 × 50 plate with a Ø20 hole, by dimensions</h4><div class="specs"><span>Smart Dimension</span><span>Relations</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Draw a rough rectangle and a circle in it. The rectangle's sides already have <b>H</b> (horizontal) and <b>V</b> (vertical) relations, shown as small green tags. A slot's sides are kept parallel and a polygon's sides equal in the same way.</li>
+        <li>Press <kbd>D</kbd> (<b>Dimension</b>). Click the bottom side, then click in empty space. Type <code>80</code> and press <kbd>Enter</kbd>. The rectangle becomes 80 wide and stays a rectangle.</li>
+        <li>Dimension a vertical side <code>50</code> and the circle <code>20</code>. A circle is dimensioned by its diameter (Ø), an arc by its radius (R). To dimension a distance, click two items instead of empty space: two end points, a point and a line, or two lines.</li>
+        <li>Double-click a dimension to change it. The sketch updates straight away. Point at a tag or dimension and click its ✕ to delete it.</li>
+        <li>For other relations, choose one in the <b>Relation</b> list (Horizontal, Vertical, Parallel, Perpendicular, Equal, Coincident, Concentric, Tangent, Fix) and click the item or items. For example, use <i>Equal</i> on two sides to make a square.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/10g-sketch-dimensions.webp" alt="Sketch with dimensions and relation tags"><figcaption>Dimensions in blue, relations in green; the status bar says how defined the sketch is.</figcaption></figure>
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card"><b>Under defined</b><p>Amber in the status bar, with the degrees of freedom left: some sizes or positions are still free. Free geometry stays where you drew it.</p></div>
+    <div class="card"><b>Fully defined</b><p>Green, and the lines turn white: every size and position is fixed. Add a <i>Fix</i> relation or dimensions to the origin to get there.</p></div>
+    <div class="card"><b>Refused</b><p>A relation or dimension that conflicts with the others, or that they already imply, is not added. The status bar says why, and nothing changes.</p></div>
+  </div>
+
   <h3>Sketching on faces and reference planes</h3>
   <p>A sketch does not have to sit on Front, Top or Right. <b>On Face</b> on the Sketch tab starts a sketch on any flat face of the part. A <b>reference plane</b> (Features ▸ <b>Plane</b>) is a standard plane moved along its normal and tilted. You can sketch on it from the <b>On Plane…</b> picker.</p>
   <div class="example">
@@ -877,7 +898,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.10</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.11</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -918,7 +939,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="table-wrap"><table>
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
-    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
+    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code>, <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
@@ -1047,6 +1068,8 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
     <tr><td>Configuration</td><td>A named version of a part that changes some variable values (Tools ▸ Configs). Default is the plain values.</td></tr>
+    <tr><td>Relation</td><td>A rule a sketch keeps, such as horizontal, equal or tangent. Shown as a green tag.</td></tr>
+    <tr><td>Driving dimension</td><td>A size typed into a sketch (length, diameter, radius or distance). Change it and the sketch follows.</td></tr>
     <tr><td>Centreline</td><td>A construction line in a sketch, used as the axis of a revolve.</td></tr>
     <tr><td>Reference axis · point</td><td>An axis parallel to model X, Y or Z through a point, and a named point (Features ▸ Axis, Point).</td></tr>
     <tr><td>Reference plane</td><td>A plane you make: a standard plane moved and tilted (Features ▸ Plane). Sketches on it follow it.</td></tr>

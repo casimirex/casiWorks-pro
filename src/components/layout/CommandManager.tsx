@@ -7,9 +7,10 @@ import {
   XCircle, Square, Circle, PenTool, Hash,
   Download, Eye, Grid, Scale, Menu, ChevronUp, ChevronDown,
   Sparkles, Cpu, FileText, ArrowRight,
-  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
+  ArrowDownToLine, ArrowRightToLine, Sigma, Ruler, Link2, FlipHorizontal2, CopyPlus, Move, Puzzle, Hexagon, RectangleHorizontal
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
+import { RELATIONS } from '../../kernel/sketchSolve.ts';
 import { TOOLS } from '../../utils/constants.ts';
 import { CAD_EXAMPLES } from '../../utils/examples.ts';
 import { macroRecorder, runCommand } from '../../commands/index.ts';
@@ -24,6 +25,7 @@ export default function CommandManager() {
   const activeTool = useCADStore(s => s.activeTool);
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
   const offsetDistance = useCADStore(s => s.sketchOffsetDistance);
+  const relationKind = useCADStore(s => s.sketchRelationKind);
   const features = useCADStore(s => s.features);
   const referencePlanes = features.filter(f => f.type === 'reference_plane' && !f.suppressed);
   const exploded = useCADStore(s => s.explodedView !== null);
@@ -550,10 +552,29 @@ export default function CommandManager() {
                   <button
                     className={`ribbon-btn ${activeTool === TOOLS.SKETCH_DIMENSION ? 'active' : ''}`}
                     onClick={() => runCommand('sketch.dimension')}
-                    title="Smart Dimension (D)"
+                    title="Smart Dimension (D): click a line, circle or arc, or two items, then type the size; double-click a dimension to change it"
                   >
                     <Scale size={19} color="#f97316" />
                     <span>Dimension</span>
+                  </button>
+                  <button
+                    className={`ribbon-btn ${activeTool === TOOLS.SKETCH_RELATION ? 'active' : ''}`}
+                    onClick={() => runCommand('sketch.relation')}
+                    title="Add a relation: choose it in the list, then click the item(s)"
+                  >
+                    <Link2 size={19} color="#4ade80" />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <select
+                        className="relation-kind"
+                        value={relationKind}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => runCommand('sketch.relation', { type: e.target.value })}
+                        aria-label="Relation"
+                        style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0, maxWidth: 80 }}
+                      >
+                        {Object.entries(RELATIONS).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}
+                      </select>
+                    </span>
                   </button>
                 </div>
                 <div className="tool-group-label">TOOLS</div>

@@ -13,7 +13,7 @@ import { getSketchPlaneMatrix, isPlaneFrame, referenceAxisLine, referencePlaneFr
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
-import { EDIT_TOOLS, NEW_EDIT_SESSION, TOOL_CLICKS, editClick, editPreview, editStage, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
+import { EDIT_TOOLS, NEW_EDIT_SESSION, TOOL_CLICKS, builtInRelations, editClick, editPreview, editStage, entitiesFor, previewFor, toolHint } from './sketchTools.ts';
 import type { EditSession, SketchClick } from './sketchTools.ts';
 import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
@@ -24,6 +24,9 @@ import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { LeaderLine } from '../assembly/AssemblyManager.ts';
 import { formatMm, measure, snapPick } from '../kernel/measure.ts';
+import { constraintLabel, dimensionConstraint } from '../kernel/sketchSolve.ts';
+import type { SketchPick } from '../kernel/sketchSolve.ts';
+import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
 import { plotPositionOf, probeAt } from '../simulation/resultPlot.ts';
 import type { FeaProbe, ResultPlot } from '../simulation/resultPlot.ts';
@@ -53,7 +56,7 @@ function FramePlane({ frame, size, color, opacity, label }: { frame: PlaneFrame;
         <lineBasicMaterial color={color} />
       </lineSegments>
       {label && (
-        <Html position={[-size / 2, size / 2, 0]} zIndexRange={[10, 0]}>
+        <Html position={[-size / 2, size / 2, 0]} zIndexRange={[10, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
           <div className="plane-label">{label}</div>
         </Html>
       )}
@@ -83,7 +86,7 @@ function ReferenceMark({ name, kind, at, dir }: { name: string; kind: 'axis' | '
           <meshBasicMaterial color="#fbbf24" />
         </mesh>
       )}
-      <Html position={labelAt} zIndexRange={[10, 0]}>
+      <Html position={labelAt} zIndexRange={[10, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
         <div className="plane-label">{name}</div>
       </Html>
     </group>
@@ -282,7 +285,7 @@ function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
         </threeLine>
       )}
       {m && mid && (
-        <Html position={mid} center zIndexRange={[20, 0]}>
+        <Html position={mid} center zIndexRange={[20, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
           <div className="measure-label">{formatMm(m.gap ?? m.distance)} mm{m.gap !== null ? ' ⟂' : ''}</div>
         </Html>
       )}
@@ -303,7 +306,7 @@ function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] 
               <sphereGeometry args={[0.7, 10, 10]} />
               <meshBasicMaterial color="#ffffff" depthTest={false} />
             </mesh>
-            <Html center={false} style={{ transform: 'translate(6px, -50%)' }} zIndexRange={[20, 0]}>
+            <Html center={false} style={{ transform: 'translate(6px, -50%)', pointerEvents: 'none' }} zIndexRange={[20, 0]} pointerEvents="none">
               <div className="fea-probe-label">
                 <b>{i + 1}</b> {p.vonMisesMPa.toFixed(1)} MPa · {p.displacementMM.toPrecision(3)} mm
               </div>
@@ -312,6 +315,28 @@ function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] 
         );
       })}
     </group>
+  );
+}
+
+/** The value box for a new or changed sketch dimension. */
+function DimensionPrompt({ value, label, diameter, onCommit, onCancel }: { value: number; label: string; diameter?: boolean; onCommit(v: number): void; onCancel(): void }) {
+  const [text, setText] = useState(String(+value.toFixed(4)));
+  const commit = () => { const v = parseFloat(text); if (v > 0) onCommit(v); else onCancel(); };
+  return (
+    <div className="dim-prompt" role="dialog" aria-label="Dimension value">
+      <span>{label}{diameter ? ' (Ø)' : ''}:</span>
+      <input
+        className="dim-prompt-input"
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') commit(); if (e.key === 'Escape') onCancel(); }}
+      />
+      <span>mm</span>
+      <button className="dim-prompt-ok" onClick={commit}>OK</button>
+      <button className="icon-btn" onClick={onCancel} aria-label="Cancel">✕</button>
+    </div>
   );
 }
 
@@ -468,9 +493,14 @@ interface ActiveSketchOverlayProps {
   /** Entities an editing tool points at (drawn highlighted). */
   highlightIds: string[];
   activeTool: ToolId;
+  /** Relations and dimensions of the sketch, and how defined it is. */
+  constraints: SketchConstraint[];
+  solveState: 'fully' | 'under' | 'over' | 'failed' | null;
+  onEditDimension(c: SketchConstraint): void;
+  onRemoveConstraint(id: string): void;
 }
 
-function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities, highlightIds }: ActiveSketchOverlayProps) {
+function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities, highlightIds, constraints, solveState, onEditDimension, onRemoveConstraint }: ActiveSketchOverlayProps) {
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
   // Sketch point → world point, exactly as the kernel maps the sketch plane
@@ -482,7 +512,43 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
   return (
     <group name="ActiveSketchOverlay">
       {/* Existing entities, sampled the same way the kernel samples profiles */}
-      {entities.map((ent) => <SketchEntityLine key={ent.id} entity={ent} toWorld={transformPoint} color={highlightIds.includes(ent.id) ? '#ffd54f' : undefined} />)}
+      {entities.map((ent) => (
+        <SketchEntityLine
+          key={ent.id}
+          entity={ent}
+          toWorld={transformPoint}
+          // Fully defined sketches turn white, unsolvable ones red (construction stays grey)
+          color={highlightIds.includes(ent.id) ? '#ffd54f' : ent.construction ? undefined : solveState === 'fully' ? '#f1f5f9' : solveState === 'failed' || solveState === 'over' ? '#f87171' : undefined}
+        />
+      ))}
+
+      {/* Relation tags and dimensions: double-click a dimension to change it; ✕ deletes */}
+      {(() => { const seen = new Map<string, number>(); return constraints.map(c => {
+        const label = constraintLabel(c, entities);
+        if (!label) return null;
+        const isDim = c.type === 'dimension';
+        // Several tags at one place sit side by side
+        const key = `${isDim ? 'd' : 'r'}:${label.at.x.toFixed(3)},${label.at.y.toFixed(3)}`;
+        const nth = seen.get(key) ?? 0;
+        seen.set(key, nth + 1);
+        return (
+          <Html key={c.id} position={transformPoint(label.at)} zIndexRange={[30, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
+            {/* Set off from the geometry, so clicks on the line or point below still reach it;
+                only the tag itself takes the pointer, not its wrapper */}
+            <div
+              style={{ transform: isDim ? `translate(${6 + nth * 44}px, -22px)` : `translate(${8 + nth * 22}px, 6px)`, pointerEvents: 'auto' }}
+              className={isDim ? 'sketch-dim' : 'sketch-rel'}
+              title={isDim ? 'Double-click to change' : `${c.type} relation`}
+              onDoubleClick={(e) => { e.stopPropagation(); if (isDim) onEditDimension(c); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <span>{label.text}</span>
+              <button className="sketch-tag-x" onClick={(e) => { e.stopPropagation(); onRemoveConstraint(c.id!); }} aria-label={`Delete ${isDim ? 'dimension' : 'relation'}`}>✕</button>
+            </div>
+          </Html>
+        );
+      }); })()}
 
       {/* What the next click creates */}
       {previewEntities.map((ent) => <SketchEntityLine key={`preview-${ent.id}`} entity={ent} toWorld={transformPoint} color="#ff9800" />)}
@@ -745,11 +811,22 @@ export default function Viewport3D() {
   const [mouse, setMouse] = useState<SketchClick | null>(null);
   const mouseSketchPt = mouse?.pt ?? null;
   const [sketchClickPts, setSketchClickPts] = useState<Point2[]>([]);
-  const [editSession, setEditSession] = useState<EditSession>(NEW_EDIT_SESSION);
+  const [editSession, setEditSessionState] = useState<EditSession>(NEW_EDIT_SESSION);
+  // Clicks read the session from a ref: a second click can arrive before React re-renders
+  const editSessionRef = useRef<EditSession>(NEW_EDIT_SESSION);
+  const setEditSession = useCallback((s: EditSession) => { editSessionRef.current = s; setEditSessionState(s); }, []);
   const replaceActiveSketchEntities = useCADStore(s => s.replaceActiveSketchEntities);
   const offsetDistance = useCADStore(s => s.sketchOffsetDistance);
   const constructionMode = useCADStore(s => s.constructionMode);
   const isEditTool = EDIT_TOOLS.includes(activeTool);
+  const relationKind = useCADStore(s => s.sketchRelationKind);
+  const sketchConstraints = useCADStore(s => s.sketchConstraints);
+  const sketchSolveState = useCADStore(s => s.sketchSolveState);
+  const applySketchConstraints = useCADStore(s => s.applySketchConstraints);
+  const refreshSketchSolve = useCADStore(s => s.refreshSketchSolve);
+  const activeConstraints = useMemo(() => (activeSketchId ? (sketchConstraints[activeSketchId] ?? []) as SketchConstraint[] : []), [activeSketchId, sketchConstraints]);
+  // A dimension being entered: new (picks) or changed (editId)
+  const [dimPrompt, setDimPrompt] = useState<{ picks?: SketchPick[]; editId?: string; value: number; label: string; diameter?: boolean } | null>(null);
   const activeEntities = useMemo(() => (activeSketchId && sketchEntities[activeSketchId]) || [], [activeSketchId, sketchEntities]);
   // Set when a click reported its result, so the next-step hint does not hide it
   const keepStatusRef = useRef(false);
@@ -787,8 +864,26 @@ export default function Viewport3D() {
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
   const setStatus = useCADStore(s => s.setStatus);
 
+  // Keep the sketch's solve state current while it is edited (and drop relations of deleted entities)
+  useEffect(() => { if (isSketchActive) refreshSketchSolve(); }, [isSketchActive, activeEntities, refreshSketchSolve]);
+  useEffect(() => { if (!isSketchActive) setDimPrompt(null); }, [isSketchActive]);
+
+  const commitDimension = useCallback((value: number) => {
+    if (!dimPrompt || !activeSketchId || !(value > 0)) { setDimPrompt(null); return; }
+    let next: SketchConstraint[];
+    if (dimPrompt.editId) {
+      next = activeConstraints.map(c => (c.id === dimPrompt.editId ? { ...c, value: (c as { diameter?: boolean }).diameter ? value / 2 : value } : c));
+    } else {
+      next = [...activeConstraints, dimensionConstraint(dimPrompt.picks!, value, activeEntities)];
+    }
+    const error = applySketchConstraints(activeSketchId, next, `${dimPrompt.label} ${+value.toFixed(4)} mm`);
+    if (error) setStatus(`Not applied: ${error}`);
+    keepStatusRef.current = true;
+    setDimPrompt(null);
+  }, [dimPrompt, activeSketchId, activeConstraints, activeEntities, applySketchConstraints, setStatus]);
+
   // A new tool starts with no clicks
-  useEffect(() => { setSketchClickPts([]); setEditSession(NEW_EDIT_SESSION); }, [activeTool, activeSketchId]);
+  useEffect(() => { setSketchClickPts([]); setEditSession(NEW_EDIT_SESSION); }, [activeTool, activeSketchId, setEditSession]);
 
   // Tell the user what the next click does
   const stage = isEditTool ? editStage(activeTool, editSession) : sketchClickPts.length;
@@ -802,8 +897,29 @@ export default function Viewport3D() {
   // Each drawing tool collects its clicks, then creates its geometry (sketchTools.ts)
   const handleSketchClick = useCallback(({ pt, raw, tol }: SketchClick) => {
     if (isEditTool) {
-      const r = editClick(activeTool, editSession, { pt, raw, tol }, activeEntities, { offsetDistance, construction: constructionMode });
-      if (r.status) keepStatusRef.current = editStage(activeTool, r.session) !== editStage(activeTool, editSession);
+      const session = editSessionRef.current;
+      const r = editClick(activeTool, session, { pt, raw, tol }, activeEntities, { offsetDistance, construction: constructionMode, relation: relationKind });
+      if (r.constraint && activeSketchId) {
+        const same = activeConstraints.find(c => c.type === r.constraint!.type
+          && [c.entity1Id, c.entity2Id].sort().join() === [r.constraint!.entity1Id, r.constraint!.entity2Id].sort().join());
+        if (same) {
+          setStatus(`Already ${r.constraint.type}`);
+          keepStatusRef.current = true;
+          setEditSession(r.session);
+          return;
+        }
+        const error = applySketchConstraints(activeSketchId, [...activeConstraints, r.constraint], `${r.constraint.type[0].toUpperCase()}${r.constraint.type.slice(1)} added`);
+        if (error) setStatus(`Not added: ${error}`);
+        keepStatusRef.current = true;
+        setEditSession(r.session);
+        return;
+      }
+      if (r.dimension) {
+        setDimPrompt({ picks: r.dimension.picks, value: r.dimension.value, label: r.dimension.label, diameter: r.dimension.diameter });
+        setEditSession(r.session);
+        return;
+      }
+      if (r.status) keepStatusRef.current = editStage(activeTool, r.session) !== editStage(activeTool, session);
       if (r.entities) replaceActiveSketchEntities(r.entities, r.status);
       else if (r.status) setStatus(r.status);
       setEditSession(r.session);
@@ -818,9 +934,15 @@ export default function Viewport3D() {
     }
     const created = entitiesFor(activeTool, pts, { polygonSides });
     created?.forEach(e => addSketchEntity(e));
+    // Rectangles, slots and polygons keep their shape when dimensioned
+    const builtIn = created ? builtInRelations(activeTool, created) : [];
+    if (builtIn.length && activeSketchId) {
+      const current = (useCADStore.getState().sketchConstraints[activeSketchId] ?? []) as SketchConstraint[];
+      applySketchConstraints(activeSketchId, [...current, ...builtIn]);
+    }
     // Lines chain from the last point; other tools start over
     setSketchClickPts(activeTool === TOOLS.SKETCH_LINE && created ? [pt] : []);
-  }, [activeTool, sketchClickPts, addSketchEntity, polygonSides, isEditTool, editSession, activeEntities, offsetDistance, constructionMode, replaceActiveSketchEntities, setStatus]);
+  }, [activeTool, sketchClickPts, addSketchEntity, polygonSides, isEditTool, setEditSession, activeEntities, offsetDistance, constructionMode, replaceActiveSketchEntities, setStatus, relationKind, activeSketchId, applySketchConstraints, activeConstraints]);
 
   const preview = useMemo(
     () => (isEditTool
@@ -956,6 +1078,17 @@ export default function Viewport3D() {
             currentPoints={preview.band.length || isEditTool ? preview.band : sketchClickPts}
             previewEntities={preview.entities}
             highlightIds={preview.highlight}
+            constraints={activeConstraints}
+            solveState={sketchSolveState?.state ?? null}
+            onEditDimension={(c) => {
+              const d = (c as { diameter?: boolean }).diameter;
+              setDimPrompt({ editId: c.id, value: d ? (c.value ?? 0) * 2 : c.value ?? 0, label: d ? 'Diameter' : 'Dimension', diameter: d });
+            }}
+            onRemoveConstraint={(id) => {
+              if (!activeSketchId) return;
+              const error = applySketchConstraints(activeSketchId, activeConstraints.filter(c => c.id !== id), 'Removed');
+              if (error) setStatus(error);
+            }}
             activeTool={activeTool}
           />
         )}
@@ -968,6 +1101,7 @@ export default function Viewport3D() {
 
       <OrientationCubeHUD />
       {activeTool === TOOLS.MEASURE && <MeasurePanel picks={measurePicks} />}
+      {dimPrompt && <DimensionPrompt key={`${dimPrompt.editId ?? 'new'}-${dimPrompt.value}`} {...dimPrompt} onCommit={commitDimension} onCancel={() => setDimPrompt(null)} />}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { Grid, Layers, Box, Compass, Magnet } from 'lucide-react';
 export default function StatusBar() {
   const statusMessage = useCADStore(s => s.statusMessage);
   const isSketchActive = useCADStore(s => s.isSketchActive);
+  const solve = useCADStore(s => s.sketchSolveState);
   const selectedEntities = useCADStore(s => s.selectedEntities);
   const showGrid = useCADStore(s => s.showGrid);
   const snapEnabled = useCADStore(s => s.snapEnabled);
@@ -25,6 +26,11 @@ export default function StatusBar() {
           <span className="sketch-active-tag">
             <span className="sketch-tag-dot" />
             <span>Editing Sketch</span>
+          </span>
+        )}
+        {isSketchActive && solve && (
+          <span className={`sketch-solve-tag sketch-solve-${solve.state}`} title="How fully the sketch's relations and dimensions fix its geometry">
+            {solve.message}
           </span>
         )}
       </div>

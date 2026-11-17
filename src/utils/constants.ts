@@ -24,6 +24,7 @@ export const TOOLS = {
   SKETCH_TRIM: 'sketch_trim',
   SKETCH_EXTEND: 'sketch_extend',
   SKETCH_ON_FACE: 'sketch_on_face',
+  SKETCH_RELATION: 'sketch_relation',
   SKETCH_OFFSET: 'sketch_offset',
   SKETCH_MIRROR: 'sketch_mirror',
   SKETCH_DIMENSION: 'sketch_dimension',

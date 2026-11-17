@@ -380,7 +380,12 @@ export class ConstraintSolver {
    * Solve all constraints simultaneously. Entities are updated in place.
    * Constraints without an id are given one.
    */
-  solve(entities: SolverEntity[] | null | undefined, constraints: SketchConstraint[] | null | undefined): SolveResult {
+  /**
+   * Solve in place. `options.stayNear` (e.g. 1e-2) pulls the geometry towards where
+   * it started, fading out over the iterations: what the constraints leave free
+   * then hardly moves (editing a sketch), and the constraints are still met exactly.
+   */
+  solve(entities: SolverEntity[] | null | undefined, constraints: SketchConstraint[] | null | undefined, options: { stayNear?: number; maxIterations?: number } = {}): SolveResult {
     if (!constraints || constraints.length === 0 || !entities || entities.length === 0) {
       return emptyResult(entities ? entities.length * 2 : 0, 'under_constrained');
     }
@@ -470,10 +475,13 @@ export class ConstraintSolver {
     let lambda = 1e-3;
     const minLambda = 1e-12;
     const maxLambda = 1e10;
-    const mu = 1e-9; // Tikhonov regularization towards the initial geometry
+    const muFloor = 1e-9; // Tikhonov regularization towards the initial geometry
+    const maxIterations = options.maxIterations ?? (options.stayNear ? Math.max(this.maxIterations, 150) : this.maxIterations);
     let iter = 0;
 
-    for (iter = 0; iter < this.maxIterations; iter++) {
+    for (iter = 0; iter < maxIterations; iter++) {
+      // Strong pull to the start first (least change), fading so the constraints are met exactly
+      const mu = options.stayNear ? Math.max(muFloor, options.stayNear * Math.pow(0.8, iter)) : muFloor;
       if (currentError < this.tolerance) break;
 
       const mConstraints = r.length;

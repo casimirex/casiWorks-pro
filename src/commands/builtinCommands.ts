@@ -6,6 +6,9 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
+import { RELATIONS, dimensionConstraint, measureForDimension } from '../kernel/sketchSolve.ts';
+import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
+import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import { faceFrame, isPlaneFrame, referencePlaneFrame } from '../utils/math.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
 import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
@@ -345,6 +348,98 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   sketchTool('sketch.dimension', 'Smart dimension', TOOLS.SKETCH_DIMENSION, ['D']),
+  {
+    id: 'sketch.relation', label: 'Add relation', category: 'Sketch', record: false,
+    description: `args: { type } — ${Object.keys(RELATIONS).join(', ')}; then click the item(s) in the sketch`,
+    run: ({ state }, args: { type?: RelationKind } | undefined) => {
+      if (args?.type !== undefined) {
+        if (!(args.type in RELATIONS)) throw new CommandError('INVALID_ARGUMENT', `type must be one of ${Object.keys(RELATIONS).join(', ')}`);
+        state().setSketchRelationKind(args.type);
+      }
+      state().setActiveTool(TOOLS.SKETCH_RELATION);
+      const spec = RELATIONS[state().sketchRelationKind];
+      state().setStatus(`${spec.label}: click the item${spec.picks === 2 ? 's' : ''} to relate`);
+    },
+  },
+  {
+    id: 'sketch.entities', label: 'Open sketch geometry', category: 'Sketch', record: false,
+    description: 'Returns { sketchId, entities, constraints, state } of the sketch being edited (null when none is open)',
+    run: ({ state }) => {
+      const s = state();
+      if (!s.activeSketchId) return null;
+      return JSON.parse(JSON.stringify({
+        sketchId: s.activeSketchId,
+        entities: s.sketchEntities[s.activeSketchId] ?? [],
+        constraints: s.sketchConstraints[s.activeSketchId] ?? [],
+        state: s.sketchSolveState,
+      }));
+    },
+  },
+  {
+    id: 'sketch.constrain', label: 'Add sketch relation / dimension', category: 'Sketch',
+    description: "args: { sketchId?, constraint } — a solver constraint, e.g. { type: 'horizontal', entity1Id } or { type: 'dimension', entity1Id, value }; default: the open sketch. Returns { id }",
+    run: ({ state }, args: { sketchId?: string; constraint?: SketchConstraint }) => {
+      const sketchId = args?.sketchId ?? state().activeSketchId;
+      if (!sketchId || !(sketchId in state().sketchEntities)) throw new CommandError('INVALID_ARGUMENT', 'No sketch: open one or give sketchId');
+      const c = args?.constraint;
+      if (!c || typeof c !== 'object' || typeof c.type !== 'string') throw new CommandError('INVALID_ARGUMENT', 'constraint { type, entity1Id, … } is required');
+      const ids = new Set((state().sketchEntities[sketchId] ?? []).map(e => e.id));
+      for (const k of ['entity1Id', 'entity2Id'] as const) {
+        if (c[k] !== undefined && !ids.has(c[k]!)) throw new CommandError('INVALID_ARGUMENT', `No entity ${JSON.stringify(c[k])} in the sketch`);
+      }
+      const withId = { ...c, id: c.id ?? generateId(c.type === 'dimension' ? 'dim' : 'rel') };
+      const existing = (state().sketchConstraints[sketchId] ?? []) as SketchConstraint[];
+      const error = state().applySketchConstraints(sketchId, [...existing, withId], c.type === 'dimension' ? 'Dimension added' : `${c.type} added`);
+      if (error) throw new CommandError('FAILED', error);
+      return { id: withId.id };
+    },
+  },
+  {
+    id: 'sketch.dimensionPicks', label: 'Dimension picked items', category: 'Sketch',
+    description: 'args: { picks: [{ id, ref? }], value? } — dimensions the open sketch (value default: the current size, a circle: its diameter); returns { id }',
+    run: ({ state }, args: { picks?: SketchPick[]; value?: number }) => {
+      const sketchId = state().activeSketchId;
+      if (!sketchId) throw new CommandError('NOT_AVAILABLE', 'Open a sketch first');
+      const entities = state().sketchEntities[sketchId] ?? [];
+      const picks = args?.picks ?? [];
+      const m = measureForDimension(picks, entities);
+      if (typeof m === 'string') throw new CommandError('INVALID_ARGUMENT', m);
+      const value = args?.value ?? m.value;
+      if (typeof value !== 'number' || !(value > 0)) throw new CommandError('INVALID_ARGUMENT', 'value must be above 0');
+      const c = dimensionConstraint(picks, value, entities);
+      const error = state().applySketchConstraints(sketchId, [...(state().sketchConstraints[sketchId] ?? []) as SketchConstraint[], c], `${m.label} ${+value.toFixed(4)} mm`);
+      if (error) throw new CommandError('FAILED', error);
+      return { id: c.id };
+    },
+  },
+  {
+    id: 'sketch.setDimension', label: 'Change a sketch dimension', category: 'Sketch',
+    description: 'args: { sketchId?, id, value } — value in mm (a circle: its diameter); the sketch is solved again',
+    run: ({ state }, args: { sketchId?: string; id?: string; value?: number }) => {
+      const sketchId = args?.sketchId ?? state().activeSketchId;
+      if (!sketchId) throw new CommandError('INVALID_ARGUMENT', 'No sketch: open one or give sketchId');
+      const list = (state().sketchConstraints[sketchId] ?? []) as Array<SketchConstraint & { diameter?: boolean }>;
+      const c = list.find(x => x.id === args?.id && x.type === 'dimension');
+      if (!c) throw new CommandError('INVALID_ARGUMENT', `No dimension ${JSON.stringify(args?.id)} in the sketch`);
+      const value = args?.value;
+      if (typeof value !== 'number' || !(value > 0)) throw new CommandError('INVALID_ARGUMENT', 'value must be a number above 0');
+      const next = list.map(x => (x.id === c.id ? { ...x, value: x.diameter ? value / 2 : value } : x));
+      const error = state().applySketchConstraints(sketchId, next, `Dimension ${+value.toFixed(4)} mm`);
+      if (error) throw new CommandError('FAILED', error);
+    },
+  },
+  {
+    id: 'sketch.removeConstraint', label: 'Delete a sketch relation / dimension', category: 'Sketch',
+    description: 'args: { sketchId?, id }',
+    run: ({ state }, args: { sketchId?: string; id?: string }) => {
+      const sketchId = args?.sketchId ?? state().activeSketchId;
+      if (!sketchId) throw new CommandError('INVALID_ARGUMENT', 'No sketch: open one or give sketchId');
+      const list = (state().sketchConstraints[sketchId] ?? []) as SketchConstraint[];
+      if (!list.some(x => x.id === args?.id)) throw new CommandError('INVALID_ARGUMENT', `No relation or dimension ${JSON.stringify(args?.id)}`);
+      const error = state().applySketchConstraints(sketchId, list.filter(x => x.id !== args!.id), 'Removed');
+      if (error) throw new CommandError('FAILED', error);
+    },
+  },
   { id: 'sketch.toggleConstruction', label: 'Construction geometry', category: 'Sketch', record: false, run: ({ state }) => state().toggleConstructionMode() },
 
   // ------------------------------------------------------------------ view

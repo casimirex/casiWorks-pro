@@ -15,6 +15,9 @@ import type { AssemblyComponent } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
 import { effectiveVariables, evaluateLinks, evaluateVariables } from '../features/equations.ts';
 import type { MeasurePick } from '../kernel/measure.ts';
+import { liveConstraints, solveSketch } from '../kernel/sketchSolve.ts';
+import type { RelationKind } from '../kernel/sketchSolve.ts';
+import type { SketchConstraint } from '../kernel/ConstraintSolver.ts';
 import type { FeaProbe } from '../simulation/resultPlot.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import type {
@@ -146,6 +149,8 @@ export interface CADState {
   sketchPolygonSides: number;
   /** Distance (mm) the sketch Offset tool uses. */
   sketchOffsetDistance: number;
+  /** The relation the sketch Relation tool adds. */
+  sketchRelationKind: RelationKind;
   /** The document as it was when the current sketch session began (for discard and undo). */
   sketchSession: DocumentSnapshot | null;
   /** The plane of the sketch being edited: a standard plane or any plane frame. */
@@ -200,6 +205,8 @@ export interface CADState {
   explodedView: ExplodedViewSettings | null;
   /** FEA result probes (values at picked mesh nodes); shown while the result plot is. Not saved. */
   feaProbes: FeaProbe[];
+  /** The active sketch's solve state: fully / under / over defined, for the status bar and colours. */
+  sketchSolveState: { state: 'fully' | 'under' | 'over' | 'failed'; message: string; dof: number } | null;
   /** Points picked with the Measure tool (at most two; a third click starts again). Not saved. */
   measurePicks: MeasurePick[];
   /** Global variables (equations), saved with the project. */
@@ -247,8 +254,14 @@ export interface CADActions {
   endSketch(confirm?: boolean): void;
   addSketchEntity(entity: SketchEntity): void;
   removeSketchEntity(entityId: string): void;
-  addSketchConstraint(constraint: Record<string, unknown>): void;
-  addSketchDimension(dimension: Record<string, unknown>): void;
+  /**
+   * Set a sketch's relations and dimensions and solve it. Nothing changes when they
+   * cannot all be met; the reason is returned (null on success). The active sketch's
+   * changes belong to its session (Discard undoes them); other sketches get an undo step.
+   */
+  applySketchConstraints(sketchId: string, constraints: SketchConstraint[], label?: string): string | null;
+  /** Re-solve the active sketch and refresh sketchSolveState (e.g. after drawing). */
+  refreshSketchSolve(): void;
   createSketchFeature(spec: { id: string; sketchId: string; plane?: SketchPlane; frame?: PlaneFrame; planeRef?: string; entities?: SketchEntity[]; name?: string }): void;
   /** Replace a sketch's geometry (one undoable step). */
   setSketchEntities(sketchId: string, entities: SketchEntity[]): void;
@@ -261,6 +274,7 @@ export interface CADActions {
   setFeaSetupMarkers(setup: StudySetup | null): void;
   setSketchPolygonSides(sides: number): void;
   setSketchOffsetDistance(distance: number): void;
+  setSketchRelationKind(kind: RelationKind): void;
   /** Replace the geometry of the sketch being edited (trim, extend, offset, mirror); part of the sketch session. */
   replaceActiveSketchEntities(entities: SketchEntity[], message?: string): void;
   setMaterial(materialKey: string): void;
@@ -488,6 +502,7 @@ function initialState(): CADState {
     activeSketchId: null,
     sketchPolygonSides: 6,
     sketchOffsetDistance: 5,
+    sketchRelationKind: 'horizontal',
     sketchSession: null,
     activeSketchPlane: 'Front',
     activeSketchPlaneRef: null,
@@ -523,6 +538,7 @@ function initialState(): CADState {
     mates: [],
     explodedView: null,
     measurePicks: [],
+    sketchSolveState: null,
     feaProbes: [],
     variables: [],
     configurations: [],
@@ -760,6 +776,7 @@ export const useCADStore = create<CADStore>()(
 
       state.isSketchActive = false;
       state.activeSketchId = null;
+      state.sketchSolveState = null;
       state.constructionMode = false;
       state.activeTool = TOOLS.SELECT;
       state.activeCommandTab = 'Features';
@@ -784,17 +801,42 @@ export const useCADStore = create<CADStore>()(
       state.sketchEntities[sketchId] = state.sketchEntities[sketchId].filter(e => e.id !== entityId);
     }),
 
-    addSketchConstraint: (constraint) => set(state => {
-      const sketchId = state.activeSketchId;
-      if (!sketchId) return;
-      (state.sketchConstraints[sketchId] ??= []).push({ id: generateId('const'), ...constraint });
-    }),
+    applySketchConstraints: (sketchId, constraints, label) => {
+      const st = get();
+      const entities = (st.sketchEntities[sketchId] ?? []) as SketchEntity[];
+      const live = liveConstraints(entities, constraints);
+      const solved = solveSketch(entities, live);
+      if (!solved.ok) return solved.message;
+      // A relation or dimension the others already imply would only make the sketch over defined
+      if (solved.state === 'over' && solveSketch(entities, (st.sketchConstraints[sketchId] ?? []) as SketchConstraint[]).state !== 'over') {
+        return `It is already fixed by the other relations and dimensions${solved.result.redundant ? ` (${solved.result.redundant.message})` : ''}`;
+      }
+      const active = st.activeSketchId === sketchId;
+      set(state => {
+        if (!active) get()._captureUndoSnapshot(state, label ?? 'Edit Sketch Relations');
+        state.sketchEntities[sketchId] = solved.entities as Draft<SketchEntity>[];
+        state.sketchConstraints[sketchId] = safeDeepClone(live) as Draft<unknown>[];
+        state.isModified = true;
+        if (active) state.sketchSolveState = { state: solved.state, message: solved.message, dof: solved.result.dof };
+        else state.needsRebuild = true;
+        state.statusMessage = label ? `${label}: ${solved.message}` : solved.message;
+      });
+      return null;
+    },
 
-    addSketchDimension: (dimension) => set(state => {
-      const sketchId = state.activeSketchId;
-      if (!sketchId) return;
-      (state.sketchDimensions[sketchId] ??= []).push({ id: generateId('dim'), ...dimension });
-    }),
+    refreshSketchSolve: () => {
+      const st = get();
+      const sketchId = st.activeSketchId;
+      if (!sketchId) { set(state => { state.sketchSolveState = null; }); return; }
+      const entities = (st.sketchEntities[sketchId] ?? []) as SketchEntity[];
+      const constraints = liveConstraints(entities, (st.sketchConstraints[sketchId] ?? []) as SketchConstraint[]);
+      const solved = solveSketch(entities, constraints);
+      set(state => {
+        // Drop relations whose entities were deleted or trimmed away
+        state.sketchConstraints[sketchId] = safeDeepClone(constraints) as Draft<unknown>[];
+        state.sketchSolveState = { state: solved.state, message: solved.message, dof: solved.result.dof };
+      });
+    },
 
     setSketchEntities: (sketchId, entities) => set(state => {
       if (!state.features.some(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId)) return;
@@ -851,6 +893,10 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== MODEL, MATERIAL, VIEW ====================
+    setSketchRelationKind: (kind) => set(state => {
+      state.sketchRelationKind = kind;
+    }),
+
     setSketchOffsetDistance: (distance) => set(state => {
       state.sketchOffsetDistance = distance;
     }),
