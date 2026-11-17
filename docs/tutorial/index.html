@@ -342,7 +342,7 @@ npm run dev</pre></div>
   <div class="chapter-head"><span class="badge novice">Novice</span><span class="meta">Chapter 3 · about 15 min</span></div>
   <h2 class="title">Your first part: sketch and extrude</h2>
   <p class="lead">Almost every CAD part starts the same way. You draw a flat 2D profile (a <b>sketch</b>) on a plane, then give it thickness (an <b>extrude</b>).</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li><li>Edit a sketch with Trim, Extend, Offset and Mirror</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Start a sketch on a reference plane</li><li>Draw rectangles and circles with the mouse</li><li>Turn a sketch into a solid with Extrude, and see how inner loops become holes</li><li>Edit a sketch with Trim, Extend, Offset and Mirror</li><li>Sketch on a face of the part or on a reference plane</li></ul></div>
 
   <div class="example">
     <div class="example-head"><span class="tag">Example 3.1</span><h4>A spacer block with a through hole</h4><div class="specs"><span>Front plane</span><span>Depth 20 mm</span><span>1 sketch · 1 extrude</span></div></div>
@@ -409,6 +409,25 @@ npm run dev</pre></div>
       <figure class="shot"><img loading="lazy" src="img/10d-keyhole-part.webp" alt="Extruded keyhole part"><figcaption>The extruded keyhole.</figcaption></figure>
     </div>
   </div>
+  <h3>Sketching on faces and reference planes</h3>
+  <p>A sketch does not have to sit on Front, Top or Right. <b>On Face</b> on the Sketch tab starts a sketch on any flat face of the part. A <b>reference plane</b> (Features ▸ <b>Plane</b>) is a standard plane moved along its normal and tilted. You can sketch on it from the <b>On Plane…</b> picker.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 3.3</span><h4>A boss on a face, and a tilted plane</h4><div class="specs"><span>On Face</span><span>Plane1: Top + 40 mm, 20°</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Make a 60 × 40 block, 15 mm deep. Press <kbd>Ctrl</kbd>+<kbd>1</kbd> to look at its front face.</li>
+        <li>On the <b>Sketch</b> tab click <b>On Face</b>, then click the front face. A sketch starts on that face, and the view turns to look straight at it.</li>
+        <li>Draw a circle in the middle, confirm the sketch and <b>Extrude</b> it 10 mm. The boss grows out of the face.</li>
+        <li>On the <b>Features</b> tab click <b>Plane</b>. Choose <b>From plane</b> <i>Top</i>, <b>Offset</b> <code>40</code> and <b>Tilt</b> <code>20</code>°, then <b>OK</b>. <i>Plane1</i> appears in the tree and as a yellow square in the model.</li>
+        <li>On the Sketch tab pick <i>Plane1</i> in <b>On Plane…</b> to sketch on it. Sketches on a plane follow it: change its offset or tilt later and they move with it. You can drive the offset with an equation (chapter 7).</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/10e-sketch-on-face.webp" alt="Boss on the front face and a tilted reference plane"><figcaption>A boss extruded from the front face, and Plane1 above the part.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/10f-reference-plane.webp" alt="Reference plane panel"><figcaption>The reference plane panel: base plane, offset and tilt.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Faces keep their plane</b><p>A sketch on a face remembers the plane the face was on. If you change the part later so that the face moves, the sketch stays where it was. Use a reference plane when the sketch should follow a size.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Offset instead of Shell</b><p>To make a frame or a tube, draw the outer outline and <b>Offset</b> it inwards by the wall thickness. The inner loop becomes a hole when you extrude.</p></div></div>
   <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Your tree should read <i>Sketch1</i>, <i>Extrude Boss</i>. If the extrude shows ⚠, the profile is probably not closed. Double-click the sketch in the tree, make sure the corners meet, and exit the sketch again.</p></div></div>
   <div class="callout tip"><span class="ic">💡</span><div><b class="label">Tip</b><p><kbd>Esc</kbd> cancels the current tool without leaving the sketch. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last entity.</p></div></div>
@@ -845,7 +864,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.8</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.9</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -886,8 +905,8 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
   <div class="table-wrap"><table>
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
-    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
-    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
+    <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
+    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>
@@ -1015,6 +1034,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td>Sketch</td><td>A 2D drawing on a plane that features are built from.</td></tr>
     <tr><td>Profile</td><td>A closed loop in a sketch. Loops inside other loops become holes.</td></tr>
     <tr><td>Configuration</td><td>A named version of a part that changes some variable values (Tools ▸ Configs). Default is the plain values.</td></tr>
+    <tr><td>Reference plane</td><td>A plane you make: a standard plane moved and tilted (Features ▸ Plane). Sketches on it follow it.</td></tr>
     <tr><td>Global variable</td><td>A named value, such as <code>wall = 4</code>, that feature sizes can use in expressions (Tools ▸ Equations).</td></tr>
     <tr><td>Feature</td><td>One modelling step, such as an extrude, cut, revolve, hole or pattern.</td></tr>
     <tr><td>Parametric</td><td>Features keep their settings, so changing one rebuilds everything after it.</td></tr>

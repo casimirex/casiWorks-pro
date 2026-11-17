@@ -24,6 +24,19 @@ export type SketchPoint = Point2 & { z?: number };
 /** Standard sketch planes. */
 export type SketchPlane = 'Front' | 'Top' | 'Right';
 
+/**
+ * Any sketch plane: its origin, its sketch X direction and its normal (model
+ * space, mm). Sketch Y is normal × X, so the frame is right-handed.
+ */
+export interface PlaneFrame {
+  origin: Point3;
+  xAxis: Point3;
+  normal: Point3;
+}
+
+/** A standard plane by name, or any plane by its frame. */
+export type SketchPlaneRef = SketchPlane | PlaneFrame;
+
 // ---------------------------------------------------------------- sketch entities
 interface SketchEntityBase {
   id: string;
@@ -97,7 +110,12 @@ interface FeatureBase {
 export interface SketchFeature extends FeatureBase {
   type: 'sketch';
   sketchId: string;
+  /** The standard plane, or 'Front' when the sketch lies on a reference plane or a face. */
   plane: SketchPlane;
+  /** The sketch lies on this reference plane feature (it follows the plane when it changes). */
+  planeRef?: string;
+  /** The sketch lies on this plane (a face it was started on). */
+  frame?: PlaneFrame;
 }
 
 export interface ExtrudeFeature extends FeatureBase {
@@ -199,6 +217,10 @@ export interface BooleanFeature extends FeatureBase {
 
 export interface ReferenceFeature extends FeatureBase {
   type: 'reference_plane' | 'reference_axis';
+  /** Reference plane: offset `offset` mm along the normal of `base`, then tilted `angle`° about its X axis. */
+  base?: SketchPlane;
+  offset?: number;
+  angle?: number;
 }
 
 /** A feature as authored or saved (dependency links may be missing). */

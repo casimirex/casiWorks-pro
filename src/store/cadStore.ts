@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { Draft } from 'immer';
 import * as THREE from 'three';
-import { generateId } from '../utils/math.ts';
+import { generateId, referencePlaneFrame } from '../utils/math.ts';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES, MATERIALS } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
@@ -26,6 +26,10 @@ import type {
   SketchEntity,
   SketchEntityMap,
   SketchPlane,
+  SketchPlaneRef,
+  PlaneFrame,
+  SketchFeature,
+  ReferenceFeature,
 } from '../types/cad.ts';
 import type { Body, RebuildState } from '../features/rebuildModel.ts';
 import type { ApiStoreState } from '../api/CasiWorksAPI.ts';
@@ -144,7 +148,12 @@ export interface CADState {
   sketchOffsetDistance: number;
   /** The document as it was when the current sketch session began (for discard and undo). */
   sketchSession: DocumentSnapshot | null;
-  activeSketchPlane: SketchPlane;
+  /** The plane of the sketch being edited: a standard plane or any plane frame. */
+  activeSketchPlane: SketchPlaneRef;
+  /** The reference plane feature the active sketch lies on, if any. */
+  activeSketchPlaneRef: string | null;
+  /** Set when the view looks straight at a plane that is not a standard one (sketch on a face or reference plane). */
+  viewFrame: PlaneFrame | null;
   sketchEntities: SketchEntityMap;
   sketchConstraints: Record<string, unknown[]>;
   sketchDimensions: Record<string, unknown[]>;
@@ -233,13 +242,14 @@ export interface CADActions {
   setActiveFeature(index: number): void;
 
   // Sketches
-  startSketch(plane?: SketchPlane): void;
+  /** Start a sketch on a standard plane, a plane frame (e.g. a face), or a reference plane feature (`planeRef`). */
+  startSketch(plane?: SketchPlaneRef, planeRef?: string | null): void;
   endSketch(confirm?: boolean): void;
   addSketchEntity(entity: SketchEntity): void;
   removeSketchEntity(entityId: string): void;
   addSketchConstraint(constraint: Record<string, unknown>): void;
   addSketchDimension(dimension: Record<string, unknown>): void;
-  createSketchFeature(spec: { id: string; sketchId: string; plane?: SketchPlane; entities?: SketchEntity[]; name?: string }): void;
+  createSketchFeature(spec: { id: string; sketchId: string; plane?: SketchPlane; frame?: PlaneFrame; planeRef?: string; entities?: SketchEntity[]; name?: string }): void;
   /** Replace a sketch's geometry (one undoable step). */
   setSketchEntities(sketchId: string, entities: SketchEntity[]): void;
   toggleConstructionMode(): void;
@@ -414,6 +424,17 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
   state.needsRebuild = true;
 }
 
+/** Point the camera straight at a sketch plane (standard views for standard planes). */
+function lookAtSketchPlane(state: Draft<CADStore>, plane: SketchPlaneRef): void {
+  if (typeof plane === 'string') {
+    state.viewFrame = null;
+    state.viewOrientation = plane === 'Top' ? 'top' : plane === 'Right' ? 'right' : 'front';
+  } else {
+    state.viewFrame = safeDeepClone(plane) as Draft<PlaneFrame>;
+  }
+  state.viewRequest += 1;
+}
+
 /**
  * Write the values of equation-driven parameters into their features.
  * Links that do not evaluate keep the last good number (the Equations dialog shows why).
@@ -469,6 +490,8 @@ function initialState(): CADState {
     sketchOffsetDistance: 5,
     sketchSession: null,
     activeSketchPlane: 'Front',
+    activeSketchPlaneRef: null,
+    viewFrame: null,
     sketchEntities: {},
     sketchConstraints: {},
     sketchDimensions: {},
@@ -671,21 +694,22 @@ export const useCADStore = create<CADStore>()(
     }),
 
     // ==================== SKETCHES ====================
-    startSketch: (plane = 'Front') => set(state => {
+    startSketch: (plane = 'Front', planeRef = null) => set(state => {
       state.sketchSession = snapshotOf(state) as Draft<DocumentSnapshot>;
       const sketchId = generateId('sketch');
       state.isSketchActive = true;
       state.activeSketchId = sketchId;
-      state.activeSketchPlane = plane;
+      state.activeSketchPlane = plane as Draft<SketchPlaneRef>;
+      state.activeSketchPlaneRef = planeRef;
       state.sketchEntities[sketchId] = [];
       state.sketchConstraints[sketchId] = [];
       state.sketchDimensions[sketchId] = [];
       state.activeTool = TOOLS.SKETCH_LINE;
       state.activeCommandTab = 'Sketch';
       // Look straight at the sketch plane, as CAD systems do
-      state.viewOrientation = plane === 'Top' ? 'top' : plane === 'Right' ? 'right' : 'front';
-      state.viewRequest += 1;
-      state.statusMessage = `Sketching on ${plane} plane (Select tools or draw)`;
+      lookAtSketchPlane(state, plane);
+      const refName = planeRef ? state.features.find(f => f.id === planeRef)?.name : null;
+      state.statusMessage = `Sketching on ${refName ?? (typeof plane === 'string' ? `${plane} plane` : 'the picked face')} (Select tools or draw)`;
     }),
 
     endSketch: (confirm = true) => set(state => {
@@ -704,12 +728,21 @@ export const useCADStore = create<CADStore>()(
             type: FEATURE_TYPES.SKETCH,
             name: `Sketch${state.features.filter(f => f.type === FEATURE_TYPES.SKETCH).length + 1}`,
             sketchId,
-            plane: state.activeSketchPlane,
+            // A sketch on a reference plane or a face keeps that plane
+            plane: typeof state.activeSketchPlane === 'string' ? state.activeSketchPlane : 'Front',
+            ...(state.activeSketchPlaneRef
+              ? { planeRef: state.activeSketchPlaneRef }
+              : typeof state.activeSketchPlane === 'string' ? {} : { frame: safeDeepClone(state.activeSketchPlane as PlaneFrame) }),
             visible: true,
             suppressed: false,
-            parentIds: [],
+            parentIds: state.activeSketchPlaneRef ? [state.activeSketchPlaneRef] : [],
             childIds: [],
           });
+          if (state.activeSketchPlaneRef) {
+            const ref = state.features.find(f => f.id === state.activeSketchPlaneRef);
+            const created = state.features.find(f => f.type === FEATURE_TYPES.SKETCH && f.sketchId === sketchId);
+            if (ref && created && !ref.childIds.includes(created.id)) ref.childIds.push(created.id);
+          }
         }
       } else if (!confirm) {
         if (exists && session) {
@@ -770,7 +803,7 @@ export const useCADStore = create<CADStore>()(
       state.needsRebuild = true;
     }),
 
-    createSketchFeature: ({ id, sketchId, plane = 'Front', entities = [], name }) => set(state => {
+    createSketchFeature: ({ id, sketchId, plane = 'Front', frame, planeRef, entities = [], name }) => set(state => {
       get()._captureUndoSnapshot(state, `Create ${name || 'Sketch'}`);
       state.sketchEntities[sketchId] = entities as Draft<SketchEntity>[];
       state.sketchConstraints[sketchId] ??= [];
@@ -782,11 +815,16 @@ export const useCADStore = create<CADStore>()(
         name: featureName,
         sketchId,
         plane,
+        ...(planeRef ? { planeRef } : frame ? { frame: safeDeepClone(frame) } : {}),
         visible: true,
         suppressed: false,
-        parentIds: [],
+        parentIds: planeRef ? [planeRef] : [],
         childIds: [],
       });
+      if (planeRef) {
+        const ref = state.features.find(f => f.id === planeRef);
+        if (ref && !ref.childIds.includes(id)) ref.childIds.push(id);
+      }
       state.needsRebuild = true;
       state.statusMessage = `Created ${featureName}`;
     }),
@@ -801,7 +839,13 @@ export const useCADStore = create<CADStore>()(
       state.sketchSession = snapshotOf(state) as Draft<DocumentSnapshot>;
       state.isSketchActive = true;
       state.activeSketchId = feature.sketchId;
-      state.activeSketchPlane = feature.plane || 'Front';
+      const sk = feature as SketchFeature;
+      state.activeSketchPlaneRef = sk.planeRef ?? null;
+      const refPlane = sk.planeRef ? state.features.find(f => f.id === sk.planeRef) as ReferenceFeature | undefined : undefined;
+      state.activeSketchPlane = (refPlane
+        ? referencePlaneFrame(refPlane.base ?? 'Front', refPlane.offset ?? 0, refPlane.angle ?? 0)
+        : sk.frame ?? (feature.plane || 'Front')) as Draft<SketchPlaneRef>;
+      lookAtSketchPlane(state, state.activeSketchPlane as SketchPlaneRef);
       state.activeCommandTab = 'Sketch';
       state.statusMessage = `Editing ${feature.name}`;
     }),
@@ -842,6 +886,7 @@ export const useCADStore = create<CADStore>()(
 
     setViewOrientation: (orientation) => set(state => {
       state.viewOrientation = orientation;
+      state.viewFrame = null;
       state.viewRequest += 1;
     }),
 

@@ -74,6 +74,8 @@ interface PanelContentFields {
   axisY?: number;
   axisZ?: number;
   plane?: SketchPlane;
+  base?: SketchPlane;
+  offset?: number;
 }
 
 export default function PropertyPanel() {
@@ -122,6 +124,10 @@ export default function PropertyPanel() {
   const [cbDepth, setCbDepth] = useState(5);
   const [csDiameter, setCsDiameter] = useState(16);
   const [csAngle, setCsAngle] = useState(90);
+  // Reference plane: a standard plane, moved along its normal and tilted about its X axis
+  const [refBase, setRefBase] = useState<SketchPlane>('Front');
+  const [refOffset, setRefOffset] = useState(20);
+  const [refAngle, setRefAngle] = useState(0);
   const [holePosition, setHolePosition] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const [holeAxis, setHoleAxis] = useState<AxisName>('+Z');
   const [count, setCount] = useState(3);
@@ -203,6 +209,11 @@ export default function PropertyPanel() {
       if (c.type === FEATURE_TYPES.LINEAR_PATTERN) setPatternDirection(nearestAxis({ x: c.directionX, y: c.directionY, z: c.directionZ }, '+X'));
       if (c.type === FEATURE_TYPES.CIRCULAR_PATTERN) setPatternAxis(nearestAxis({ x: c.axisX, y: c.axisY, z: c.axisZ }, '+Y'));
       if (c.type === FEATURE_TYPES.MIRROR && c.plane) setMirrorPlane(c.plane);
+      if (c.type === FEATURE_TYPES.REFERENCE_PLANE) {
+        setRefBase(c.base ?? 'Front');
+        setRefOffset(c.offset ?? 20);
+        setRefAngle(c.angle ?? 0);
+      }
     }
   }, [propertyPanelContent]);
 
@@ -254,6 +265,8 @@ export default function PropertyPanel() {
         return { count, angle, axisX: ax, axisY: ay, axisZ: az };
       case FEATURE_TYPES.MIRROR:
         return { plane: mirrorPlane };
+      case FEATURE_TYPES.REFERENCE_PLANE:
+        return { base: refBase, offset: refOffset, angle: refAngle };
       default:
         return {};
     }
@@ -292,6 +305,7 @@ export default function PropertyPanel() {
         type: featureType,
         name: propertyPanelContent.name
           || (featureType === FEATURE_TYPES.HOLE && holeSize ? standardHole(holeType, holeSize, holeFit).label : '')
+          || (featureType === FEATURE_TYPES.REFERENCE_PLANE ? `Plane${useCADStore.getState().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_PLANE).length + 1}` : '')
           || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
         ...params,
         ...(isEdit || Object.keys(links).length ? { expressions: links } : {}),
@@ -705,6 +719,31 @@ export default function PropertyPanel() {
               <div className="property-row">
                 <span className="property-label">Total Angle:</span>
                 <NumericInput value={angle} onChange={setAngle} min={1} max={360} step={15} unit="°" {...linkable('angle')} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {featureType === FEATURE_TYPES.REFERENCE_PLANE && (
+          <div className="property-card">
+            <div className="property-card-header">Reference Plane</div>
+            <div className="property-card-body">
+              <div className="property-row">
+                <span className="property-label">From plane:</span>
+                <select className="property-select ref-base" style={{ width: 110 }} value={refBase} onChange={(e) => setRefBase(e.target.value as SketchPlane)}>
+                  {(['Front', 'Top', 'Right'] as const).map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Offset:</span>
+                <NumericInput value={refOffset} onChange={setRefOffset} min={-5000} max={5000} step={5} unit="mm" {...linkable('offset')} />
+              </div>
+              <div className="property-row">
+                <span className="property-label">Tilt (about its X):</span>
+                <NumericInput value={refAngle} onChange={setRefAngle} min={-89} max={89} step={5} unit="°" {...linkable('angle')} />
+              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                Sketch on it from the Sketch tab. Sketches on it move with it when you change the offset or tilt.
               </div>
             </div>
           </div>

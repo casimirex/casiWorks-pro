@@ -1279,3 +1279,12 @@ input:checked + .slider:before {
   font-variant-numeric: tabular-nums;
 }
 .fea-probe-label b { color: #fde047; margin-right: 2px; }
+
+.plane-label {
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 3px #000;
+}

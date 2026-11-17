@@ -8,8 +8,8 @@ import * as THREE from 'three';
 import { useCADStore } from '../store/cadStore.ts';
 import { TOOLS, VIEW_ORIENTATIONS } from '../utils/constants.ts';
 import type { ToolId } from '../utils/constants.ts';
-import type { Point2, SketchEntity, SketchEntityMap } from '../types/cad.ts';
-import { sketchToWorld } from '../utils/math.ts';
+import type { PlaneFrame, Point2, ReferenceFeature, SketchEntity, SketchEntityMap, SketchPlaneRef } from '../types/cad.ts';
+import { getSketchPlaneMatrix, isPlaneFrame, referencePlaneFrame, sketchToWorld } from '../utils/math.ts';
 import { entityPolyline } from '../kernel/profile.ts';
 import type { ProfileEntity } from '../kernel/profile.ts';
 import { viewportPicker } from './ViewportPicker.ts';
@@ -39,7 +39,30 @@ declare module '@react-three/fiber' {
 /**
  * Standard reference planes (Front, Top, Right)
  */
-function ReferencePlanes({ showPlanes, activePlane }: { showPlanes: boolean; activePlane: string }) {
+/** A square of a plane frame (reference planes, the plane of a sketch on a face). */
+function FramePlane({ frame, size, color, opacity, label }: { frame: PlaneFrame; size: number; color: string; opacity: number; label?: string }) {
+  const matrix = useMemo(() => getSketchPlaneMatrix(frame), [frame]);
+  return (
+    <group matrixAutoUpdate={false} matrix={matrix}>
+      <mesh>
+        <planeGeometry args={[size, size]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      <lineSegments>
+        <edgesGeometry args={[new THREE.PlaneGeometry(size, size)]} />
+        <lineBasicMaterial color={color} />
+      </lineSegments>
+      {label && (
+        <Html position={[-size / 2, size / 2, 0]} zIndexRange={[10, 0]}>
+          <div className="plane-label">{label}</div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+function ReferencePlanes({ showPlanes, activePlane: active }: { showPlanes: boolean; activePlane: SketchPlaneRef }) {
+  const activePlane = typeof active === 'string' ? active : '';
   if (!showPlanes) return null;
 
   const planeSize = 80;
@@ -408,7 +431,7 @@ function ProjectionSwitch({ perspective }: { perspective: boolean }) {
 
 interface ActiveSketchOverlayProps {
   activeSketchId: string | null;
-  activeSketchPlane: string;
+  activeSketchPlane: SketchPlaneRef;
   sketchEntities: SketchEntityMap;
   currentPoints: Point2[];
   /** Geometry the next click would create (drawn in the preview colour). */
@@ -648,6 +671,15 @@ export default function Viewport3D() {
   const showOrigin = useCADStore(s => s.showOrigin);
   const showAxes = useCADStore(s => s.showAxes);
   const showPlanes = useCADStore(s => s.showPlanes);
+  const viewFrame = useCADStore(s => s.viewFrame);
+  const features = useCADStore(s => s.features);
+  const referencePlanes = useMemo(() => features.filter(f => f.type === 'reference_plane' && !f.suppressed).map(f => {
+    const r = f as ReferenceFeature;
+    return { id: f.id, name: f.name, frame: referencePlaneFrame(r.base ?? 'Front', r.offset ?? 0, r.angle ?? 0) };
+  }), [features]);
+  const startSketchOnFace = useCallback((pick: MeasurePick) => {
+    if (pick.normal) runCommand('sketch.onFace', { point: pick.point, normal: pick.normal });
+  }, []);
   const shadedMode = useCADStore(s => s.shadedMode);
   const edgeDisplay = useCADStore(s => s.edgeDisplay);
   const wireframeMode = useCADStore(s => s.wireframeMode);
@@ -679,8 +711,21 @@ export default function Viewport3D() {
   // Aim the camera on every view request (also when the same view is asked for again)
   useEffect(() => {
     if (!controlsRef.current) return;
-    const info = VIEW_ORIENTATIONS[viewOrientation] || VIEW_ORIENTATIONS.isometric;
     const camera = controlsRef.current.object;
+    if (camera && viewFrame) {
+      // Straight at a plane that is not a standard one, sketch Y up, centred on its origin
+      const m = getSketchPlaneMatrix(viewFrame);
+      const o = new THREE.Vector3().applyMatrix4(m);
+      const n = new THREE.Vector3(0, 0, 1).transformDirection(m);
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(m);
+      camera.position.copy(o).addScaledVector(n, 200);
+      camera.up.copy(up);
+      camera.lookAt(o);
+      controlsRef.current.target.copy(o);
+      controlsRef.current.update();
+      return;
+    }
+    const info = VIEW_ORIENTATIONS[viewOrientation] || VIEW_ORIENTATIONS.isometric;
     if (camera && info) {
       camera.position.set(...(info.position as [number, number, number]));
       camera.up.set(...(info.up as [number, number, number]));
@@ -688,7 +733,7 @@ export default function Viewport3D() {
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
     }
-  }, [viewOrientation, viewRequest]);
+  }, [viewOrientation, viewRequest, viewFrame]);
 
   // Sketch drawing logic
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
@@ -786,6 +831,12 @@ export default function Viewport3D() {
 
         <OriginDisplay showOrigin={showOrigin} showAxes={showAxes} />
         <ReferencePlanes showPlanes={showPlanes} activePlane={activeSketchPlane} />
+        {showPlanes && referencePlanes.map(rp => (
+          <FramePlane key={rp.id} frame={rp.frame} size={70} color="#fbbf24" opacity={0.07} label={rp.name} />
+        ))}
+        {isSketchActive && isPlaneFrame(activeSketchPlane) && (
+          <FramePlane frame={activeSketchPlane} size={90} color="#ff9800" opacity={0.18} />
+        )}
 
         {/* FEA result plot replaces the bodies while it is shown */}
         {feaPlot && (
@@ -823,7 +874,7 @@ export default function Viewport3D() {
             wireframeMode={wireframeMode}
             edgeDisplay={edgeDisplay}
             materialKey={activeMaterial}
-            onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : undefined}
+            onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : activeTool === TOOLS.SKETCH_ON_FACE ? startSketchOnFace : undefined}
           />
         ))}
 
@@ -839,7 +890,7 @@ export default function Viewport3D() {
               wireframeMode={wireframeMode}
               edgeDisplay={edgeDisplay}
               materialKey={comp.material ?? activeMaterial}
-              onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : undefined}
+              onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : activeTool === TOOLS.SKETCH_ON_FACE ? startSketchOnFace : undefined}
             />
           </group>
         ))}

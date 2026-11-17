@@ -49,9 +49,10 @@ import type {
   RebuildError,
   SketchEntity,
   SketchPlane,
+  PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.8.0';
+export const API_VERSION = '1.9.0';
 
 // =====================================================================
 // Public types
@@ -67,8 +68,11 @@ export type ApiSketchEntity =
   | { type: 'rectangle'; corner1: Point2; corner2: Point2; construction?: boolean };
 
 export interface SketchSpec {
-  /** Default 'Front'. */
-  plane?: SketchPlane;
+  /**
+   * Default 'Front'. Since 1.9 also the id of a reference plane (the sketch follows
+   * it) or any plane frame { origin, xAxis, normal }, e.g. the face of a part.
+   */
+  plane?: SketchPlane | string | PlaneFrame;
   entities: ApiSketchEntity[];
   name?: string;
 }
@@ -220,6 +224,11 @@ export interface FeaturesAPI {
    * @example api.features.hole({ position: { x: 0, y: 0, z: 10 }, axis: { x: 0, y: 0, z: -1 }, depth: 10, type: 'counterbore', standard: { size: 'M8' } })
    */
   hole(spec: HoleSpec): string;
+  /**
+   * Add a reference plane: a standard plane moved `offset` mm along its normal and
+   * tilted `angle`° about its X axis. Sketch on it with sketches.create({ plane: id }). Since 1.9.
+   */
+  referencePlane(spec: { base?: SketchPlane; offset?: number; angle?: number; name?: string }): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
   /** Delete a feature; features that depend on it lose their parent. Throws NOT_FOUND. */
@@ -794,6 +803,27 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     return get().bodies.find(b => b.visible !== false && b.geometry)?.geometry ?? null;
   };
 
+  /** A sketch plane argument: a standard plane, a reference plane id, or a plane frame. */
+  const resolveSketchPlane = (plane: unknown): { plane: SketchPlane; planeRef?: string; frame?: PlaneFrame } => {
+    const value = plane ?? 'Front';
+    if (typeof value === 'string') {
+      if (PLANES.includes(value as SketchPlane)) return { plane: value as SketchPlane };
+      const ref = get().features.find(f => f.id === value && f.type === FEATURE_TYPES.REFERENCE_PLANE);
+      if (ref) return { plane: 'Front', planeRef: ref.id };
+      return fail('INVALID_ARGUMENT', `plane must be ${PLANES.join(', ')}, a reference plane id or { origin, xAxis, normal }`);
+    }
+    const o = requireObject(value, 'plane');
+    const v = (x: unknown, what: string) => {
+      const p = requireObject(x, what);
+      return { x: requireNumber(p.x, `${what}.x`), y: requireNumber(p.y, `${what}.y`), z: requireNumber(p.z, `${what}.z`) };
+    };
+    const frame = { origin: v(o.origin, 'plane.origin'), xAxis: v(o.xAxis, 'plane.xAxis'), normal: v(o.normal, 'plane.normal') };
+    const n = frame.normal, x = frame.xAxis;
+    const cross = Math.hypot(n.y * x.z - n.z * x.y, n.z * x.x - n.x * x.z, n.x * x.y - n.y * x.x);
+    if (Math.hypot(n.x, n.y, n.z) < 1e-9 || cross < 1e-9) fail('INVALID_ARGUMENT', 'plane.normal must be non-zero and plane.xAxis not parallel to it');
+    return { plane: 'Front', frame };
+  };
+
   /** Add a feature through the store and return its id. */
   const addFeature = (spec: FeatureSpec): string => {
     const id = generateId('feat');
@@ -869,12 +899,11 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     ...sketchEdits,
     create(spec: SketchSpec) {
       const s = requireObject(spec, 'spec');
-      const plane = (s.plane ?? 'Front') as SketchPlane;
-      if (!PLANES.includes(plane)) fail('INVALID_ARGUMENT', `plane must be one of ${PLANES.join(', ')}`);
+      const where = resolveSketchPlane(s.plane);
       const entities = toInternalEntities(s.entities);
       const featureId = generateId('feat_sketch');
       const sketchId = generateId('sketch');
-      get().createSketchFeature({ id: featureId, sketchId, plane, entities, name: optionalName(s.name) });
+      get().createSketchFeature({ id: featureId, sketchId, ...where, entities, name: optionalName(s.name) });
       return { featureId, sketchId };
     },
     getEntities(sketchId: string) {
@@ -930,6 +959,16 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     shell(spec: ShellSpec) {
       const s = requireObject(spec, 'spec');
       return addFeature({ type: FEATURE_TYPES.SHELL, name: optionalName(s.name) ?? 'Shell', thickness: requireNumber(s.thickness, 'thickness', { positive: true }) });
+    },
+    referencePlane(spec: { base?: SketchPlane; offset?: number; angle?: number; name?: string }) {
+      const s = requireObject(spec ?? {}, 'spec');
+      const base = (s.base ?? 'Front') as SketchPlane;
+      if (!PLANES.includes(base)) fail('INVALID_ARGUMENT', `base must be one of ${PLANES.join(', ')}`);
+      const offset = s.offset === undefined ? 0 : requireNumber(s.offset, 'offset');
+      const angle = s.angle === undefined ? 0 : requireNumber(s.angle, 'angle');
+      if (Math.abs(angle) >= 90) fail('INVALID_ARGUMENT', 'angle must be between -90 and 90 degrees');
+      const count = get().features.filter(f => f.type === FEATURE_TYPES.REFERENCE_PLANE).length;
+      return addFeature({ type: FEATURE_TYPES.REFERENCE_PLANE, name: optionalName(s.name) ?? `Plane${count + 1}`, base, offset, angle } as unknown as FeatureSpec);
     },
     hole(spec: HoleSpec) {
       const s = requireObject(spec, 'spec');

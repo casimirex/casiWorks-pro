@@ -128,7 +128,7 @@ test('API: document save/load round-trip; invalid input leaves the document unto
 
 test('API: input validation uses stable error codes', () => {
   const { sketch, boss } = makeBlock();
-  // @ts-expect-error the types reject this; the runtime must too
+  // Any string type-checks (reference plane ids are strings); the runtime rejects unknown ones
   throwsCode(() => api.sketches.create({ plane: 'Diagonal', entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: 1 }] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.sketches.create({ entities: [] }), 'INVALID_ARGUMENT');
   throwsCode(() => api.sketches.create({ entities: [{ type: 'circle', center: { x: 0, y: 0 }, radius: -1 }] }), 'INVALID_ARGUMENT');

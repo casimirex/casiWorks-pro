@@ -1,6 +1,6 @@
 // CasiWorks Pro - Math Utilities
 import * as THREE from 'three';
-import type { Point2 } from '../types/cad.ts';
+import type { PlaneFrame, Point2, Point3, SketchPlane, SketchPlaneRef } from '../types/cad.ts';
 
 export const EPSILON = 1e-8;
 
@@ -42,8 +42,23 @@ export function generateId(prefix = 'id'): string {
   return `${prefix}_${Date.now()}_${++_idCounter}`;
 }
 
-/** Rotation that maps sketch-plane XY coordinates into model space. */
-export function getSketchPlaneMatrix(plane: string): THREE.Matrix4 {
+/** True for a plane given by its frame (not a standard plane name). */
+export const isPlaneFrame = (plane: unknown): plane is PlaneFrame =>
+  !!plane && typeof plane === 'object' && 'origin' in plane && 'normal' in plane && 'xAxis' in plane;
+
+/** Matrix of a plane frame: sketch (x, y, z-along-normal) → model space. */
+function frameMatrix(f: PlaneFrame): THREE.Matrix4 {
+  const n = new THREE.Vector3(f.normal.x, f.normal.y, f.normal.z).normalize();
+  // X made exactly perpendicular to the normal, so the basis stays orthonormal
+  const x = new THREE.Vector3(f.xAxis.x, f.xAxis.y, f.xAxis.z);
+  x.addScaledVector(n, -x.dot(n)).normalize();
+  const y = new THREE.Vector3().crossVectors(n, x);
+  return new THREE.Matrix4().makeBasis(x, y, n).setPosition(f.origin.x, f.origin.y, f.origin.z);
+}
+
+/** Rotation (and, for frames, translation) that maps sketch-plane XY coordinates into model space. */
+export function getSketchPlaneMatrix(plane: string | PlaneFrame): THREE.Matrix4 {
+  if (isPlaneFrame(plane)) return frameMatrix(plane);
   const matrix = new THREE.Matrix4();
   switch (plane) {
     case 'XY':
@@ -64,19 +79,62 @@ export function getSketchPlaneMatrix(plane: string): THREE.Matrix4 {
 }
 
 /** World point of a sketch point on a sketch plane (the same mapping the kernel extrudes with). */
-export function sketchToWorld(p: Point2, plane: string): THREE.Vector3 {
+export function sketchToWorld(p: Point2, plane: string | PlaneFrame): THREE.Vector3 {
   return new THREE.Vector3(p.x, p.y, 0).applyMatrix4(getSketchPlaneMatrix(plane));
 }
 
 /** Sketch coordinates of a world point on (or projected onto) a sketch plane. */
-export function worldToSketch(v: THREE.Vector3, plane: string): Point2 {
+export function worldToSketch(v: THREE.Vector3, plane: string | PlaneFrame): Point2 {
   const local = v.clone().applyMatrix4(getSketchPlaneMatrix(plane).invert());
   return { x: local.x, y: local.y };
 }
 
 /** Unit normal of a sketch plane in world space. */
-export function sketchPlaneNormal(plane: string): THREE.Vector3 {
-  return new THREE.Vector3(0, 0, 1).applyMatrix4(getSketchPlaneMatrix(plane));
+export function sketchPlaneNormal(plane: string | PlaneFrame): THREE.Vector3 {
+  return new THREE.Vector3(0, 0, 1).transformDirection(getSketchPlaneMatrix(plane));
+}
+
+/** The frame of any sketch plane (standard planes pass through the origin). */
+export function planeFrameOf(plane: SketchPlaneRef): PlaneFrame {
+  if (isPlaneFrame(plane)) return plane;
+  const m = getSketchPlaneMatrix(plane);
+  const v = (x: number, y: number, z: number): Point3 => { const r = new THREE.Vector3(x, y, z).transformDirection(m); return { x: r.x, y: r.y, z: r.z }; };
+  return { origin: { x: 0, y: 0, z: 0 }, xAxis: v(1, 0, 0), normal: v(0, 0, 1) };
+}
+
+/** A reference plane: `base` moved `offset` mm along its normal, then tilted `angle`° about its own X axis. */
+export function referencePlaneFrame(base: SketchPlane, offset = 0, angle = 0): PlaneFrame {
+  const m = getSketchPlaneMatrix(base)
+    .multiply(new THREE.Matrix4().makeTranslation(0, 0, offset))
+    .multiply(new THREE.Matrix4().makeRotationX(angle * Math.PI / 180));
+  const o = new THREE.Vector3().applyMatrix4(m);
+  const x = new THREE.Vector3(1, 0, 0).transformDirection(m);
+  const n = new THREE.Vector3(0, 0, 1).transformDirection(m);
+  const clean = (v: THREE.Vector3): Point3 => ({ x: +v.x.toFixed(12) + 0, y: +v.y.toFixed(12) + 0, z: +v.z.toFixed(12) + 0 });
+  return { origin: clean(o), xAxis: clean(x), normal: clean(n) };
+}
+
+/**
+ * The plane of a face through `point` with outward `normal`. Its origin is the
+ * model origin projected onto the plane. On a wall the sketch Y is model up; on a
+ * floor or ceiling the sketch X is model X. Front, Top and Right faces therefore
+ * line up exactly with the standard planes.
+ */
+export function faceFrame(point: Point3, normal: Point3): PlaneFrame {
+  const n = new THREE.Vector3(normal.x, normal.y, normal.z).normalize();
+  const d = n.dot(new THREE.Vector3(point.x, point.y, point.z));
+  const o = n.clone().multiplyScalar(d);
+  let x: THREE.Vector3;
+  if (Math.abs(n.y) < 0.9) {
+    // A wall: sketch Y is model up, so the sketch is upright from any side
+    const up = new THREE.Vector3(0, 1, 0).addScaledVector(n, -n.y).normalize();
+    x = new THREE.Vector3().crossVectors(up, n).normalize();
+  } else {
+    // A floor or ceiling: sketch X is model X, like the Top plane
+    x = new THREE.Vector3(1, 0, 0).addScaledVector(n, -n.x).normalize();
+  }
+  const clean = (v: THREE.Vector3): Point3 => ({ x: +v.x.toFixed(9) + 0, y: +v.y.toFixed(9) + 0, z: +v.z.toFixed(9) + 0 });
+  return { origin: clean(o), xAxis: clean(x), normal: clean(n) };
 }
 
 /** Unit vector of `v`; `fallback` (cloned) when `v` is missing, non-finite or ~zero length. */

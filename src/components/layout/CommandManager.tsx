@@ -24,6 +24,8 @@ export default function CommandManager() {
   const activeTool = useCADStore(s => s.activeTool);
   const polygonSides = useCADStore(s => s.sketchPolygonSides);
   const offsetDistance = useCADStore(s => s.sketchOffsetDistance);
+  const features = useCADStore(s => s.features);
+  const referencePlanes = features.filter(f => f.type === 'reference_plane' && !f.suppressed);
   const exploded = useCADStore(s => s.explodedView !== null);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const constructionMode = useCADStore(s => s.constructionMode);
@@ -321,6 +323,15 @@ export default function CommandManager() {
                 </div>
                 <div className="tool-group-label">PATTERN</div>
               </div>
+              <div className="tool-group">
+                <div className="tool-group-buttons">
+                  <button className="ribbon-btn" onClick={() => runCommand('feature.referencePlane')} title="Reference Plane: offset and tilt a standard plane, then sketch on it">
+                    <Layers size={19} color="#fbbf24" />
+                    <span>Plane</span>
+                  </button>
+                </div>
+                <div className="tool-group-label">REFERENCE</div>
+              </div>
             </>
           )}
 
@@ -330,17 +341,42 @@ export default function CommandManager() {
               <div className="tool-group">
                 <div className="tool-group-buttons">
                   {!isSketchActive ? (
-                    (['Front', 'Top', 'Right'] as const).map(plane => (
+                    <>
+                      {(['Front', 'Top', 'Right'] as const).map(plane => (
+                        <button
+                          key={plane}
+                          className="ribbon-btn primary-action-btn"
+                          onClick={() => runCommand('sketch.new', { plane })}
+                          title={`Sketch on the ${plane} plane`}
+                        >
+                          <PenTool size={19} color={PLANE_COLORS[plane]} />
+                          <span>{plane}</span>
+                        </button>
+                      ))}
                       <button
-                        key={plane}
-                        className="ribbon-btn primary-action-btn"
-                        onClick={() => runCommand('sketch.new', { plane })}
-                        title={`Sketch on the ${plane} plane`}
+                        className={`ribbon-btn ${activeTool === TOOLS.SKETCH_ON_FACE ? 'active' : ''}`}
+                        onClick={() => runCommand(activeTool === TOOLS.SKETCH_ON_FACE ? 'edit.cancel' : 'sketch.onFace')}
+                        title="Sketch on a face: click a flat face of the part"
                       >
-                        <PenTool size={19} color={PLANE_COLORS[plane]} />
-                        <span>{plane}</span>
+                        <Square size={19} color="#fbbf24" />
+                        <span>On Face</span>
                       </button>
-                    ))
+                      {referencePlanes.length > 0 && (
+                        <label className="ribbon-btn" title="Sketch on a reference plane" style={{ cursor: 'default' }}>
+                          <Layers size={19} color="#fbbf24" />
+                          <select
+                            className="sketch-on-plane"
+                            value=""
+                            onChange={(e) => { if (e.target.value) runCommand('sketch.new', { plane: e.target.value }); }}
+                            aria-label="Sketch on a reference plane"
+                            style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0, maxWidth: 80 }}
+                          >
+                            <option value="">On Plane…</option>
+                            {referencePlanes.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                          </select>
+                        </label>
+                      )}
+                    </>
                   ) : (
                     <>
                       <button className="ribbon-btn active exit-sketch-btn" onClick={() => runCommand('sketch.exit')} title="Confirm & Exit Sketch">

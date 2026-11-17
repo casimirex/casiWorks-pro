@@ -351,6 +351,66 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'sketch on a face and on a reference plane',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
+        window.casiworks.features.extrude({ sketchId: s.sketchId, depth: 15 });
+      })()`);
+      await sleep(1000);
+      const v0 = await volume(p);
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const at = (fx: number, fy: number) => p.mouseClick(r.left + r.width * fx, r.top + r.height * fy);
+      await p.eval(`window.casiworks.commands.execute('view.front')`);
+      await sleep(500);
+      await p.click('Sketch');
+      await p.click('Sketch on a face: click a flat face of the part', 200);
+      await at(0.5, 0.5);
+      await sleep(600);
+      const sketching = await p.eval<boolean>(`!!document.querySelector('.exit-sketch-btn')`);
+      assert(sketching, 'a click on the face starts a sketch');
+      await p.click('Center Circle (C)');
+      await at(0.5, 0.5); await at(0.53, 0.5);
+      await p.screenshot('02f-sketch-on-face');
+      await p.click('Confirm & Exit Sketch', 800);
+      const faceSketch = await p.eval<{ frame?: { origin: { z: number }; normal: { z: number } } }>(`window.casiworks.features.list().filter(f => f.type === 'sketch').at(-1).parameters`);
+      assert(faceSketch.frame?.origin.z === 15 && faceSketch.frame.normal.z === 1, `face sketch frame ${JSON.stringify(faceSketch.frame)}`);
+      await p.click('Features');
+      await p.click('Extruded Boss/Base', 500);
+      await setField(p, 'Extrude Depth', 10);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const box = await p.eval<{ max: { z: number } }>(`window.casiworks.model.boundingBox()`);
+      const v1 = await volume(p);
+      assert(Math.abs(box.max.z - 25) < 1e-6 && v1 > v0 + 50, `boss on the face: max z ${box.max.z}, volume ${v0} → ${v1}`);
+
+      // Reference plane from the panel, then a sketch on it from the ribbon
+      await p.click('Reference Plane: offset and tilt a standard plane, then sketch on it', 400);
+      await setField(p, 'Offset', 40);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(800);
+      const names = await treeNames(p);
+      await p.click('Sketch');
+      const planeId = await p.eval<string>(`window.casiworks.features.list().find(f => f.type === 'reference_plane')?.id ?? ''`);
+      await p.eval(`(() => {
+        const sel = document.querySelector('.sketch-on-plane');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(planeId)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(600);
+      await p.click('Center Circle (C)');
+      await at(0.5, 0.5); await at(0.52, 0.5);
+      await p.screenshot('02g-sketch-on-plane');
+      await p.click('Confirm & Exit Sketch', 800);
+      const planeSketch = await p.eval<{ planeRef?: string }>(`window.casiworks.features.list().filter(f => f.type === 'sketch').at(-1).parameters`);
+      assert(names.includes('Plane1') && planeSketch.planeRef === planeId, `tree ${names}; sketch ${JSON.stringify(planeSketch)}`);
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await p.click('Features', 200);
+      return `boss on the front face reaches z = ${box.max.z}; sketch on Plane1 (offset 40) keeps its plane`;
+    },
+  },
+  {
     name: 'hole from the property panel removes the drilled volume; Hole Wizard M8 counterbore',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);

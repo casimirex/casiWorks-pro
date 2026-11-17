@@ -6,12 +6,13 @@ import { drawingFile } from '../drawings/drawingSheet.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
+import { faceFrame, isPlaneFrame, referencePlaneFrame } from '../utils/math.ts';
 import { bomCSV, buildBom } from '../assembly/bom.ts';
 import { configurationProblems, effectiveVariables, evaluateExpression, evaluateLinks, evaluateVariables } from '../features/equations.ts';
 import type { Configuration, GlobalVariable } from '../features/equations.ts';
 import { FEATURE_TYPES, MATERIALS, TOOLS } from '../utils/constants.ts';
 import type { MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
-import type { FeatureData, SketchEntity, SketchPlane } from '../types/cad.ts';
+import type { FeatureData, PlaneFrame, ReferenceFeature, SketchEntity, SketchPlane } from '../types/cad.ts';
 import { generateId } from '../utils/math.ts';
 import { CAD_EXAMPLES } from '../utils/examples.ts';
 import { downloadProject, newProject, openProject } from '../utils/projectFile.ts';
@@ -38,6 +39,30 @@ type Def<A = void> = CommandDefinition<CADStore, A>;
 type Store = { getState(): CADStore };
 
 const PLANES: SketchPlane[] = ['Front', 'Top', 'Right'];
+
+/**
+ * A sketch plane argument: 'Front' | 'Top' | 'Right', the id of a reference plane
+ * feature, or a plane frame { origin, xAxis, normal }.
+ */
+function resolvePlane(state: CADStore, plane: unknown): { plane: SketchPlane; planeRef?: string; frame?: PlaneFrame } {
+  const value = plane ?? 'Front';
+  if (typeof value === 'string') {
+    if (PLANES.includes(value as SketchPlane)) return { plane: value as SketchPlane };
+    const ref = state.features.find(f => f.id === value && f.type === FEATURE_TYPES.REFERENCE_PLANE);
+    if (ref) return { plane: 'Front', planeRef: ref.id };
+    throw new CommandError('INVALID_ARGUMENT', `plane must be ${PLANES.join(', ')}, a reference plane id or { origin, xAxis, normal } (got ${JSON.stringify(value)})`);
+  }
+  if (isPlaneFrame(value)) {
+    const nums = [value.origin, value.xAxis, value.normal].flatMap(p => [p?.x, p?.y, p?.z]);
+    if (!nums.every(n => typeof n === 'number' && Number.isFinite(n))) throw new CommandError('INVALID_ARGUMENT', 'plane frame: origin, xAxis and normal need finite x, y, z');
+    const n = value.normal, x = value.xAxis;
+    const nl = Math.hypot(n.x, n.y, n.z);
+    const cross = Math.hypot(n.y * x.z - n.z * x.y, n.z * x.x - n.x * x.z, n.x * x.y - n.y * x.x);
+    if (nl < 1e-9 || cross < 1e-9 * nl) throw new CommandError('INVALID_ARGUMENT', 'plane frame: normal must be non-zero and xAxis not parallel to it');
+    return { plane: 'Front', frame: { origin: { ...value.origin }, xAxis: { ...value.xAxis }, normal: { ...value.normal } } };
+  }
+  throw new CommandError('INVALID_ARGUMENT', `plane must be ${PLANES.join(', ')}, a reference plane id or { origin, xAxis, normal }`);
+}
 
 /** Open the property panel for a feature tool (the panel creates the feature on OK). */
 const featureTool = (id: string, label: string, tool: ToolId, type: string, shortcuts?: string[]): Def => ({
@@ -195,12 +220,18 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   // ------------------------------------------------------------------ sketch
   {
     id: 'sketch.new', label: 'New sketch', category: 'Sketch',
-    description: "args: { plane: 'Front' | 'Top' | 'Right' } (default Front)",
-    run: ({ state }, args: { plane?: SketchPlane } | undefined) => {
-      const plane = args?.plane ?? 'Front';
-      if (!PLANES.includes(plane)) throw new CommandError('INVALID_ARGUMENT', `plane must be one of ${PLANES.join(', ')}`);
+    description: "args: { plane: 'Front' | 'Top' | 'Right' | reference plane id | { origin, xAxis, normal } } (default Front)",
+    run: ({ state }, args: { plane?: unknown } | undefined) => {
+      const r = resolvePlane(state(), args?.plane);
       if (state().isSketchActive) throw new CommandError('NOT_AVAILABLE', 'Finish the current sketch first');
-      state().startSketch(plane);
+      if (r.planeRef) {
+        const ref = state().features.find(f => f.id === r.planeRef)!;
+        if (ref.suppressed) throw new CommandError('NOT_AVAILABLE', `${ref.name} is suppressed`);
+        const rf = ref as ReferenceFeature;
+        state().startSketch(referencePlaneFrame(rf.base ?? 'Front', rf.offset ?? 0, rf.angle ?? 0), ref.id);
+      } else {
+        state().startSketch(r.frame ?? r.plane);
+      }
     },
     record: false, // the confirmed sketch is recorded by sketch.exit
   },
@@ -221,21 +252,44 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       const entities = state.sketchEntities[r.sketchId] ?? [];
       if (!r.created) return { command: 'sketch.setEntities', args: { sketchId: r.sketchId, entities } };
       const feature = state.features.find(f => f.id === r.featureId);
-      const plane = feature?.type === FEATURE_TYPES.SKETCH ? feature.plane : 'Front';
+      const sk = feature?.type === FEATURE_TYPES.SKETCH ? feature : null;
+      const plane = sk?.planeRef ?? sk?.frame ?? sk?.plane ?? 'Front';
       return { command: 'sketch.create', args: { plane, name: feature?.name, entities }, returns: { sketchId: r.sketchId, featureId: r.featureId } };
     },
+  },
+  {
+    id: 'sketch.onFace', label: 'Sketch on face', category: 'Sketch', record: false,
+    description: 'Without args: click a flat face of the part to sketch on it. args: { point, normal } starts a sketch on that plane directly',
+    run: ({ state }, args: { point?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number } } | undefined) => {
+      if (state().isSketchActive) throw new CommandError('NOT_AVAILABLE', 'Finish the current sketch first');
+      if (!args?.point || !args.normal) {
+        state().setActiveTool(TOOLS.SKETCH_ON_FACE);
+        state().setStatus('Sketch on face: click a flat face of the part');
+        return;
+      }
+      const ok = (p: { x: number; y: number; z: number }) => [p.x, p.y, p.z].every(v => typeof v === 'number' && Number.isFinite(v));
+      if (!ok(args.point) || !ok(args.normal) || Math.hypot(args.normal.x, args.normal.y, args.normal.z) < 1e-9) {
+        throw new CommandError('INVALID_ARGUMENT', 'point and normal need finite x, y, z (normal non-zero)');
+      }
+      state().cancelTool();
+      state().startSketch(faceFrame(args.point, args.normal));
+    },
+  },
+  {
+    id: 'feature.referencePlane', label: 'Reference plane', category: 'Features', record: false,
+    description: 'Opens the reference plane panel; create one directly with feature.create { type: "reference_plane", base, offset, angle }',
+    run: ({ state }) => state().openPropertyPanel({ type: FEATURE_TYPES.REFERENCE_PLANE }),
   },
   { id: 'sketch.discard', label: 'Discard sketch', category: 'Sketch', record: false, run: ({ state }) => state().endSketch(false) },
   {
     id: 'sketch.create', label: 'Create sketch', category: 'Sketch',
-    description: "args: { plane?, name?, entities } in the store's entity format; returns { sketchId, featureId }",
-    run: ({ state }, args: { plane?: SketchPlane; name?: string; entities: SketchEntity[] }) => {
-      const plane = args?.plane ?? 'Front';
-      if (!PLANES.includes(plane)) throw new CommandError('INVALID_ARGUMENT', `plane must be one of ${PLANES.join(', ')}`);
+    description: "args: { plane?, name?, entities } — plane: 'Front' | 'Top' | 'Right' | reference plane id | { origin, xAxis, normal }; entities in the store's format; returns { sketchId, featureId }",
+    run: ({ state }, args: { plane?: unknown; name?: string; entities: SketchEntity[] }) => {
+      const where = resolvePlane(state(), args?.plane);
       const entities = requireEntities(args?.entities);
       const sketchId = generateId('sketch');
       const featureId = generateId('feat_sketch');
-      state().createSketchFeature({ id: featureId, sketchId, plane, name: args.name, entities: JSON.parse(JSON.stringify(entities)) });
+      state().createSketchFeature({ id: featureId, sketchId, ...where, name: args.name, entities: JSON.parse(JSON.stringify(entities)) });
       return { sketchId, featureId };
     },
   },

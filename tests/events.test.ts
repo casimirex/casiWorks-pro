@@ -74,7 +74,7 @@ test('Events: selection and commands', () => {
   api.commands.execute('view.top');
   assert.throws(() => api.commands.execute('sketch.new', { plane: 'X' }));
   assert.deepEqual(rec.of('commandExecuted').map(e => [e.id, e.ok]), [['view.top', true], ['sketch.new', false]]);
-  assert.match(rec.of('commandExecuted')[1].error!, /plane must be one of/);
+  assert.match(rec.of('commandExecuted')[1].error!, /plane must be Front, Top, Right/);
   rec.stop();
 });
 

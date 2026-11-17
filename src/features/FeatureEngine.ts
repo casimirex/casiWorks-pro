@@ -5,8 +5,9 @@ import { geometryEngine } from '../kernel/GeometryEngine.ts';
 import type { ProfileEntity } from '../kernel/GeometryEngine.ts';
 import type {
   BooleanFeature, CircularPatternFeature, ExtrudeFeature, FeatureData, HoleFeature, LinearPatternFeature,
-  LoftFeature, MirrorFeature, RebuildError, RevolveFeature, SketchEntity, SketchEntityMap, SketchPlane, SweepFeature,
+  LoftFeature, MirrorFeature, PlaneFrame, RebuildError, ReferenceFeature, RevolveFeature, SketchEntity, SketchEntityMap, SketchFeature, SketchPlane, SweepFeature,
 } from '../types/cad.ts';
+import { referencePlaneFrame } from '../utils/math.ts';
 
 type Geometry = THREE.BufferGeometry;
 /** The body being built; null until the first solid feature. */
@@ -29,7 +30,7 @@ type AnyFeature = FeatureData & LegacyFeatureFields;
 
 interface SketchData {
   entities: SketchEntity[];
-  plane: SketchPlane;
+  plane: SketchPlane | PlaneFrame;
 }
 
 export interface FeatureRebuildResult {
@@ -52,6 +53,8 @@ export class FeatureEngine {
   geometryEngine = geometryEngine;
   /** Sketches seen so far in the current rebuild, by sketch id. */
   sketchCache: Record<string, SketchData> = {};
+  /** Frames of the reference planes built so far in this rebuild. */
+  planeCache: Record<string, PlaneFrame> = {};
   /** Tool geometry of each solid feature in the current rebuild, by feature id. */
   featureGeometries: Record<string, Geometry> = {};
 
@@ -63,6 +66,7 @@ export class FeatureEngine {
    */
   rebuild(features: FeatureData[], sketchEntities: SketchEntityMap = {}, rollbackIndex: number | null = null): FeatureRebuildResult {
     this.sketchCache = {};
+    this.planeCache = {};
     this.featureGeometries = {};
     let currentBody: Body = null;
     const errors: RebuildError[] = [];
@@ -109,6 +113,11 @@ export class FeatureEngine {
     switch (feature.type) {
       case FEATURE_TYPES.SKETCH:
         return this._processSketch(feature, currentBody, sketchEntities);
+      case FEATURE_TYPES.REFERENCE_PLANE: {
+        const ref = feature as ReferenceFeature;
+        this.planeCache[feature.id] = referencePlaneFrame(ref.base ?? 'Front', ref.offset ?? 0, ref.angle ?? 0);
+        return currentBody;
+      }
       case FEATURE_TYPES.EXTRUDE_BOSS:
         return this._processExtrudeBoss(feature, currentBody, sketchEntities);
       case FEATURE_TYPES.EXTRUDE_CUT:
@@ -148,10 +157,14 @@ export class FeatureEngine {
 
   _processSketch(feature: AnyFeature, currentBody: Body, sketchEntities: SketchEntityMap): Body {
     const entities = feature.entities || (feature.sketchId ? sketchEntities[feature.sketchId] : undefined) || [];
-    this.sketchCache[feature.sketchId || feature.id] = {
-      entities,
-      plane: feature.plane || 'Front',
-    };
+    const sketch = feature as SketchFeature;
+    let plane: SketchPlane | PlaneFrame = sketch.frame ?? (feature.plane || 'Front');
+    if (sketch.planeRef) {
+      const frame = this.planeCache[sketch.planeRef];
+      if (!frame) throw new Error('The reference plane of this sketch is missing or suppressed');
+      plane = frame;
+    }
+    this.sketchCache[feature.sketchId || feature.id] = { entities, plane };
     return currentBody;
   }
 

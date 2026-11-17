@@ -3,15 +3,15 @@
 // patterns, mirror, CSG booleans and mass properties.
 
 import * as THREE from 'three';
-import { EPSILON, safeNormalize } from '../utils/math.ts';
+import { EPSILON, getSketchPlaneMatrix, safeNormalize } from '../utils/math.ts';
 import { csgUnion, csgSubtract, csgIntersect } from './csg.ts';
 import { profileLoops, shapesFromLoops } from './profile.ts';
 import type { ProfileEntity } from './profile.ts';
 
 export type { ProfileEntity };
-import type { InertiaTensor, MassProperties, Point2 } from '../types/cad.ts';
+import type { InertiaTensor, MassProperties, PlaneFrame, Point2 } from '../types/cad.ts';
 
-export type PlaneName = 'Front' | 'Top' | 'Right' | 'XY' | 'XZ' | 'YZ';
+export type PlaneName = 'Front' | 'Top' | 'Right' | 'XY' | 'XZ' | 'YZ' | PlaneFrame;
 
 export interface ExtrudeOptions {
   symmetric?: boolean;
@@ -94,7 +94,7 @@ class GeometryEngine {
     }
 
     // Orient to the sketch plane
-    const planeName = typeof direction === 'string' ? direction : (direction ? null : plane);
+    const planeName = typeof direction === 'string' ? direction : (direction instanceof THREE.Vector3 ? null : plane);
     if (planeName) {
       this._orientToPlane(geometry, planeName);
     } else if (direction instanceof THREE.Vector3) {
@@ -120,11 +120,9 @@ class GeometryEngine {
    */
   /** Map sketch coordinates (x, y, normal z) of a sketch plane to world coordinates. */
   _orientToPlane(geometry: THREE.BufferGeometry, plane: PlaneName): void {
-    if (plane === 'Top' || plane === 'XZ') {
-      geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-    } else if (plane === 'Right' || plane === 'YZ') {
-      geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 2));
-    }
+    // The same mapping the sketcher and the viewport use (any plane frame too)
+    const m = getSketchPlaneMatrix(plane);
+    if (!m.equals(new THREE.Matrix4())) geometry.applyMatrix4(m);
   }
 
   /**

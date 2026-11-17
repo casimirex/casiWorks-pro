@@ -234,6 +234,43 @@ const SHOTS: Shot[] = [
       await p.screenshot('10d-keyhole-part');
     },
   },
+  {
+    name: '10e-sketch-on-face', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
+        window.casiworks.features.extrude({ sketchId: s.sketchId, depth: 15, name: 'Block' });
+      })()`);
+      await sleep(800);
+      await run(p, 'view.front');
+      const r = await canvasRect(p);
+      await p.click('Sketch');
+      await p.click('Sketch on a face: click a flat face of the part', 200);
+      await p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await sleep(600);
+      await p.click('Snap', 100);
+      await p.click('Center Circle (C)');
+      await p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      await p.mouseClick(r.left + r.width * 0.54, r.top + r.height * 0.5);
+      await p.click('Snap', 100);
+      await p.click('Confirm & Exit Sketch', 800);
+      await p.click('Features');
+      await p.click('Extruded Boss/Base', 500);
+      await setField(p, 'Extrude Depth', 10);
+      await apply(p);
+      await run(p, 'feature.create', { type: 'reference_plane', name: 'Plane1', base: 'Top', offset: 40, angle: 20 }, 800);
+      await iso(p);
+      await p.screenshot('10e-sketch-on-face');
+      await p.click('Reference Plane: offset and tilt a standard plane, then sketch on it', 500);
+      await setField(p, 'Offset', 40);
+      await setField(p, 'Tilt (about its X)', 20);
+      await sleep(300);
+      await p.screenshot('10f-reference-plane');
+      await p.eval(`document.querySelector('.action-btn-red')?.click()`);
+      await sleep(300);
+    },
+  },
   // -------------------------------------------------------- Part 2: intermediate
   {
     name: '11-hole', async run(p) {

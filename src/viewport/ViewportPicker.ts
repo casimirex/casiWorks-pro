@@ -1,6 +1,7 @@
 // CasiWorks Pro - Viewport Picker and Raycaster
 import * as THREE from 'three';
-import { sketchPlaneNormal, worldToSketch } from '../utils/math.ts';
+import { planeFrameOf, sketchPlaneNormal, worldToSketch } from '../utils/math.ts';
+import type { PlaneFrame, SketchPlane } from '../types/cad.ts';
 
 /** A pointer position on a sketch plane: sketch coordinates plus the world point. */
 export interface SketchPlanePoint {
@@ -47,14 +48,16 @@ export class ViewportPicker {
   /**
    * Convert normalized pointer (-1 to +1) to 3D plane intersection
    */
-  screenToSketchPlane(pointerX: number, pointerY: number, camera: THREE.Camera | null | undefined, planeName = 'Front'): SketchPlanePoint | null {
+  screenToSketchPlane(pointerX: number, pointerY: number, camera: THREE.Camera | null | undefined, planeName: string | PlaneFrame = 'Front'): SketchPlanePoint | null {
     if (!camera || isNaN(pointerX) || isNaN(pointerY)) return null;
 
     try {
       this.raycaster.setFromCamera(new THREE.Vector2(pointerX, pointerY), camera);
 
-      // The sketch plane through the origin, mapped exactly as the kernel maps sketches
-      const mathPlane = new THREE.Plane(sketchPlaneNormal(planeName), 0);
+      // The sketch plane, mapped exactly as the kernel maps sketches
+      const normal = sketchPlaneNormal(planeName);
+      const o = planeFrameOf(planeName as SketchPlane | PlaneFrame).origin;
+      const mathPlane = new THREE.Plane(normal, -normal.dot(new THREE.Vector3(o.x, o.y, o.z)));
       const target = new THREE.Vector3();
       const hit = this.raycaster.ray.intersectPlane(mathPlane, target);
       if (!hit) return null;

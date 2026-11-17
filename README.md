@@ -223,7 +223,7 @@ console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
 shown. Or use the browser's developer console:
 
 ```js
-const api = window.casiworks;          // api.version === '1.8.0'
+const api = window.casiworks;          // api.version === '1.9.0'
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
@@ -279,6 +279,10 @@ in Node `fs.writeFileSync('sheet.pdf', api.drawings.pdf(), 'latin1')`).
 **New in 1.8**: `api.features.hole(spec)`: the Hole Wizard, with ISO metric standard sizes:
 `api.features.hole({ position, axis, depth: 12, type: 'counterbore', standard: { size: 'M8' } })`
 (also 'countersink', 'tapped', or custom `diameter` / `cbDiameter` / `csDiameter`).
+
+**New in 1.9**: sketches on any plane. `api.features.referencePlane({ base: 'Top', offset: 40, angle: 20 })`
+returns a plane id; `api.sketches.create({ plane: id | { origin, xAxis, normal }, entities })` sketches
+on it (a sketch on a reference plane follows the plane when it changes).
 
 **Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
 object; it gets the public API and can add commands and Add-ins ribbon buttons.
