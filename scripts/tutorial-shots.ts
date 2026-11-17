@@ -5,98 +5,12 @@
 // Serves dist/ with `vite preview`, drives headless Chrome over the DevTools
 // protocol through the same flows the tutorial teaches, and writes one WebP per
 // step to docs/tutorial/img/. A failing step is reported and the rest go on.
-import { spawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { findChrome, sleep, waitFor, withApp } from './browser.ts';
+import type { Page } from './browser.ts';
 
 const OUT = 'docs/tutorial/img';
-const CHROMES = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter((p): p is string => Boolean(p));
 const FILTER = process.argv[2];
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const freePort = () => new Promise<number>((resolve, reject) => {
-  const srv = createServer();
-  srv.listen(0, () => {
-    const { port } = srv.address() as { port: number };
-    srv.close(() => resolve(port));
-  });
-  srv.on('error', reject);
-});
-
-async function waitFor<T>(fn: () => Promise<T | undefined | null>, what: string, timeoutMs = 15000): Promise<T> {
-  const end = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      const v = await fn();
-      if (v) return v;
-    } catch { /* not ready yet */ }
-    if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);
-    await sleep(200);
-  }
-}
-
-class Page {
-  private ws: WebSocket;
-  private id = 0;
-  private pending = new Map<number, (msg: { result?: Record<string, unknown> }) => void>();
-
-  constructor(ws: WebSocket) {
-    this.ws = ws;
-    ws.onmessage = (m) => {
-      const d = JSON.parse(String(m.data));
-      if (d.method === 'Page.javascriptDialogOpening') void this.send('Page.handleJavaScriptDialog', { accept: true });
-      if (d.id && this.pending.has(d.id)) {
-        this.pending.get(d.id)!(d);
-        this.pending.delete(d.id);
-      }
-    };
-  }
-
-  send(method: string, params: Record<string, unknown> = {}): Promise<{ result?: Record<string, unknown> }> {
-    return new Promise(resolve => {
-      const id = ++this.id;
-      this.pending.set(id, resolve);
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async eval<T = unknown>(expression: string): Promise<T> {
-    const r = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    const res = r.result as { result?: { value?: T }; exceptionDetails?: { exception?: { description?: string }; text?: string } };
-    if (res?.exceptionDetails) throw new Error(String(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text).split('\n')[0]);
-    return res?.result?.value as T;
-  }
-
-  /** Click the button whose trimmed text or title matches. */
-  async click(label: string, wait = 300): Promise<void> {
-    const ok = await this.eval<boolean>(`(() => {
-      const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)} || b.title === ${JSON.stringify(label)});
-      if (!b) return false; b.click(); return true; })()`);
-    if (!ok) throw new Error(`No button "${label}"`);
-    await sleep(wait);
-  }
-
-  async mouseClick(x: number, y: number): Promise<void> {
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-    await sleep(250);
-  }
-
-  async mouseMove(x: number, y: number): Promise<void> {
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-    await sleep(150);
-  }
-
-  async screenshot(name: string): Promise<void> {
-    const r = await this.send('Page.captureScreenshot', { format: 'webp', quality: 82 });
-    writeFileSync(join(OUT, `${name}.webp`), Buffer.from(String(r.result?.data), 'base64'));
-  }
-}
 
 // ------------------------------------------------------------------ helpers
 const run = (p: Page, id: string, args?: unknown, wait = 600) =>
@@ -655,34 +569,11 @@ const SHOTS: Shot[] = [
 
 // ------------------------------------------------------------------ runner
 async function main(): Promise<number> {
-  const chrome = CHROMES.find(p => existsSync(p));
+  const chrome = findChrome();
   if (!chrome) { console.error('No Chrome found (set CHROME_PATH)'); return 1; }
   if (!existsSync('dist/index.html')) { console.error('Run `npm run build` first'); return 1; }
-  mkdirSync(OUT, { recursive: true });
-
-  const procs: ChildProcess[] = [];
-  const profile = mkdtempSync(join(tmpdir(), 'casiworks-shots-'));
-  try {
-    const appPort = await freePort();
-    const debugPort = await freePort();
-    procs.push(spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(appPort), '--strictPort'], { stdio: 'ignore' }));
-    await waitFor(() => fetch(`http://127.0.0.1:${appPort}/`).then(r => r.ok), 'vite preview');
-    procs.push(spawn(chrome, ['--headless=new', '--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader',
-      '--window-size=1440,900', '--hide-scrollbars', `--user-data-dir=${profile}`, `--remote-debugging-port=${debugPort}`, 'about:blank'], { stdio: 'ignore' }));
-    const target = await waitFor(async () => {
-      const list = await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json() as Array<{ type: string; webSocketDebuggerUrl: string }>;
-      return list.find(t => t.type === 'page');
-    }, 'Chrome');
-
-    const ws = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-    const page = new Page(ws);
-    await page.send('Runtime.enable');
-    await page.send('Page.enable');
-    await page.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/` });
-    await waitFor(() => page.eval<boolean>(`!!window.casiworks && document.querySelectorAll('.feature-item').length > 0`), 'app start');
+  return withApp({ chrome, profile: 'shots', shots: { dir: OUT, format: 'webp' }, acceptDialogs: true }, async ({ page, appUrl }) => {
     await sleep(1000);
-
     let failed = 0;
     for (const shot of SHOTS) {
       if (FILTER && !shot.name.includes(FILTER)) continue;
@@ -698,23 +589,14 @@ async function main(): Promise<number> {
 
     // The generated API reference, served next to the app
     if (!FILTER || 'api-reference'.includes(FILTER)) {
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/api/` });
+      await page.send('Page.navigate', { url: `${appUrl}api/` });
       await sleep(1500);
       await page.screenshot('35-api-reference');
       console.log('  ✓ api-reference');
     }
     console.log(`${failed ? 'FAILED' : 'OK'}: ${failed} failure(s); screenshots in ${OUT}/`);
-    ws.close();
     return failed ? 1 : 0;
-  } finally {
-    await Promise.all(procs.map(p => new Promise<void>(resolve => {
-      if (p.exitCode !== null || p.signalCode !== null) return resolve();
-      p.once('exit', () => resolve());
-      p.kill();
-      setTimeout(() => { p.kill('SIGKILL'); resolve(); }, 3000);
-    })));
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  }
+  });
 }
 
 process.exitCode = await main();

@@ -383,6 +383,8 @@ runtime for plain JavaScript callers.
 
 Browser end-to-end smoke test (needs Chrome; set `CHROME_PATH` if it is not found): `npm run build && npm run e2e`. It drives the real app — sketching with the mouse, property-panel features, drawings, FEA, commands and events, export, macro record and replay — and saves screenshots to `e2e-output/`.
 
+Performance budgets: `npm run build && npm run perf`. It measures the gzipped bundle, the rebuild time of every example, a static and a modal FEA solve, and (with Chrome) a cold app load, and fails if any is over its budget in `perf-budgets.json`. Times are medians of several runs; results are written to `perf-results.json`. After an intended change, `npm run perf -- --update` resets the budgets from the current machine (3× headroom on times, 10% on bundle size). CI runs typecheck, lint, tests, build, e2e and the budgets (`.github/workflows/ci.yml`).
+
 CasiWorks Pro is verified through an automated test suite (`tests/casiworks.test.ts` and the other `tests/*.test.ts` files) executed with Node.js test runner:
 
 ```bash

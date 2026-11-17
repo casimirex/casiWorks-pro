@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck, lint, test, build (Node ${{ matrix.node }})
+    name: Typecheck, lint, test, build, e2e, performance (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -32,3 +32,16 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # Browser checks: ubuntu-latest has Google Chrome installed
+      - run: npm run e2e
+      - name: Performance budgets (perf-budgets.json)
+        run: npm run perf
+      - name: Keep the measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results-node-${{ matrix.node }}
+          path: |
+            perf-results.json
+            e2e-output/
+          if-no-files-found: ignore

@@ -152,7 +152,7 @@ The "experience platform" layer: data management and a server-side API.
 
 ## Phase 8 — Production readiness
 
-- [ ] **8.1** Performance budgets (load time, rebuild time) tracked in CI
+- [x] **8.1** Performance budgets (load time, rebuild time) tracked in CI (`npm run perf`: gzipped bundle, rebuild of every example, static and modal FEA, cold app load in Chrome, each against `perf-budgets.json`; CI runs it after e2e and keeps the results; the browser harness is shared by e2e, tutorial shots and perf)
 - [ ] **8.2** Accessibility and keyboard-only operation
 - [ ] **8.3** Internationalization and unit systems (MMGS, IPS, …)
 - [ ] **8.4** Security review, CSP, dependency policy

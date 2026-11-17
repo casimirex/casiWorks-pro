@@ -1,0 +1,58 @@
+{
+  "bundle.app.gzip": {
+    "budget": 440,
+    "unit": "KB"
+  },
+  "bundle.worker.gzip": {
+    "budget": 140,
+    "unit": "KB"
+  },
+  "rebuild.l_bracket": {
+    "budget": 45,
+    "unit": "ms"
+  },
+  "rebuild.hex_bolt": {
+    "budget": 25,
+    "unit": "ms"
+  },
+  "rebuild.bearing_block": {
+    "budget": 170,
+    "unit": "ms"
+  },
+  "rebuild.piston_head": {
+    "budget": 140,
+    "unit": "ms"
+  },
+  "rebuild.pipe_flange": {
+    "budget": 190,
+    "unit": "ms"
+  },
+  "rebuild.sheet_enclosure": {
+    "budget": 25,
+    "unit": "ms"
+  },
+  "rebuild.spur_gear_blank": {
+    "budget": 35,
+    "unit": "ms"
+  },
+  "rebuild.connecting_rod": {
+    "budget": 120,
+    "unit": "ms"
+  },
+  "fea.static.tet10-medium": {
+    "budget": 19000,
+    "unit": "ms"
+  },
+  "fea.modal.tet10-coarse": {
+    "budget": 3800,
+    "unit": "ms"
+  },
+  "load.domContentLoaded": {
+    "budget": 210,
+    "unit": "ms"
+  },
+  "load.appReady": {
+    "budget": 300,
+    "unit": "ms"
+  }
+}
