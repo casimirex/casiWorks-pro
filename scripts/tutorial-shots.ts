@@ -247,6 +247,15 @@ const SHOTS: Shot[] = [
       await p.screenshot('11-hole-panel');
       await apply(p);
       await p.screenshot('12-hole-result');
+      // Hole Wizard: an ISO M8 counterbore for a socket head cap screw
+      await p.click('Hole Wizard', 500);
+      await pick(p, '.property-panel .hole-type', 'counterbore');
+      await pick(p, '.property-panel .hole-size', 'M8');
+      await setField(p, 'Hole Depth', 20);
+      await setField(p, 'Entry X', 25);
+      await sleep(400);
+      await p.screenshot('12b-hole-wizard');
+      await apply(p);
     },
   },
   {

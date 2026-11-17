@@ -28,6 +28,8 @@ import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
 import { MATERIALS, MATE_TYPES } from '../utils/constants.ts';
 import { measure as measurePicks } from '../kernel/measure.ts';
+import { CLEARANCE_FITS, METRIC_SIZES, standardHole } from '../features/holeStandards.ts';
+import type { ClearanceFit, HoleKind, MetricSize } from '../features/holeStandards.ts';
 import type { Measurement } from '../kernel/measure.ts';
 import type { MateType } from '../utils/constants.ts';
 import { FEATURE_TYPES, SKETCH_ENTITY_TYPES } from '../utils/constants.ts';
@@ -49,7 +51,7 @@ import type {
   SketchPlane,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.7.0';
+export const API_VERSION = '1.8.0';
 
 // =====================================================================
 // Public types
@@ -99,6 +101,27 @@ export interface RevolveSpec {
 export interface FilletSpec { radius: number; name?: string }
 export interface ChamferSpec { distance: number; name?: string }
 export interface ShellSpec { thickness: number; name?: string }
+
+/** A hole from the Hole Wizard. Give `standard` for ISO metric sizes, or `diameter` (and the counterbore / countersink sizes) for custom ones. */
+export interface HoleSpec {
+  /** Entry point on the part (mm). */
+  position: { x: number; y: number; z: number };
+  /** Drilling direction; default +Z. */
+  axis?: { x: number; y: number; z: number };
+  /** mm, > 0 */
+  depth: number;
+  /** Default 'simple'. A tapped hole is drilled at the tap drill size; the thread is not modelled. */
+  type?: HoleKind;
+  /** ISO metric size and, for clearance holes, the fit (default 'normal'). */
+  standard?: { size: MetricSize; fit?: ClearanceFit };
+  /** Custom sizes (ignored with a standard). */
+  diameter?: number;
+  cbDiameter?: number;
+  cbDepth?: number;
+  csDiameter?: number;
+  csAngle?: number;
+  name?: string;
+}
 
 /** Parameters that may be changed with features.update(). */
 export type FeatureChanges = Record<string, number | string | boolean>;
@@ -192,6 +215,11 @@ export interface FeaturesAPI {
   chamfer(spec: ChamferSpec): string;
   /** Add a shell feature. Not applied: the mesh kernel cannot hollow a solid (see fillet). */
   shell(spec: ShellSpec): string;
+  /**
+   * Add a hole (Hole Wizard). Returns the new feature id. Since 1.8.
+   * @example api.features.hole({ position: { x: 0, y: 0, z: 10 }, axis: { x: 0, y: 0, z: -1 }, depth: 10, type: 'counterbore', standard: { size: 'M8' } })
+   */
+  hole(spec: HoleSpec): string;
   /** Change parameters (e.g. { depth: 40 }); id, type, sketchId and dependency links cannot change. */
   update(id: string, changes: FeatureChanges): void;
   /** Delete a feature; features that depend on it lose their parent. Throws NOT_FOUND. */
@@ -902,6 +930,41 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     shell(spec: ShellSpec) {
       const s = requireObject(spec, 'spec');
       return addFeature({ type: FEATURE_TYPES.SHELL, name: optionalName(s.name) ?? 'Shell', thickness: requireNumber(s.thickness, 'thickness', { positive: true }) });
+    },
+    hole(spec: HoleSpec) {
+      const s = requireObject(spec, 'spec');
+      const vec = (v: unknown, what: string) => {
+        const o = requireObject(v, what);
+        return { x: requireNumber(o.x, `${what}.x`), y: requireNumber(o.y, `${what}.y`), z: requireNumber(o.z, `${what}.z`) };
+      };
+      const kinds: HoleKind[] = ['simple', 'counterbore', 'countersink', 'tapped'];
+      const holeType = (s.type ?? 'simple') as HoleKind;
+      if (!kinds.includes(holeType)) fail('INVALID_ARGUMENT', `type must be one of ${kinds.join(', ')}`);
+      const depth = requireNumber(s.depth, 'depth', { positive: true });
+      const position = vec(s.position, 'position');
+      const axis = s.axis === undefined ? { x: 0, y: 0, z: 1 } : vec(s.axis, 'axis');
+      if (Math.hypot(axis.x, axis.y, axis.z) < 1e-9) fail('INVALID_ARGUMENT', 'axis must not be zero');
+      const base = { type: FEATURE_TYPES.HOLE, holeType, depth, position, axis };
+      if (s.standard !== undefined) {
+        const st = requireObject(s.standard, 'standard');
+        if (!METRIC_SIZES.includes(st.size as MetricSize)) fail('INVALID_ARGUMENT', `standard.size must be one of ${METRIC_SIZES.join(', ')}`);
+        const fit = (st.fit ?? 'normal') as ClearanceFit;
+        if (!CLEARANCE_FITS.includes(fit)) fail('INVALID_ARGUMENT', `standard.fit must be one of ${CLEARANCE_FITS.join(', ')}`);
+        const std = standardHole(holeType, st.size as MetricSize, fit);
+        return addFeature({
+          ...base, name: optionalName(s.name) ?? std.label, diameter: std.diameter, standard: { size: st.size as string, fit },
+          ...(std.cbDiameter ? { cbDiameter: std.cbDiameter, cbDepth: std.cbDepth } : {}),
+          ...(std.csDiameter ? { csDiameter: std.csDiameter, csAngle: std.csAngle } : {}),
+          ...(std.thread ? { thread: std.thread } : {}),
+        } as unknown as FeatureSpec);
+      }
+      const diameter = requireNumber(s.diameter, 'diameter', { positive: true });
+      const opt = (k: string) => (s[k] === undefined ? {} : { [k]: requireNumber(s[k], k, { positive: true }) });
+      return addFeature({
+        ...base, name: optionalName(s.name) ?? 'Hole', diameter,
+        ...(holeType === 'counterbore' ? { ...opt('cbDiameter'), ...opt('cbDepth') } : {}),
+        ...(holeType === 'countersink' ? { ...opt('csDiameter'), ...opt('csAngle') } : {}),
+      } as unknown as FeatureSpec);
     },
     update(id: string, changes: FeatureChanges) {
       const { feature } = findFeature(id);

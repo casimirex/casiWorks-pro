@@ -29,11 +29,14 @@ const HOLE_TYPES: Array<{ value: NonNullable<HoleFeature['holeType']>; label: st
   { value: 'simple', label: 'Simple (drilled)' },
   { value: 'counterbore', label: 'Counterbore' },
   { value: 'countersink', label: 'Countersink' },
+  { value: 'tapped', label: 'Tapped (thread)' },
 ];
 import NumericInput from '../common/NumericInput.tsx';
 import { runCommand } from '../../commands/index.ts';
 import { debounce } from '../../utils/debounce.ts';
 import { evaluateExpression, evaluateVariables } from '../../features/equations.ts';
+import { CLEARANCE_FITS, METRIC_SIZES, standardHole } from '../../features/holeStandards.ts';
+import type { ClearanceFit, MetricSize } from '../../features/holeStandards.ts';
 
 /** Fields the panel reads from what it was opened with (a feature being edited, or a tool's defaults). */
 interface PanelContentFields {
@@ -55,6 +58,11 @@ interface PanelContentFields {
   wallThickness?: number;
   distance?: number;
   holeType?: HoleFeature['holeType'];
+  standard?: HoleFeature['standard'];
+  cbDiameter?: number;
+  cbDepth?: number;
+  csDiameter?: number;
+  csAngle?: number;
   position?: Point3;
   axis?: Point3;
   count?: number;
@@ -107,6 +115,13 @@ export default function PropertyPanel() {
   const [wallThickness, setWallThickness] = useState(2);
   const [selectedSketchId, setSelectedSketchId] = useState('');
   const [holeType, setHoleType] = useState<NonNullable<HoleFeature['holeType']>>('simple');
+  // Hole Wizard: an ISO metric size ('' = custom sizes), the clearance fit, custom counterbore / countersink
+  const [holeSize, setHoleSize] = useState<MetricSize | ''>('');
+  const [holeFit, setHoleFit] = useState<ClearanceFit>('normal');
+  const [cbDiameter, setCbDiameter] = useState(18);
+  const [cbDepth, setCbDepth] = useState(5);
+  const [csDiameter, setCsDiameter] = useState(16);
+  const [csAngle, setCsAngle] = useState(90);
   const [holePosition, setHolePosition] = useState<Point3>({ x: 0, y: 0, z: 0 });
   const [holeAxis, setHoleAxis] = useState<AxisName>('+Z');
   const [count, setCount] = useState(3);
@@ -175,6 +190,12 @@ export default function PropertyPanel() {
       const c = propertyPanelContent;
       if (c.type === FEATURE_TYPES.CHAMFER && c.distance !== undefined) setRadius(c.distance);
       if (c.holeType) setHoleType(c.holeType);
+      setHoleSize(c.standard && (METRIC_SIZES as string[]).includes(c.standard.size) ? c.standard.size as MetricSize : '');
+      if (c.standard?.fit) setHoleFit(c.standard.fit);
+      if (c.cbDiameter !== undefined) setCbDiameter(c.cbDiameter);
+      if (c.cbDepth !== undefined) setCbDepth(c.cbDepth);
+      if (c.csDiameter !== undefined) setCsDiameter(c.csDiameter);
+      if (c.csAngle !== undefined) setCsAngle(c.csAngle);
       if (c.position) setHolePosition({ ...c.position });
       if (c.axis) setHoleAxis(nearestAxis(c.axis, '+Z'));
       if (c.count !== undefined) setCount(c.count);
@@ -211,7 +232,21 @@ export default function PropertyPanel() {
         return { thickness };
       case FEATURE_TYPES.HOLE: {
         const [x, y, z] = AXES[holeAxis];
-        return { diameter, depth, holeType, position: { ...holePosition }, axis: { x, y, z } };
+        const placement = { depth, holeType, position: { ...holePosition }, axis: { x, y, z } };
+        if (holeSize) {
+          const std = standardHole(holeType, holeSize, holeFit);
+          return {
+            ...placement, diameter: std.diameter, standard: { size: holeSize, fit: holeFit },
+            cbDiameter: std.cbDiameter, cbDepth: std.cbDepth, csDiameter: std.csDiameter, csAngle: std.csAngle, thread: std.thread,
+          };
+        }
+        return {
+          ...placement, diameter, standard: undefined, thread: undefined,
+          cbDiameter: holeType === 'counterbore' ? cbDiameter : undefined,
+          cbDepth: holeType === 'counterbore' ? cbDepth : undefined,
+          csDiameter: holeType === 'countersink' ? csDiameter : undefined,
+          csAngle: holeType === 'countersink' ? csAngle : undefined,
+        };
       }
       case FEATURE_TYPES.LINEAR_PATTERN:
         return { count, spacing, directionX: dx, directionY: dy, directionZ: dz };
@@ -250,10 +285,14 @@ export default function PropertyPanel() {
     } else {
       const params = featureParameters();
       // Only links to this feature type's own parameters; an edit always sends them, so unlinking sticks
-      const links = Object.fromEntries(Object.entries(expressions).filter(([k]) => k.split('.')[0] in params));
+      const links = Object.fromEntries(Object.entries(expressions).filter(([k]) => k.split('.')[0] in params
+        // a standard sets the hole, counterbore and countersink sizes
+        && !(featureType === FEATURE_TYPES.HOLE && holeSize && ['diameter', 'cbDiameter', 'cbDepth', 'csDiameter', 'csAngle'].includes(k))));
       const featData = {
         type: featureType,
-        name: propertyPanelContent.name || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
+        name: propertyPanelContent.name
+          || (featureType === FEATURE_TYPES.HOLE && holeSize ? standardHole(holeType, holeSize, holeFit).label : '')
+          || `${featureType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
         ...params,
         ...(isEdit || Object.keys(links).length ? { expressions: links } : {}),
       };
@@ -560,19 +599,64 @@ export default function PropertyPanel() {
             <div className="property-card-header">Hole Specification</div>
             <div className="property-card-body">
               <div className="property-row">
-                <span className="property-label">Diameter (Ø):</span>
-                <NumericInput value={diameter} onChange={setDiameter} min={1} max={200} step={1} unit="mm" {...linkable('diameter')} />
+                <span className="property-label">Hole Type:</span>
+                <select className="property-select hole-type" style={{ width: 130 }} value={holeType} onChange={(e) => setHoleType(e.target.value as typeof holeType)}>
+                  {HOLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
               </div>
+              <div className="property-row">
+                <span className="property-label">Standard:</span>
+                <select className="property-select hole-size" style={{ width: 130 }} value={holeSize} onChange={(e) => setHoleSize(e.target.value as MetricSize | '')}>
+                  <option value="">Custom sizes</option>
+                  {METRIC_SIZES.map(sz => <option key={sz} value={sz}>ISO metric {sz}</option>)}
+                </select>
+              </div>
+              {holeSize && holeType !== 'tapped' && (
+                <div className="property-row">
+                  <span className="property-label">Fit:</span>
+                  <select className="property-select hole-fit" style={{ width: 130 }} value={holeFit} onChange={(e) => setHoleFit(e.target.value as ClearanceFit)}>
+                    {CLEARANCE_FITS.map(fit => <option key={fit} value={fit}>{fit[0].toUpperCase() + fit.slice(1)} clearance</option>)}
+                  </select>
+                </div>
+              )}
+              {holeSize ? (
+                <div className="hole-standard-info" style={{ fontSize: 11, color: '#a5b4fc', margin: '2px 0 6px' }}>
+                  {standardHole(holeType, holeSize, holeFit).description}
+                </div>
+              ) : (
+                <div className="property-row">
+                  <span className="property-label">Diameter (Ø):</span>
+                  <NumericInput value={diameter} onChange={setDiameter} min={1} max={200} step={1} unit="mm" {...linkable('diameter')} />
+                </div>
+              )}
               <div className="property-row">
                 <span className="property-label">Hole Depth:</span>
                 <NumericInput value={depth} onChange={setDepth} min={1} max={500} step={5} unit="mm" {...linkable('depth')} />
               </div>
-              <div className="property-row">
-                <span className="property-label">Hole Type:</span>
-                <select className="property-select" style={{ width: 130 }} value={holeType} onChange={(e) => setHoleType(e.target.value as typeof holeType)}>
-                  {HOLE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
+              {!holeSize && holeType === 'counterbore' && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">Counterbore Ø:</span>
+                    <NumericInput value={cbDiameter} onChange={setCbDiameter} min={diameter + 0.1} max={300} step={1} unit="mm" {...linkable('cbDiameter')} />
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Counterbore Depth:</span>
+                    <NumericInput value={cbDepth} onChange={setCbDepth} min={0.1} max={depth} step={0.5} unit="mm" {...linkable('cbDepth')} />
+                  </div>
+                </>
+              )}
+              {!holeSize && holeType === 'countersink' && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">Countersink Ø:</span>
+                    <NumericInput value={csDiameter} onChange={setCsDiameter} min={diameter + 0.1} max={300} step={1} unit="mm" {...linkable('csDiameter')} />
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Countersink Angle:</span>
+                    <NumericInput value={csAngle} onChange={setCsAngle} min={60} max={120} step={1} unit="°" {...linkable('csAngle')} />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

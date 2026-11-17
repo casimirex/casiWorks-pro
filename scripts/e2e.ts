@@ -351,7 +351,7 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'hole from the property panel removes the drilled volume',
+    name: 'hole from the property panel removes the drilled volume; Hole Wizard M8 counterbore',
     async run(p) {
       await p.eval(`window.casiworks.document.new()`);
       await p.eval(`(() => { const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
@@ -375,7 +375,31 @@ const CHECKS: Check[] = [
       const removed = before - await volume(p);
       const faceted = 16 * Math.sin(Math.PI / 16) * 25 * 10; // 32-sided Ø10 × 10
       assert(Math.abs(removed - faceted) < 1, `removed ${removed} mm³, expected ${faceted}`);
-      return `removed ${removed.toFixed(0)} mm³; FEA panel clear of the property panel`;
+      // Hole Wizard: an ISO M8 counterbore beside it, from the panel
+      const before2 = await volume(p);
+      await p.click('Hole', 400);
+      const pick = (cls: string, value: string) => p.eval(`(() => {
+        const sel = document.querySelector('.property-panel .${cls}');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(value)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await pick('hole-type', 'counterbore');
+      await pick('hole-size', 'M8');
+      await sleep(150);
+      const info = await p.eval<string>(`document.querySelector('.hole-standard-info')?.textContent ?? ''`);
+      await setField(p, 'Hole Depth', 10);
+      await setField(p, 'Entry X', 15);
+      await setField(p, 'Drill Direction', '+Z');
+      await p.screenshot('04d-hole-wizard');
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const cb = before2 - await volume(p);
+      const area = (r: number) => 16 * r * r * Math.sin(Math.PI / 16);
+      const expected = area(4.5) * (10 - 8.6) + area(7.5) * 8.6;
+      const names = await treeNames(p);
+      assert(/Ø9 clearance \(normal\), counterbore Ø15 × 8\.6 deep/.test(info), `info: ${info}`);
+      assert(Math.abs(cb - expected) < 1 && names.includes('M8 Counterbore'), `counterbore removed ${cb} mm³, expected ${expected}; tree ${names}`);
+      return `removed ${removed.toFixed(0)} mm³; FEA panel clear of the property panel; M8 counterbore removed ${cb.toFixed(0)} mm³ ("${info}")`;
     },
   },
   {

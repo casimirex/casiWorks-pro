@@ -304,7 +304,15 @@ export class FeatureEngine {
     // the +axis end and the drill point at the −axis end, so aim that axis back
     // out of the hole.
     const centre = entry.addScaledVector(drill, depth / 2);
-    return this.geometryEngine.createHole(currentBody, centre, drill.negate(), diameter, depth, feature.holeType || 'simple');
+    // A tapped hole is drilled at the tap drill size; the thread itself is not modelled
+    const kind = feature.holeType === 'tapped' ? 'simple' : (feature.holeType || 'simple');
+    const positive = (v: number | undefined) => (typeof v === 'number' && v > 0 ? v : undefined);
+    return this.geometryEngine.createHole(currentBody, centre, drill.negate(), diameter, depth, kind, {
+      cbDiameter: positive(feature.cbDiameter),
+      cbDepth: positive(feature.cbDepth),
+      csDiameter: positive(feature.csDiameter),
+      csAngle: positive(feature.csAngle),
+    });
   }
 
   _processLinearPattern(feature: LinearPatternFeature, currentBody: Body): Body {

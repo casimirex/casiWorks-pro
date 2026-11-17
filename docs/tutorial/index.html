@@ -421,7 +421,7 @@ npm run dev</pre></div>
 <section class="chapter" id="ch4" data-title="Holes & cuts" data-part="intermediate" data-n="4">
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 4 · about 10 min</span></div>
   <h2 class="title">Holes and cuts</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Drill a hole with the Hole Wizard</li><li>Pick a hole type, a diameter, a depth and a drill direction</li><li>Remove material with Extrude Cut</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Drill a hole with the Hole Wizard</li><li>Pick a hole type, a diameter, a depth and a drill direction</li><li>Use ISO metric standard holes: clearance, counterbore, countersink and tapped</li><li>Remove material with Extrude Cut</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 4.1</span><h4>Mounting plate with a Ø12 drilled hole</h4><div class="specs"><span>80 × 50 × 20 mm</span><span>Ø12 × 20 deep</span><span>Simple (drilled)</span></div></div>
     <div class="example-body split">
@@ -440,8 +440,28 @@ npm run dev</pre></div>
   </div>
   <h3>Extrude Cut</h3>
   <p><b>Extrude Cut</b> works like Extrude but removes material. Sketch the shape of the pocket or opening, then pick the cut depth. <b>Through All</b> cuts right through the part however thick it is, which is the safe choice for holes that must always go through.</p>
+  <h3>Standard holes</h3>
+  <p>Set <b>Standard</b> to an ISO metric size (M3 to M20), and the Hole Wizard fills in every size for that screw. A counterbore fits a socket head cap screw (ISO 4762). A countersink fits a flat head screw (ISO 10642). A tapped hole is drilled at the tap drill size. A line under the choices says exactly what you get.</p>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 4.2</span><h4>A counterbore for an M8 cap screw</h4><div class="specs"><span>ISO metric M8</span><span>Normal clearance Ø9</span><span>Counterbore Ø15 × 8.6</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>On the plate from Example 4.1, click <b>Hole</b> again. Set <b>Hole Type</b> to <i>Counterbore</i> and <b>Standard</b> to <i>ISO metric M8</i>.</li>
+        <li>Leave <b>Fit</b> on <i>Normal clearance</i>. <i>Close</i> is for accurate location, and <i>Loose</i> leaves room to adjust. The line below reads <i>Ø9 clearance (normal), counterbore Ø15 × 8.6 deep for ISO 4762 heads</i>.</li>
+        <li>Set the depth and the entry point (for example X = 25), and click <b>OK</b>. The tree shows <i>M8 Counterbore</i>. The screw head sits just below the surface.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/12b-hole-wizard.webp" alt="Hole Wizard with ISO metric M8 counterbore"><figcaption>The Hole Wizard with an ISO M8 counterbore.</figcaption></figure>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Hole type</th><th>M8 example</th><th>Use</th></tr>
+    <tr><td>Simple (clearance)</td><td>Ø8.4 close · Ø9 normal · Ø10 loose</td><td>A bolt passes through</td></tr>
+    <tr><td>Counterbore</td><td>Ø9 + Ø15 × 8.6 deep</td><td>Socket head cap screw below the surface</td></tr>
+    <tr><td>Countersink</td><td>Ø9 + Ø17.92 × 90°</td><td>Flat head screw flush with the surface</td></tr>
+    <tr><td>Tapped</td><td>Tap drill Ø6.75, thread M8×1.25</td><td>The screw threads into the part. The thread itself is not modelled.</td></tr>
+  </table></div>
   <div class="callout check"><span class="ic">✓</span><div><b class="label">Check your work</b><p>Open <b>Mass Props</b> before and after the hole. The volume should drop by about π × 6² × 20 ≈ 2,262 mm³. It drops a little less, because a hole is drawn as a 32-sided polygon.</p></div></div>
-  <div class="exercise"><b>Exercise 4.</b> Add a counterbored hole to the same plate. Then draw a 30 × 10 mm slot and cut it <b>Through All</b>.<label><input type="checkbox" data-done="ch4"> I've done this</label></div>
+  <div class="exercise"><b>Exercise 4.</b> Add a tapped M6 hole to the same plate and check its diameter in the tree's edit panel (5 mm). Then draw a 30 × 10 mm slot and cut it <b>Through All</b>.<label><input type="checkbox" data-done="ch4"> I've done this</label></div>
 </section>
 
 <section class="chapter" id="ch5" data-title="Patterns & mirror" data-part="intermediate" data-n="5">
@@ -825,7 +845,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <h2 class="title">The scripting console and the API</h2>
   <div class="objectives"><strong>You will learn to</strong><ul><li>Open the console and run the built-in examples</li><li>Build and change parts with the <code>api</code> object</li><li>Find any command or type in the API reference</li></ul></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.7</span></div></div>
+    <div class="example-head"><span class="tag">Example 15.1</span><h4>A plate with a hole, written as code</h4><div class="specs"><span>Ctrl + `</span><span>API 1.8</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Press <kbd>Ctrl</kbd>+<kbd>`</kbd>, or click <b>Console</b> on the Tools tab. The console opens at the bottom, with examples and a searchable list of commands on the right.</li>
@@ -867,7 +887,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><th>Namespace</th><th>Examples</th></tr>
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code>, <code>getEntities(id)</code>, and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
-    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
+    <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
     <tr><td><code>api.model</code></td><td><code>massProperties()</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5)</td></tr>

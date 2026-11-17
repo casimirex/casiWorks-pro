@@ -36,7 +36,7 @@ export interface LoftOptions {
   /** Total loft height when `heights` is not given (default 100). */
   height?: number;
 }
-export interface HoleOptions { cbDiameter?: number; cbDepth?: number; csAngle?: number; segments?: number }
+export interface HoleOptions { cbDiameter?: number; cbDepth?: number; csAngle?: number; csDiameter?: number; segments?: number }
 export interface ShapeOptions { thin?: boolean; wallThickness?: number }
 export type HoleType = 'through' | 'blind' | 'counterbore' | 'countersink' | 'simple';
 
@@ -344,6 +344,7 @@ class GeometryEngine {
       cbDiameter = diameter * 1.8,
       cbDepth = diameter * 0.5,
       csAngle = 82,
+      csDiameter,
       segments = 32,
     } = options;
 
@@ -384,7 +385,7 @@ class GeometryEngine {
       case 'countersink': {
         const mainCyl = new THREE.CylinderGeometry(radius, radius, depth || 1000, segments);
         const csAngleRad = csAngle * Math.PI / 180;
-        const csRadius = radius * 1.6;
+        const csRadius = csDiameter && csDiameter > diameter ? csDiameter / 2 : radius * 1.6;
         const csHeight = (csRadius - radius) / Math.tan(csAngleRad / 2);
         const csCone = new THREE.CylinderGeometry(radius, csRadius, csHeight, segments);
         csCone.translate(0, (depth || 500) / 2 - csHeight / 2, 0);

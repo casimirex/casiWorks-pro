@@ -154,7 +154,17 @@ export interface HoleFeature extends FeatureBase {
   position?: Point3;
   /** Drilling direction from the entry point (default +Z). */
   axis?: Point3;
-  holeType?: 'simple' | 'counterbore' | 'countersink';
+  holeType?: 'simple' | 'counterbore' | 'countersink' | 'tapped';
+  /** Counterbore Ø and depth (mm); default 1.8 × and 0.5 × the hole Ø. */
+  cbDiameter?: number;
+  cbDepth?: number;
+  /** Countersink Ø (mm) and included angle (°); default 1.6 × the hole Ø and 82°. */
+  csDiameter?: number;
+  csAngle?: number;
+  /** Hole Wizard standard the sizes came from, e.g. { size: 'M8', fit: 'normal' }. */
+  standard?: { size: string; fit?: 'close' | 'normal' | 'loose' };
+  /** Thread of a tapped hole, e.g. 'M8×1.25' (drilled at the tap drill Ø; the thread is not modelled). */
+  thread?: string;
 }
 
 export interface LinearPatternFeature extends FeatureBase {
