@@ -1,534 +1,277 @@
-# CasiWorks Pro — Professional 3D CAD Engineering Suite
+# CasiWorks Pro
 
-**CasiWorks Pro** is a professional, web-based 3D CAD application for mechanical design. Built with modern WebGL/Three.js rendering, a parametric feature tree over a triangle-mesh solid kernel (BSP CSG booleans, exact mass properties), a Levenberg-Marquardt 2D constraint solver, multi-body kinematic assembly mates, 3D solid linear static FEA simulation, 2D engineering drawings with GD&T, and ISO standard CAD data exchange (faceted STEP AP214, IGES 5.3, STL, DXF).
+**Parametric 3D CAD for mechanical parts, in the browser.** Sketch, model, assemble, draw, and check strength in one app, then drive all of it from scripts.
+
+![The mounting bracket coloured by von Mises stress in the FEA panel](docs/tutorial/img/29-fea-stress.webp)
+
+<p align="center">
+  <b>TypeScript</b> · React 18 · three.js · Node 22.18+ &nbsp;|&nbsp; scripting API <b>1.19</b> · library REST API <b>v1</b> &nbsp;|&nbsp; <b>249</b> unit tests · <b>29</b> browser checks · performance budgets in CI
+</p>
+
+CasiWorks Pro is a parametric CAD application with a feature tree, a 2D constraint solver, assemblies with mates, 2D drawings with GD&T, stress and vibration analysis, and a local document library with versions and revisions. It runs entirely on your machine: the app is a static web page, and the optional library is a small Node server on `127.0.0.1`.
+
+Solids are closed triangle meshes, not an exact B-Rep kernel. That choice keeps the app small and fast, and it sets some limits. See [Limits](#limits) for what that means in practice.
 
 ---
 
-## 🏛️ System Architecture
+## Contents
 
-```
-casiworks/
-├── index.html                    # Application entry HTML with branded splash screen
-├── package.json                  # Dependencies & scripts
-├── vite.config.ts                # Vite build configuration
-├── src/
-│   ├── main.tsx                  # React 18 bootstrap
-│   ├── App.tsx                   # Central application logic & reactive model rebuild loop
-│   ├── index.css                 # Dark engineering UI styling
-│   │
-│   ├── api/
-│   │   ├── CasiWorksAPI.ts       # Public, typed scripting API v1
-│   │   └── index.ts              # API entry: window.casiworks, casiworks-pro/api module
-│   ├── commands/                 # Command registry: ribbon, shortcuts and API run named commands
-│   │   ├── CommandRegistry.ts    # Registry, key bindings, execution listeners
-│   │   ├── builtinCommands.ts    # Every built-in command (file.*, feature.*, sketch.*, view.*, …)
-│   │   └── macros.ts             # Macro recorder, replay with id mapping, script export
-│   ├── console/                  # In-app scripting console (ScriptConsole.tsx, evaluate.ts)
-│   ├── plugins/                  # Add-ins: PluginManager (load, namespacing, rollback, unload)
-│   │
-│   ├── types/
-│   │   └── cad.ts                # Core domain types (features, sketch entities, mass properties)
-│   │
-│   ├── store/
-│   │   └── cadStore.ts           # Zustand + Immer state (undo/redo, feature tree, assembly)
-│   │
-│   ├── kernel/                   # Geometry kernel (triangle meshes)
-│   │   ├── GeometryEngine.ts     # Extrude, revolve, sweep, loft, patterns, mirror, holes, booleans, mass properties
-│   │   ├── csg.ts                # BSP-tree CSG: union / subtract / intersect on closed meshes
-│   │   ├── profile.ts            # Sketch entities → closed loops → shapes with holes
-│   │   ├── SketchEngine.ts       # Sketch entity factories, snapping, profile closure check
-│   │   ├── ConstraintSolver.ts   # Levenberg-Marquardt 2D solver with QR decomposition, rank & DOF analysis
-│   │   ├── MaterialLibrary.ts    # Engineering materials (Steels, Al, Ti, Plastics) with physical constants
-│   │   ├── ExportEngine.ts       # STEP AP214 faceted solid, IGES 5.3 MSBO, STL (Binary/ASCII), DXF, OBJ
-│   │   └── ImportEngine.ts       # STEP, IGES 5.3, Binary/ASCII STL, AutoCAD DXF, and Project JSON parser
-│   │
-│   ├── features/
-│   │   ├── FeatureEngine.ts      # Parametric feature evaluation (rollback, suppression, dependencies)
-│   │   └── rebuildModel.ts       # Rebuild entry point shared by the UI and the API
-│   │
-│   ├── assembly/
-│   │   └── AssemblyManager.ts    # Multi-body solver: Standard & Advanced mates (Tangent, Width, Path), Exploded Views
-│   │
-│   ├── simulation/
-│   │   ├── FEAEngine.ts          # 3D Solid FEA: Tet4/Tet10 meshing, stiffness assembly, static solve, Cauchy tensor
-│   │   └── ResultsViewer.tsx     # Simulation panel: max von Mises, deflection, factor of safety, stress tensor
-│   │
-│   ├── drawings/
-│   │   ├── DrawingEngine.ts      # 2D Orthographic projections, Hidden Line Removal (HLR), GD&T, SVG/DXF export
-│   │   └── DrawingViewModal.tsx  # Interactive engineering drawing sheet viewer modal
-│   │
-│   ├── viewport/                 # High-Performance 3D Viewport
-│   │   ├── Viewport3D.tsx        # R3F Canvas, OrbitControls, Reference Planes, Shading, Sharp Edges
-│   │   ├── ViewportPicker.ts     # Raycaster, 3D to sketch plane projection, vertex & edge snapping
-│   │
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── CommandManager.tsx # Ribbon toolbar (Features, Sketch, Surfaces, Assembly, Drawing, FEA)
-│   │   │   ├── FeatureTree.tsx    # Feature Tree (history, planes, suppression, rollback)
-│   │   │   ├── PropertyPanel.tsx  # Contextual property panel with parameter binding and debounced updates
-│   │   │   ├── StatusBar.tsx      # Unit system badge, grid/snap toggles, tool status
-│   │   │   └── MainLayout.tsx     # Master flex layout
-│   │   ├── dialogs/
-│   │   │   ├── ExportDialog.tsx   # Multi-format CAD export (STEP, IGES, STL, DXF, OBJ)
-│   │   │   ├── MaterialDialog.tsx # Searchable material database with physical properties
-│   │   │   └── MassPropsDialog.tsx# Exact Volume, Mass, Center of Mass, Moments of Inertia
-│   │   └── common/
-│   │       └── NumericInput.tsx   # High-precision engineering spinner input with units
-│   │
-│   └── utils/
-│       ├── math.ts               # Small vector helpers, ids, sketch-plane transforms
-│       ├── constants.ts          # Tool ids, feature/entity types, materials, settings
-│       ├── examples.ts           # 8 parametric example models
-│       ├── clone.ts              # Safe deep clone for undo snapshots
-│       ├── debounce.ts           # Debounce for responsive sliders
-│       ├── projectFile.ts        # Project save / open / new (.casiproj)
-│       └── shortcuts.ts          # Keyboard shortcuts
-└── tests/
-    ├── constraintSolver.test.ts  # Constraint solver: coupled systems, DOF, conflicts, numerics
-    ├── featureEngine.test.ts     # Feature engine: cuts, rollback, thin features, broken references
-    ├── assemblyManager.test.ts   # Every mate type, quaternion edge cases, exploded view
-    ├── dataExchange.test.ts      # STL, DXF, STEP and IGES round trips
-    ├── feaEngine.test.ts         # FEA against beam theory, Tet4 stiffness and stress
-    ├── drawingEngine.test.ts     # Projections, hidden lines, sheets, SVG/DXF
-    ├── store.test.ts             # Store: examples, load/save, undo/redo, new document
-    ├── massProperties.test.ts    # Mass properties in SI units
-    ├── workspace.test.ts         # Documents, parts by reference, face mates, DOF, motion, explode steps
-    ├── geometry.test.ts          # Kernel: profiles, extrude/revolve/loft, mirror, patterns, examples
-    ├── sketch.test.ts            # Sketch engine and constraint solver semantics
-    ├── api.test.ts               # Public API (headless)
-    ├── commands.test.ts          # Command registry, keymap, built-in commands
-    ├── events.test.ts            # API events
-    ├── macros.test.ts            # Macro recording, replay, script export
-    ├── console.test.ts           # Scripting console evaluator
-    ├── apidocs.test.ts           # API reference completeness
-    └── plugins.test.ts           # Add-ins: loading, conflicts, rollback, unload
+- [Quick start](#quick-start)
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Scripting and automation](#scripting-and-automation)
+- [Document library and REST API](#document-library-and-rest-api)
+- [Testing and quality](#testing-and-quality)
+- [Project layout](#project-layout)
+- [Configuration](#configuration)
+- [Limits](#limits)
+- [Documentation](#documentation)
+
+---
+
+## Quick start
+
+You need **Node.js 22.18 or later** (it runs the TypeScript sources directly) and a current Chrome, Edge or Firefox.
+
+```bash
+npm install
+npm run dev            # http://localhost:5173
 ```
 
----
+The app opens with a starter block. Click **Examples** in the top bar to load one of eight example parts: an L-bracket, an M12 hex bolt, a pillow block, a piston, a pipe flange, a sheet-metal U-channel, a spur gear blank and a connecting rod.
 
-## 🔬 What Actually Works (Verified Production Architecture)
-
-CasiWorks Pro implements real, verified engineering algorithms rather than superficial UI mocks. The architecture is tested across 7 areas:
-
-### 1. Real Feature Tree & Parametric Dependency Graph
-- **Directed Acyclic Graph (DAG)**: Features maintain explicit `parentIds` and `childIds` associations. Sketches act as foundational parents to extrusions, cuts, revolves, sweeps, lofts, fillets, and chamfers.
-- **Rollback Bar**: The feature history tree features an interactive rollback bar (`rollbackIndex`). Dragging or clicking any position rolls back evaluation to that historical state without destroying downstream feature definitions, allowing upstream parameter adjustments that recalculate downstream upon roll-forward.
-- **Cascading Suppress & Unsuppress**: Suppressing an upstream feature automatically cascades suppression through all downstream children in the dependency chain. Conversely, unsuppressing a downstream feature automatically restores any required parent features.
-- **Live Rebuild Loop**: Edits mark the model dirty; `rebuildModel` (`src/features/rebuildModel.ts`) re-evaluates the feature tree into solid bodies. Features that fail report a rebuild warning on that feature instead of stopping the rebuild.
-
-### 2. Industrial-Strength 2D Constraint Solver
-- **Levenberg-Marquardt with Householder QR Decomposition**: Built in `src/kernel/ConstraintSolver.ts`, the solver computes a 2nd-order central-difference numerical Jacobian $\mathbf{J}$ ($m_{\text{constraints}} \times n_{\text{vars}}$) and solves the augmented least-squares system via Householder QR decomposition with column pivoting:
-  $$\min \left\| \begin{bmatrix} \mathbf{J} \\ \sqrt{\lambda} \mathbf{I} \\ \sqrt{\mu} \mathbf{I} \end{bmatrix} \Delta \mathbf{x} - \begin{bmatrix} -\mathbf{r} \\ \mathbf{0} \\ -\sqrt{\mu}(\mathbf{x} - \mathbf{x}_0) \end{bmatrix} \right\|_2^2$$
-  where $\lambda$ is an adaptive Levenberg-Marquardt damping factor and $\mu$ is Tikhonov regularization anchoring the solution to initial geometry.
-- **Degrees of Freedom (DOF) Analysis**: Evaluates numerical rank of $\mathbf{J}$ from diagonal elements of $\mathbf{R}$ after QR column pivoting. Computes remaining degrees of freedom:
-  $$\text{DOF} = n_{\text{vars}} - \text{rank}(\mathbf{J})$$
-  and classifies sketch state into `under_constrained`, `fully_constrained`, or `over_constrained`.
-- **Over-Constrained & Conflict Diagnostics**: Distinguishes between redundant constraints (linearly dependent equations with zero residual) and inconsistent/conflicting constraints (non-zero residual, e.g. conflicting dimensions), returning diagnostic objects `{ type: 'conflict', constraintIds: [...] }`.
-- **Complete Constraint Catalog**: `COINCIDENT`, `HORIZONTAL`, `VERTICAL`, `PARALLEL`, `PERPENDICULAR`, `EQUAL`, `FIX`, `MIDPOINT`, `CONCENTRIC`, `COLINEAR`, `TANGENT`, `DIMENSION` (distance, radius, diameter), `ANGLE`, and `SYMMETRIC`.
-
-### 3. Geometry Kernel (triangle meshes)
-Solids are closed, outward-facing triangle meshes (`src/kernel/`). Every operation
-below is covered by measured regression tests (volumes against closed-form values,
-bounds, and a closed-mesh check) in `tests/geometry.test.ts`.
-
-- **Profiles** (`profile.ts`): sketch entities become closed loops regardless of drawing direction; loops nest by containment (solid / hole / island); overlapping regions are unioned; construction geometry is ignored.
-- **Extrude**: blind, midplane, through (500 mm, one direction), flip; several regions per sketch.
-- **Revolve**: full or partial (capped) revolutions; either profile orientation.
-- **Loft**: closed, capped solid between two or more sections. **Sweep** along a path.
-- **Patterns and mirror**: linear and circular (full or partial angle); instances and mirror halves are unioned, so overlaps are not double-counted.
-- **Booleans** (`csg.ts`): BSP-tree union, subtract and intersect.
-- **Mass properties**: exact for the mesh — volume, area, center of mass and inertia tensor (at the center of mass and at the origin) in SI units.
-
-**Not available** (CasiWorks uses its own mesh kernel; an exact B-Rep kernel is not planned): fillet, chamfer
-and shell are kept in the feature tree but report a "not applied" warning and leave
-the model unchanged; faces and edges cannot be selected individually; STEP/IGES
-export writes faceted (triangulated) geometry.
-
-### 4. Multi-Body Assembly Mate Engine
-- **Kinematic Mates** (`src/assembly/AssemblyManager.ts`):
-  - **Standard Mates**:
-    - `Coincident`: Aligns opposing face normals ($\vec{n}_2 = -\vec{n}_1$) and eliminates contact standoff gap.
-    - `Distance`: Enforces exact planar offset standoff distance along opposing face normals.
-    - `Concentric`: Aligns cylindrical axis directions and eliminates perpendicular axis offset.
-    - `Parallel`: Aligns face normal vectors ($\vec{n}_1 \parallel \vec{n}_2$) while preserving translational freedom.
-    - `Perpendicular`: Enforces orthogonal surface orientation ($\vec{n}_1 \cdot \vec{n}_2 = 0$).
-    - `Angle`: Enforces specified angular orientation between faces or axes.
-  - **Advanced Mates**:
-    - `Tangent`: Tangent contact between cylindrical surfaces and planar/cylindrical reference faces (centerline distance $= \text{radius} + \text{offset}$).
-    - `Width`: Symmetrically centers a tab component between two boundary reference faces.
-    - `Path`: Restrains a component's reference point along a 3D guide curve polyline.
-- **Multi-Body Solver**: 6-DOF satisfaction loop using quaternion rotation (`setFromUnitVectors`, `slerp`) and translation relaxation with weighted mass distribution for unpinned bodies.
-- **Exploded View Generator**: Configurable exploded distances along kinematic motion axes with 3D polyline leader lines; or **explode steps** (`src/assembly/explodeSteps.ts`): chosen components, a direction and a distance per step, played in order.
-- **Documents** (`src/workspace/`): parts and assemblies are separate documents, open side by side as tabs; each keeps its unsaved changes and undo history, and autosave brings all of them back.
-- **Parts by reference** (`src/assembly/partGeometry.ts`, `src/workspace/references.ts`): a component refers to a part document (open in the workspace, or in the library, following its newest version or pinned to one). When the part changes, the component is rebuilt from it, keeping its placement; faces picked for mates are found again on the new shape. The assembly file keeps a copy of each part, used only when the part cannot be reached (shown as *cached copy*).
-- **Mates on real faces** (`src/assembly/facePick.ts`): a click finds the flat face (all coplanar triangles) or cylinder (least-squares circle fit through the triangles round one axis) under the cursor; holes and shafts mate concentric by their real axis and radius.
-- **Degrees of freedom** (`src/assembly/dof.ts`): every mate as residual equations; a numerical Jacobian over each free component's six motions, and its null space (Jacobi eigen-decomposition), give the motions left per component (*turn about Z*, …), shown in the tree as (f) fixed, (-) under defined, (+) over defined (conflicting mates).
-- **Motion along mates**: driving a distance or angle mate (an angle mate can measure about an axis, so it turns all the way round) re-solves the assembly each frame.
-
-### 5. 3D Solid Linear Static FEA Simulation
-- **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.ts`):
-  - Voxelizes arbitrary CAD solids via ray-triangle parity containment testing, on a grid fitted to the part: grid lines through every axis-aligned face (thin walls meshed at their thickness), half-size cells across curved faces, graded at most 2.5× between neighbours; loose pieces dropped.
-  - Decomposes voxels into 6 tetrahedra using Kuhn's decomposition.
-  - Supports **Tet4** (linear 4-node) and **Tet10** (quadratic 10-node with mid-edge nodes) elements.
-  - Tracks surface boundary faces with outward normal vectors and surface areas.
-- **3D Elasticity Stiffness Matrix**:
-  - Exact $12 \times 12$ element stiffness matrix based on Young's modulus $E$ and Poisson's ratio $\nu$:
-    $$\mathbf{k}_e = \int_{V_e} \mathbf{B}^T \mathbf{D} \mathbf{B} \, dV = V_e \, \mathbf{B}^T \mathbf{D} \mathbf{B}$$
-    where $\mathbf{B}$ is the $6 \times 12$ strain-displacement matrix and $\mathbf{D}$ is the $6 \times 6$ isotropic constitutive matrix.
-  - Strictly symmetric ($K_{ij} = K_{ji}$) verified to machine precision.
-- **Global Solver**:
-  - `SparseMatrix` assembly with symmetric Dirichlet elimination for fixed fixtures ($u_x = u_y = u_z = 0$), pin/roller supports, boundary plane selectors, and pressure loads.
-  - Linear solve: IC(0)-preconditioned conjugate gradient, the direct envelope Cholesky when CG is slow and the matrix fits, Jacobi CG as a last resort; results say when the solver did not converge.
-- **3D Stress & Strain Tensor**:
-  - Computes all 6 Cauchy stress components: $\sigma_{xx}, \sigma_{yy}, \sigma_{zz}, \tau_{xy}, \tau_{yz}, \tau_{zx}$.
-  - Analytical principal stresses ($\sigma_1 \ge \sigma_2 \ge \sigma_3$) via Cardano's cubic formula for the characteristic polynomial.
-  - von Mises equivalent stress:
-    $$\sigma_v = \sqrt{\frac{1}{2}\left[(\sigma_{xx} - \sigma_{yy})^2 + (\sigma_{yy} - \sigma_{zz})^2 + (\sigma_{zz} - \sigma_{xx})^2 + 6(\tau_{xy}^2 + \tau_{yz}^2 + \tau_{zx}^2)\right]}$$
-  - Factor of Safety (FOS) against material yield strength ($\text{FOS} = \sigma_{\text{yield}} / \sigma_v$).
-  - Displaced Three.js BufferGeometry generation with rainbow/jet colormap vertex coloring.
-
-### 6. 2D Engineering Drawings Engine
-- **Orthographic Projections** (`src/drawings/DrawingEngine.ts`):
-  - Generates Front, Top, Right, Left, Bottom, Back, and 30° Isometric views from 3D models.
-  - Feature crease extraction based on dihedral angle thresholding.
-- **Hidden Line Removal (HLR)**:
-  - Barycentric depth buffer occlusion testing against front-facing triangles.
-  - Classifies visible solid contour lines (thick 0.5mm) vs dashed hidden lines (thin 0.25mm).
-- **Dimensioning & GD&T (ASME Y14.5 / ISO 1101)**:
-  - Linear dimensions with extension/witness lines, offsets, overshoot, and arrowheads.
-  - Datum feature symbols (`[A]`, `[B]`).
-  - Feature Control Frames: Flatness ($\unicode{x23E5}$), Perpendicularity ($\bot$), Parallelism ($\parallel$), Position ($\bigoplus$), Circular Runout ($\nearrow$), Cylindricity ($\unicode{x232D}$), Concentricity ($\unicode{x25CE}$).
-- **Vector Export**:
-  - High-fidelity scalable vector graphics (**SVG**) export with title block, borders, and styled CSS layers.
-  - AutoCAD **DXF** export structured into `VISIBLE`, `HIDDEN`, and `DIMENSION` layers.
-
-### 7. CAD Data Exchange (STEP, IGES, STL, OBJ, DXF)
-All solid exports are triangulated meshes (exact curved surfaces would need an
-exact B-Rep kernel, which is not planned). Every face is written; `tests/exchange.test.ts` checks each
-file against its standard's structure with parsers independent of the importer,
-then round-trips all examples with exact volume.
-- **STEP (ISO 10303-21, AP214; AP242 optional)**: faceted B-rep — `FACETED_BREP` /
-  `FACETED_BREP_SHAPE_REPRESENTATION`, a `CLOSED_SHELL` of triangular `POLY_LOOP`
-  faces over shared points, millimetre units, colour styling.
-- **IGES 5.3**: manifold solid B-rep (entity 186) with a vertex list (502),
-  edge list (504) of lines (110) shared between faces, loops (508), planes (108),
-  faces (510) and a closed shell (514); 80-column records with parameters never
-  split across records.
-- **STL** (binary and ASCII) with facet normals computed from each triangle; **OBJ**.
-- **DXF R12**: sketch entities (`LINE`, `CIRCLE`, `ARC`, `POINT`) or the model as `3DFACE`s.
-- **Importers** read STL, OBJ, DXF, faceted/planar STEP and IGES 5.3 B-rep faces;
-  files with no readable faces are reported as errors. (The app's Open command
-  currently loads project files only.)
-- **Project files** (`.casiproj`): feature history, sketches, constraints,
-  dimensions, material and assembly.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server with hot reload |
+| `npm run build` | Production build in `dist/` |
+| `npm run server` | The built app plus the document library and REST API on `127.0.0.1:5180` |
+| `npm test` | Unit tests (Node test runner, no browser) |
+| `npm run e2e` | Browser checks against the built app (needs Chrome) |
+| `npm run perf` | Bundle size, rebuild and solver timings against `perf-budgets.json` |
+| `npm run lint` · `npm run typecheck` | ESLint and TypeScript |
 
 ---
 
-## 🧩 Scripting API (v1)
+## Screenshots
 
-CasiWorks Pro exposes a public, versioned, fully typed API (`src/api/`).
-It drives the same store as the UI, so API edits appear in the feature tree and
-viewport, and can be undone like any other edit.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/tutorial/img/10g-sketch-dimensions.webp" alt="A sketch with driving dimensions and relation tags"><br><sub><b>Sketching.</b> Driving dimensions (one linked to a variable) and relation tags; the status bar reports how fully the sketch is defined.</sub></td>
+    <td width="50%"><img src="docs/tutorial/img/19c-equations.webp" alt="The equations dialog"><br><sub><b>Equations.</b> Named variables drive feature sizes and sketch dimensions; configurations switch between sets of values.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/tutorial/img/40-mate-faces.webp" alt="A pin and a hole picked for a concentric mate"><br><sub><b>Assemblies.</b> Click two real faces and the panel offers the mates that fit; here two Ø10 cylinders, concentric first.</sub></td>
+    <td><img src="docs/tutorial/img/43-explode-steps.webp" alt="An exploded assembly with a leader line"><br><sub><b>Explode steps.</b> Components moved in steps along a direction, played in order, with leader lines.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/tutorial/img/26e-title-block.webp" alt="A drawing sheet with the title block editor"><br><sub><b>Drawings.</b> Front, top, right and isometric views with hidden lines, true circles, dimensions, GD&T and an editable title block.</sub></td>
+    <td><img src="docs/tutorial/img/26c-assembly-drawing.webp" alt="An assembly drawing with a parts list and balloons"><br><sub><b>Assembly drawings.</b> A parts list matching the bill of materials, with numbered balloons.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/tutorial/img/30d-fea-faces.webp" alt="Bolt holes picked as fixed faces and load arrows on the upright"><br><sub><b>Stress analysis setup.</b> The bracket held by its two bolt holes (green) and loaded on the end of the upright (red arrows).</sub></td>
+    <td><img src="docs/tutorial/img/30c-fea-modal.webp" alt="Natural frequencies and a mode shape"><br><sub><b>Modal analysis.</b> The six lowest natural frequencies, and the shape of the chosen mode.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/tutorial/img/32-console.webp" alt="The scripting console"><br><sub><b>Scripting console.</b> The full API in scope, with examples and a searchable list of commands.</sub></td>
+    <td><img src="docs/tutorial/img/37-library-lifecycle.webp" alt="The library dialog with versions, a revision and status history"><br><sub><b>Document library.</b> Every saved version kept, released revisions, review status and its history.</sub></td>
+  </tr>
+</table>
 
-**In the running app** it is `window.casiworks`. The built-in **scripting
-console** (Tools ▸ Console, or Ctrl+\`) has it in scope as `api`, with
-`run(id, args)` for commands; `await` works and the value of the last line is
-shown. Or use the browser's developer console:
+All screenshots are taken from the real app by `scripts/tutorial-shots.ts` (`npm run build && npm run docs:tutorial-shots`).
+
+---
+
+## Features
+
+### Sketching
+
+- Lines, corner rectangles, centre circles and arcs, polygons (3–64 sides), straight slots, splines and points, with construction geometry.
+- Sketch on the Front, Top or Right plane, on a flat face of the part, or on a reference plane moved and tilted from a standard one.
+- Edit tools: **Trim**, **Extend**, **Offset** (whole chains, corners rejoined) and **Mirror**.
+- **Relations** (horizontal, vertical, parallel, perpendicular, equal, coincident, concentric, tangent, fix) and **driving dimensions** (length, distance, diameter, radius), solved by a Levenberg–Marquardt solver with QR-based rank analysis. The status bar shows under-, fully or over-defined, and conflicting relations are refused with a reason.
+
+### Part modelling
+
+- **Extrude** and **Extrude Cut** (blind, mid-plane, through all, thin), **Revolve** about a centreline, a sketch axis or a reference axis, **Sweep** and **Loft**.
+- **Hole Wizard** with ISO metric sizes M3–M20: clearance (close, normal, loose), counterbore (ISO 4762), countersink (ISO 10642) and tapped holes.
+- **Linear and circular patterns**, **mirror**, and reference **planes, axes, points and coordinate systems**.
+- A **feature tree** with rollback, suppression (cascading to children), editing of any feature, and rebuild warnings on the feature that failed.
+- **Equations and configurations**: variables such as `wall = 4` drive any size, including hole positions and sketch dimensions; a design table holds named versions of the part.
+- **Undo and redo** for every change, **autosave** of every open document, and project files that keep the full history.
+
+### Evaluate
+
+- A library of 16 materials (steels, aluminium alloys, titanium, copper, brass, cast iron, plastics, carbon fibre, glass, wood, rubber) with density, stiffness and yield strength.
+- **Mass properties**: mass, volume, surface area, centre of mass and inertia, exact for the mesh, optionally reported in your own coordinate system.
+- **Measure**: distance, its X/Y/Z parts, the angle between faces, and the gap between parallel faces.
+- **Unit systems** per document: MMGS, CGS, MKS and IPS. Every length field takes a unit (`25.4 mm`, `1"`, `2 ft`); files and the API stay in millimetres.
+
+### Assemblies
+
+- Parts and assemblies are separate documents, open side by side in tabs, each with its own undo history.
+- Components refer to real part documents (open in the app, or in the library, pinned to a version or following the newest). When a part changes, the assembly follows.
+- **Mates on real faces**: flat faces and cylinders are recognised from the mesh. Coincident, distance, concentric, parallel, perpendicular, angle, tangent, width and path.
+- **Degrees of freedom** per component (fixed, under-defined with the motions left, over-defined with the conflicting mates), **motion** by driving a mate, **explode steps**, **interference detection** and a **bill of materials** with CSV export.
+
+### Drawings
+
+- Standard sheets **ISO A4–A0** and **ANSI A–D** with front, top, right and isometric views and hidden-line removal.
+- Holes and arcs drawn as **true circles and arcs** with centre marks and hole callouts.
+- Automatic dimensions, **datums and feature control frames** (ASME Y14.5 / ISO 1101), and **your own dimensions** that follow the model when it changes.
+- An editable **title block** (company, part number, revision, material, drawn / checked / approved).
+- **Assembly drawings** with a parts list and balloons.
+- Export to vector **PDF** (true scale), **SVG** and **DXF**.
+
+### Simulation
+
+- **Linear static stress analysis** with Tet4 or quadratic Tet10 elements: von Mises stress, deflection and safety factor, plots on the model (also deformed), point probes, and a printable HTML report.
+- **Modal analysis**: natural frequencies and mode shapes.
+- **Supports and loads** on the outer sides of the part, or on **faces you pick**: flat faces and cylinders such as bolt holes, found again after the part changes.
+- The mesh is fitted to the part. Grid lines run through every flat face that is square to an axis, so walls and sheet are meshed at their true thickness. Cells are halved across curved faces and graded between sizes.
+- Solved in a Web Worker (the app stays responsive and a solve can be cancelled) with incomplete-Cholesky conjugate gradients, switching to a direct Cholesky solve when those converge slowly; the results say so if the solver ever stops before converging.
+- Checked against closed-form results: a Tet10 cantilever matches beam theory within 3%, and thin plates in bending within 2%.
+
+### Data exchange
+
+| Format | Export | Open in the app | Notes |
+|---|:-:|:-:|---|
+| Project (`.casiproj`) | ✓ | ✓ | The only format with the editable history |
+| STEP AP214 | ✓ | — | Faceted solid (flat triangles) |
+| IGES 5.3 | ✓ | — | Manifold solid B-rep of triangles |
+| STL (binary, ASCII) | ✓ | — | For 3D printing |
+| OBJ | ✓ | — | Mesh with normals |
+| DXF R12 | ✓ | — | Model as 3D faces; 2D sheets come from the drawing |
+
+Exported files are checked against each standard's structure by parsers independent of the exporter. The kernel also has readers for STL, OBJ, DXF, faceted STEP and IGES 5.3, tested by round-tripping every example, but the app's **Open** command loads project files only.
+
+---
+
+## Scripting and automation
+
+Every ribbon button, shortcut and status-bar toggle runs a **named command**, and a typed, versioned **public API** (currently **1.19**) drives the same model as the UI, so scripted changes appear in the feature tree and can be undone.
 
 ```js
-const api = window.casiworks;          // api.version === '1.13.0'
+// In the app: the console (Ctrl+`) has it as `api`; the browser console as window.casiworks
 const { sketchId } = api.sketches.create({
   plane: 'Front',
   entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }],
 });
 const boss = api.features.extrude({ sketchId, depth: 25 });
 api.features.update(boss, { depth: 40 });
-api.model.massProperties(); // { volume: 96000 (mm³), mass: 0.7584 (kg), ... }
-```
-
-Scripts that load before the app (extensions, an embedding page) can wait for it:
-
-```js
-window.addEventListener('casiworks:ready', (e) => console.log('CasiWorks', e.detail.version));
-```
-
-**Headless, as an ES module** (Node 22.18+ runs the TypeScript sources directly):
-
-```js
-import { createHeadlessAPI } from 'casiworks-pro/api';
-const api = createHeadlessAPI();   // same API, no browser or React
-```
-
-`api.version` follows semantic versioning: minor versions only add, major
-versions may break.
-
-**New in 1.5**: equations, configurations, assemblies, drawings and sketch editing:
-
-```js
-api.equations.set([{ name: 'wall', expression: '3' }, { name: 'depth', expression: 'wall * 8' }]);
-api.equations.link(boss, 'depth', 'depth + 1');           // the extrude follows the variables
-api.configurations.set([{ name: 'Large', values: { wall: '6' } }]);
-api.configurations.activate('Large');                    // depth becomes 49
-
-const plate = api.assembly.insert({ name: 'Base_Plate', shape: 'box', dimensions: { width: 50, height: 12, depth: 50 } });
-const pin = api.assembly.insert({ name: 'Pin_Shaft', shape: 'pin' });
-api.assembly.mate({ type: 'concentric', component1: plate, component2: pin });
-api.assembly.solve();
-api.assembly.setMaterial([pin], 'Brass_C36000');
-api.assembly.bom();                                      // rows with quantities and masses
-
-api.drawings.setOptions({ subject: 'assembly', sheetSize: 'A3_LANDSCAPE' });
-const svg = api.drawings.svg();                          // parts list and balloons; dxf() too
-
-api.sketches.trim(sketchId, lineId, { x: 5, y: 0 });     // also extend, offset, mirror
-```
-
-**New in 1.6**: `api.model.measure(a, b, { normalA, normalB })`: distance, dX/dY/dZ, the
-angle between faces and, for parallel faces, the gap (what the Measure tool shows).
-
-**New in 1.7**: `api.drawings.pdf()`: the drawing sheet as a vector PDF (a binary string;
-in Node `fs.writeFileSync('sheet.pdf', api.drawings.pdf(), 'latin1')`).
-
-**New in 1.8**: `api.features.hole(spec)`: the Hole Wizard, with ISO metric standard sizes:
-`api.features.hole({ position, axis, depth: 12, type: 'counterbore', standard: { size: 'M8' } })`
-(also 'countersink', 'tapped', or custom `diameter` / `cbDiameter` / `csDiameter`).
-
-**New in 1.9**: sketches on any plane. `api.features.referencePlane({ base: 'Top', offset: 40, angle: 20 })`
-returns a plane id; `api.sketches.create({ plane: id | { origin, xAxis, normal }, entities })` sketches
-on it (a sketch on a reference plane follows the plane when it changes).
-
-**New in 1.10**: `api.features.referenceAxis({ direction: 'Y', point | through })`,
-`api.features.referencePoint({ x, y, z })`, and `api.features.revolve({ sketchId, axis })` with
-`axis` = 'x' | 'y' | { line: entityId } (a centreline) | { axis: referenceAxisId }.
-
-**New in 1.11**: sketch relations and driving dimensions.
-`api.sketches.constrain(sketchId, { type: 'horizontal', entity1Id })`, `{ type: 'dimension', entity1Id, value: 60 }`
-(returns its id), `setDimension(sketchId, id, 80)` (the part follows), `removeConstraint`, `constraints`, `status`.
-
-**New in 1.12**: a sketch dimension can be an equation: `setDimension(sketchId, id, 'wall * 2')` or
-`constrain(sketchId, { type: 'dimension', entity1Id, value: 'wall * 2' })`; it follows the variables and
-configurations. `equations.list().links` lists such dimensions too.
-
-**New in 1.13**: `api.assembly.interference()` lists overlapping components with their shared
-volume (mm³), largest first; touching parts are not listed.
-
-**Add-ins** (since 1.4): an add-in is an ES module that exports a plugin
-object; it gets the public API and can add commands and Add-ins ribbon buttons.
-Load one from **Add-ins ▸ Manage** (URL or file) or with `api.plugins.load(url)`.
-Commands are named `<pluginId>.<name>`, cannot replace built-in commands or
-key bindings, and everything an add-in registered is removed when it is
-unloaded. The bundled example, [`public/plugins/washer.js`](public/plugins/washer.js),
-adds ISO 7089 washers:
-
-```js
-export default {
-  id: 'washer', name: 'Washer generator', version: '1.0.0', apiVersion: '1.4',
-  commands: [{ name: 'create', label: 'Washer', run: (args, host) => { /* host.api.sketches…, host.api.features… */ } }],
-  buttons: [{ command: 'create', label: 'M8', args: { size: 'M8' }, icon: '◎' }],
-};
-```
-
-An add-in runs with the same access as the app, so load only add-ins you trust.
-
-**API reference:** generated from the sources' doc comments by
-`npm run docs:api` (also run automatically before `dev` and `build`) and served
-with the app at **`/api/`** (Tools ▸ API Reference). It lists every namespace,
-member, event, command and type; a test fails if a public member is undocumented.
-
-**Commands** (since 1.1): every ribbon button, status-bar toggle and keyboard
-shortcut runs a named command, and scripts can run the same ones:
-
-```js
-api.commands.list();                                  // [{ id: 'feature.extrudeCut', label, category, shortcuts }, …]
-api.commands.execute('sketch.new', { plane: 'Right' });
+api.model.massProperties();          // { volume: 96000 (mm³), mass, centerOfMass, … }
 api.commands.execute('view.isometric');
-api.commands.execute('assembly.mate', { type: 'concentric' });
 ```
 
-Commands that open dialogs or files (`file.open`, `model.material`, `drawing.open`…)
-need the running app; headless they fail with `OPERATION_FAILED`.
+- **Headless in Node**: `import { createHeadlessAPI } from 'casiworks-pro/api'` gives the same API with no browser, for part families, batch exports or design checks in CI.
+- **Macros**: record model changes, replay them, or turn them into an editable script. A macro file is data and never runs code.
+- **Add-ins**: an ES module can add commands and ribbon buttons through the public API. See the ISO 7089 washer generator in [`public/plugins/washer.js`](public/plugins/washer.js).
+- **Events**: `rebuild`, `featureAdded`, `featureChanged`, `featureRemoved`, `selectionChanged`, `documentChanged`, `commandExecuted`.
+- **Errors** are `CasiWorksAPIError` with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, …). Units are mm, degrees and kg whatever the document's display units.
 
-**Events** (since 1.2): react to changes made anywhere — UI, keyboard or script:
-
-```js
-const stop = api.on('featureAdded', (e) => console.log('added', e.feature.name, e.feature.parameters));
-api.on('rebuild', (e) => console.log(e.ok ? `${e.bodyCount} body` : e.errors));
-api.on('selectionChanged', (e) => console.log(e.ids));
-stop(); // or api.off('featureAdded', handler)
-```
-
-Events: `rebuild`, `featureAdded`, `featureChanged`, `featureRemoved`,
-`selectionChanged`, `documentChanged` (new / open / example — sent instead of
-per-feature events), `commandExecuted`. Payloads are plain data.
-
-**Macros** (since 1.3): **Tools ▸ Record** records the model changes you make
-(sketches as their finished geometry, features with their parameters, edits,
-suppression, material, assembly mates) and **Stop** saves them as a
-`.casimacro.json` file; **Run Macro** replays one, **Save as Script** writes it
-as a JavaScript module. Ids are remapped on replay, so a macro can run any
-number of times. From code:
-
-```js
-api.macros.startRecording('Bracket');
-// … work in the UI or call api.commands …
-const macro = api.macros.stopRecording();   // plain JSON
-api.macros.run(macro);                      // replay
-api.macros.toScript(macro);                 // const r1 = run('sketch.create', …); run('feature.create', { sketchId: r1.sketchId, … })
-```
-
-Running a macro file never evaluates code: it is data. Scripts (`.mjs`) run
-where you choose to run them (browser console, `node`).
-
-Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
-Units are mm, degrees, kg and kg/m³, whatever unit system the document is shown in (MMGS, CGS, MKS or IPS). Invalid calls throw `CasiWorksAPIError`
-with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, `INVALID_DOCUMENT`).
-All return values are plain JSON data.
-
-Every input and result is typed (`CasiWorksAPI`, `SketchSpec`, `ExtrudeSpec`,
-`FeatureInfo`, `MassProperties`, …), so TypeScript editors autocomplete the API
-and reject invalid calls at compile time; the same rules are enforced at
-runtime for plain JavaScript callers.
+The full reference is generated from the source comments (`npm run docs:api`, also run before `dev` and `build`) and served with the app at **`/api/`** (Tools ▸ API Reference). A test fails if a public member is undocumented.
 
 ---
 
-## 🧪 Verification & Test Suite
-
-
-Browser end-to-end smoke test (needs Chrome; set `CHROME_PATH` if it is not found): `npm run build && npm run e2e`. It drives the real app — sketching with the mouse, property-panel features, drawings, FEA, commands and events, export, macro record and replay — and saves screenshots to `e2e-output/`.
-
-Performance budgets: `npm run build && npm run perf`. It measures the gzipped bundle, the rebuild time of every example, a static and a modal FEA solve, and (with Chrome) a cold app load, and fails if any is over its budget in `perf-budgets.json`. Times are medians of several runs; results are written to `perf-results.json`. After an intended change, `npm run perf -- --update` resets the budgets from the current machine (3× headroom on times, 10% on bundle size). CI runs typecheck, lint, tests, build, e2e and the budgets (`.github/workflows/ci.yml`).
-
-CasiWorks Pro is verified through an automated test suite (`tests/*.test.ts`, one file per module) executed with Node.js test runner:
+## Document library and REST API
 
 ```bash
-npm test
+npm run build && npm run server          # http://127.0.0.1:5180: the app plus /api/v1
+npm run server -- key create "script"    # an API key for scripts (shown once)
 ```
 
-### Coverage (all passing; run `npm test`)
-- **Constraint solver**: coupled systems, equal/parallel constraints, DOF analysis, conflict detection, numerical edge cases
-- **Feature engine**: midplane/through extrudes, rollback, thin features, suppressed-sketch propagation, missing-sketch errors
-- **Geometry kernel** (`tests/geometry.test.ts`): profiles (regions, direction, nesting, overlap, construction), extrude/flip, revolve, loft, mirror, patterns, not-applied finishing features, all examples
-- **Assembly**: coincident, distance, concentric, parallel, perpendicular, tangent, width, path mates; degenerate cases
-- **Data exchange**: STL, DXF, STEP AP214/AP242 and IGES 5.3 round-trips; IGES Global-section Hollerith validity
-- **FEA**: cantilever deflection vs. Euler-Bernoulli analytical solution, Tet4/Tet10 stiffness and stress tensor
-- **Drawings**: orthographic projection with hidden-line removal, dimensions, GD&T, SVG/DXF export
-- **Application state**: add/remove/suppress on every built-in example, project save/load round-trip, atomic rejection of invalid files
-- **Public API** (`tests/api.test.ts`): headless modeling end-to-end, undo/redo, suppression, rollback, materials, validation error codes, copy semantics
+A small Node server for one person on one machine. It listens on `127.0.0.1` only, keeps its data in `~/.casiworks`, and needs no extra packages (it uses the SQLite built into Node).
 
-The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run build` to verify the production bundle.
+- **Versions and revisions**: every save is kept; releasing a version gives it the next revision letter (A, B, …). A save over a version someone saved after you opened it is refused rather than lost.
+- **Status**: *Draft*, *In review*, *Released* or *Obsolete*, with a history of every change and its note. In review and obsolete documents are locked.
+- **Where used**: which assemblies use each part, and which version.
+- **REST API v1** (described at `/api/v1/openapi.json`): documents, versions, release, lifecycle, rebuild and export jobs (STL, OBJ, STEP, IGES, DXF without a browser), API keys and signed webhooks (`X-CasiWorks-Signature: sha256=…`).
+
+```bash
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:5180/api/v1/documents
+```
+
+In development, `npm run dev` proxies `/api/v1` to a running `npm run server`.
 
 ---
 
-## 🚀 Key Features
+## Testing and quality
 
-1. **Professional CAD UI Layout**:
-   - **Ribbon**: Command toolbar with Features, Sketch, Surfaces, Assembly, Evaluate, Simulation, and Drawing tabs.
-   - **Feature Tree**: Left sidebar showing Document origin, Reference Planes (Front, Top, Right), and feature timeline.
-   - **Properties**: Contextual parameter editor with green OK checkmark and red Cancel buttons, with debounced sliders.
-   - **ViewCube & Triad**: 3D orientation controls with standard views (Top, Front, Right, Isometric).
+| Check | Command | What it covers |
+|---|---|---|
+| Unit tests | `npm test` | 249 tests over 45 files: kernel volumes against closed form, constraint solver, every mate, drawings, FEA against beam theory, data exchange round trips, API, commands, macros, add-ins, library server |
+| Browser checks | `npm run e2e` | 29 flows in the real built app with Chrome: sketching with the mouse, features, assemblies, drawings, FEA with picked faces, units, export, macros, console, library |
+| Performance budgets | `npm run perf` | Gzipped bundle, rebuild time of every example, a static and a modal solve, cold load; fails over `perf-budgets.json` |
+| Static checks | `npm run lint` · `npm run typecheck` | ESLint with no warnings allowed; strict TypeScript |
 
-2. **2D Sketching**:
-   - Lines, Rectangles, Circles, Arcs, Splines, Slots, and Points.
-   - Smart Dimensioning and Construction Geometry toggle.
-   - Interactive projection onto Front (XY), Top (XZ), and Right (YZ) planes.
-   - Snapping to grid and entity vertices/midpoints.
-
-3. **3D Parametric Modeling**:
-   - **Extrude Boss/Base & Extrude Cut**: Blind, Mid Plane, Through All.
-   - **Revolve Boss/Base & Revolve Cut**: Full 360° or partial angle around sketch axes.
-   - **Sweep & Loft**: Profile sweeping along 3D guide curves with rotation-minimizing frames.
-   - **Fillet & Chamfer**: Procedural edge rounding and beveling.
-   - **Shell**: Hollowed out parts with user-specified wall thickness and cavity void shells.
-   - **Hole Wizard**: Standard circular through and blind holes.
-   - **Patterns & Mirror**: Linear and circular array patterning across planes.
-
-4. **Engineering Materials & Physical Evaluation**:
-   - Comprehensive library of steels (AISI 1020, 304SS, 4140), aluminums (6061-T6, 7075-T6), titanium, brass, copper, ABS, nylon, carbon fiber.
-   - **Mass Properties Calculator**: Mass, volume, surface area, center of gravity ($x, y, z$), and principal moments of inertia ($I_{xx}, I_{yy}, I_{zz}$).
-
-5. **3D Solid FEA Simulation**:
-   - Automated Tet4/Tet10 tetrahedral mesh generation.
-   - 3D elasticity stiffness matrix solution ($12 \times 12$ per element).
-   - IC(0) conjugate gradient and direct (envelope Cholesky) solvers with Dirichlet fixture boundary conditions.
-   - Fixtures and loads on the bounding-box sides or on faces picked on the model (flat faces and cylinders such as bolt holes), found again after the part changes.
-   - Cauchy stress components, analytical principal stresses, von Mises equivalent stress, and Factor of Safety (FOS) contour colormap.
-
-6. **2D Engineering Drawings & GD&T**:
-   - Multi-view orthographic projection (Front, Top, Right, Isometric) with Hidden Line Removal (HLR).
-   - Holes and arcs drawn as true circles and arcs, with centre marks and hole callouts.
-   - Smart dimensions, extension lines, arrowheads, tolerances; your own dimensions placed on the sheet that follow the model when it changes.
-   - ASME Y14.5 / ISO 1101 GD&T datum feature symbols and Feature Control Frames.
-   - Standard drawing sheets (ISO A4–A0, ANSI A–D) with an editable title block (company, part number, revision, drawn/checked/approved).
-   - SVG, PDF and AutoCAD DXF vector export.
-
-7. **Multi-Component Assembly**:
-   - Component insertion and coordinate transformation.
-   - Standard mates: Coincident, Distance, Concentric, Parallel, Perpendicular, Angle.
-   - Advanced mates: Tangent, Width, Path.
-   - Exploded view generation with 3D leader lines, or explode steps.
-   - Parts and assemblies as separate documents (tabs); real part documents as components, by reference.
-   - Mates picked on real faces (planes and cylinders); degrees of freedom per component; motion by driving a mate.
-   - Where used: the library records which assemblies use each part (`GET /api/v1/documents/{id}/where-used`).
-
-8. **Export & Import**:
-   - Export: **STEP AP214 (faceted)**, **STL (binary & ASCII)**, **OBJ** and **DXF R12** and **IGES 5.3** from the Export dialog; native project files.
-   - Import: **STEP**, **IGES 5.3**, **STL**, **DXF**, **OBJ**, and Project JSON.
-
-9. **Keyboard Shortcuts**:
-   - `Ctrl+Z` / `Ctrl+Y`: Undo / Redo
-   - `Ctrl+S`: Save Project
-   - `F5`: Rebuild Feature Tree
-   - `L`: Line tool
-   - `R`: Rectangle tool
-   - `C`: Circle tool
-   - `D`: Smart Dimension
-   - `E`: Extrude feature
-   - `Space`: Reset to Isometric view
-   - `Ctrl+1` through `Ctrl+7`: Standard view orientations
+CI (`.github/workflows/ci.yml`) runs all of these on Node 22 and 24.
 
 ---
 
-## 🏃 Running the Application
+## Project layout
 
-To start the development server:
-```bash
-npm run dev
 ```
-Open your browser at `http://localhost:5173/`.
-
-To run the automated verification test suite:
-```bash
-npm test
+src/
+├── api/            Public scripting API (window.casiworks, casiworks-pro/api)
+├── commands/       Command registry, built-in commands, macro recorder
+├── kernel/         Mesh kernel: extrude, revolve, sweep, loft, CSG booleans, profiles,
+│                   constraint solver, measure, materials, import and export
+├── features/       Feature tree evaluation, equations, hole standards, coordinate systems
+├── assembly/       Mates, face picking, degrees of freedom, explode steps, BOM, interference
+├── drawings/       Projection and hidden lines, arcs, dimensions, title block, SVG / PDF / DXF
+├── simulation/     FEA engine, fitted meshing, linear solvers, modal analysis, study setup, worker
+├── workspace/      Part and assembly documents, references between them
+├── library/        Client for the local document library
+├── store/          Application state (Zustand + Immer), undo and redo
+├── viewport/       3D view, picking and snapping, sketch tools
+├── components/     Ribbon, feature tree, property panel, dialogs
+├── console/        In-app scripting console
+└── plugins/        Add-in manager
+server/             Local library server: SQLite store, REST API, jobs, webhooks
+scripts/            e2e checks, performance budgets, API docs, tutorial screenshots
+tests/              Unit tests (node --test)
+docs/tutorial/      The handbook, with its screenshots
 ```
 
-To build for production:
-```bash
-npm run build
-```
-Production assets are generated cleanly in `dist/`.
+---
 
-### Local settings (`.env`)
+## Configuration
 
-Optional settings live in a `.env` file in the project folder; `npm run server`, `npm run e2e`, `npm run perf` and `npm run docs:tutorial-shots` read it automatically.
-Start from the template, which lists every setting (`CASIWORKS_DATA`, `PORT`, `CHROME_PATH`, `E2E_ONLY`):
+Optional settings live in a `.env` file. `npm run server`, `npm run e2e`, `npm run perf` and `npm run docs:tutorial-shots` read it automatically.
+
 ```bash
 cp .env.example .env
 ```
-`.env` and any `.env.*` file are ignored by git, so tokens kept there are never committed; only `.env.example` (no secrets) is. An empty value counts as unset, and command-line flags (`--data`, `--port`) win over `.env`.
 
-### Local document library and REST API (`npm run server`)
+| Variable | Used by | Default |
+|---|---|---|
+| `CASIWORKS_DATA` | Library server: where documents and keys are kept | `~/.casiworks` |
+| `PORT` | Library server port on `127.0.0.1` | `5180` |
+| `CHROME_PATH` | Browser checks and screenshots, when Chrome is not in a standard place | found automatically |
+| `E2E_ONLY` | Run only the browser checks whose name contains this text | all |
 
-```bash
-npm run build && npm run server        # http://127.0.0.1:5180 — the app plus /api/v1
-npm run server -- key create "script"  # an API key for scripts (shown once); key list / key delete ID
-```
+`.env` and every `.env.*` file are ignored by git; only the template `.env.example` is committed, so tokens kept in `.env` stay on your machine. An empty value counts as unset, and command-line flags (`--data`, `--port`) take precedence.
 
-A small Node server for one person on one machine: it listens on 127.0.0.1 only, keeps its data in `~/.casiworks` (`CASIWORKS_DATA` or `--data` to change), and needs no extra packages (SQLite is built into Node 22+).
+---
 
-- **Library** (File ▸ Library, `Ctrl+Shift+O`; Save to library `Ctrl+Shift+S`): every saved version is kept; a save on top of a version someone saved after you opened is refused (409); releasing a version gives it the next revision letter (A, B, …).
-- **Lifecycle**: each document is *Draft*, *In review*, *Released* or *Obsolete*, shown in the Library and next to the version in the title bar. In review and Obsolete lock saving; approving a review releases the newest version; saving a released document starts its next revision (back to Draft). Every change of status is kept with an optional note (`GET/POST /api/v1/documents/{id}/lifecycle`, `?state=` filters the document list).
-- **REST API v1** (`/api/v1`, described in `/api/v1/openapi.json`): documents, versions, version content, release, lifecycle, jobs, API keys, webhooks. Every call needs `Authorization: Bearer <API key>`; the app uses a session token only its own pages can read. Other host names and other web sites are refused.
-- **Jobs**: `rebuild` (rebuild warnings and mass properties) or `export` (STL, OBJ, STEP, IGES, DXF) of a saved version, run on the app's own kernel without a browser.
-- **Webhooks**: `document.saved`, `revision.released`, `document.state_changed`, `job.finished`, POSTed as JSON signed with `X-CasiWorks-Signature: sha256=<HMAC-SHA256 of the body>`; retried twice on failure; every attempt is logged (`GET /api/v1/webhooks/{id}/deliveries`).
+## Limits
 
-In development, `npm run dev` proxies `/api/v1` to a running `npm run server`.
+These follow from the triangle-mesh kernel. An exact B-Rep kernel was evaluated and is not planned, so treat them as lasting and use the workarounds.
+
+| Area | Today | Workaround |
+|---|---|---|
+| Fillet, chamfer, shell | Kept in the tree with a warning, not applied | Round corners with sketch arcs; hollow with an inward offset and a cut |
+| Edges | Edges cannot be picked; faces can (flat faces and cylinders) | Use the neighbouring face |
+| STEP and IGES | Faceted, not exact curved surfaces | Send a 2D drawing with machined parts |
+| FEA supports | A support holds every direction; a face smaller than a mesh cell cannot be used | Use a finer mesh for small holes |
+| Drawings | No section or detail views; automatic dimensions cannot be moved | Export DXF and finish in 2D CAD |
+| Library | One person on one machine; no sharing or co-editing | By design |
+| Language | The interface is in English | Translations are on the roadmap |
+
+---
+
+## Documentation
+
+- **[The CasiWorks Pro Handbook](docs/tutorial/index.html)**: an 18-chapter hands-on course, from the first sketch to assemblies, drawings, FEA, scripting and the library, with worked examples and exercises.
+- **API reference**: served by the app at `/api/` (Tools ▸ API Reference).
+- **REST API**: `/api/v1/openapi.json` (OpenAPI 3.1) on a running library server.
+- **[Roadmap](ROADMAP.md)**: what is done and what is open.
