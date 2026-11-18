@@ -28,7 +28,9 @@ import { naturalFrequencies } from '../simulation/modal.ts';
 import { featureFrame, massPropertiesIn } from '../features/coordinateSystems.ts';
 import type { CoordinateFrame } from '../features/coordinateSystems.ts';
 import { FACES } from '../simulation/studySetup.ts';
-import { drawingFile } from '../drawings/drawingSheet.ts';
+import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension } from '../drawings/drawingSheet.ts';
+import { DIMENSION_KINDS, DIMENSION_VIEWS } from '../drawings/associative.ts';
+import type { DimensionKind, DimensionView, DrawingDimension } from '../drawings/associative.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
 import type { DrawingComponent } from '../drawings/assemblyDrawing.ts';
 import { MATERIALS, MATE_TYPES } from '../utils/constants.ts';
@@ -63,7 +65,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.16.0';
+export const API_VERSION = '1.17.0';
 
 // =====================================================================
 // Public types
@@ -733,6 +735,35 @@ export interface DrawingsAPI {
    * byte). In Node: fs.writeFileSync('sheet.pdf', api.drawings.pdf(), 'latin1'). Since 1.7.
    */
   pdf(): string;
+  /**
+   * Dimensions placed on the part sheet, with their current values: they
+   * follow the model. `value` is null for a dangling one (what it was attached
+   * to is not found on the changed model). Since 1.17.
+   */
+  dimensions(): DrawingDimensionInfo[];
+  /**
+   * Place a dimension on a view of the part sheet. `points` are in mm in the
+   * view as it is seen (x right, y up); each snaps to the nearest corner,
+   * circle centre or circle. One point on a circle gives a diameter (radius
+   * for an arc), two points a distance ('auto': along the larger offset).
+   * Since 1.17.
+   * @example api.drawings.addDimension({ view: 'front', points: [{ x: -20, y: 0 }, { x: 20, y: 0 }] })
+   */
+  addDimension(spec: { view: 'front' | 'top' | 'right'; kind?: 'auto' | 'horizontal' | 'vertical' | 'diameter' | 'radius'; points: Array<{ x: number; y: number }> }): DrawingDimensionInfo;
+  /** Delete a placed dimension. Throws NOT_FOUND for an unknown id. Since 1.17. */
+  removeDimension(id: string): void;
+}
+
+/** A dimension placed on the drawing sheet. Since 1.17. */
+export interface DrawingDimensionInfo {
+  id: string;
+  view: 'front' | 'top' | 'right';
+  kind: 'horizontal' | 'vertical' | 'diameter' | 'radius';
+  /** Current value in mm; null when dangling. */
+  value: number | null;
+  /** The value when it was placed. */
+  placedValue: number;
+  dangling: boolean;
 }
 
 /** The CasiWorks public API. */
@@ -865,6 +896,9 @@ export interface ApiStoreState extends RebuildState {
   clearAssembly(): void;
   drawingOptions: DrawingOptionsInfo;
   setDrawingOptions(options: Partial<DrawingOptionsInfo>): void;
+  drawingDimensions: DrawingDimension[];
+  addDrawingDimension(dimension: DrawingDimension): void;
+  removeDrawingDimension(id: string): boolean;
 }
 
 export interface ApiStore {
@@ -1895,6 +1929,25 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     svg: () => sheetText('svg'),
     dxf: () => sheetText('dxf'),
     pdf: () => sheetText('pdf'),
+    dimensions: () => clone(dimensionInfo(get() as unknown as DrawingSource)),
+    addDimension(spec: Parameters<DrawingsAPI['addDimension']>[0]) {
+      const o = requireObject(spec, 'spec');
+      if (!DIMENSION_VIEWS.includes(o.view as DimensionView)) fail('INVALID_ARGUMENT', `view must be one of ${DIMENSION_VIEWS.join(', ')}`);
+      const kind = (o.kind ?? 'auto') as DimensionKind | 'auto';
+      if (kind !== 'auto' && !DIMENSION_KINDS.includes(kind)) fail('INVALID_ARGUMENT', `kind must be 'auto' or one of ${DIMENSION_KINDS.join(', ')}`);
+      const points = o.points as Array<{ x: number; y: number }>;
+      if (!Array.isArray(points) || points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) fail('INVALID_ARGUMENT', 'points must be an array of { x, y }');
+      const st = get();
+      const sheet = buildDrawingSheet({ ...(st as unknown as DrawingSource), drawingOptions: { ...st.drawingOptions, subject: 'part' } }) ?? fail('NOT_FOUND', 'There is no solid body to draw');
+      const dim = newDimension(sheet, o.view as DimensionView, kind, points);
+      if (typeof dim === 'string') fail('INVALID_ARGUMENT', dim);
+      get().addDrawingDimension(dim as Exclude<typeof dim, string>);
+      return clone(dimensionInfo(get() as unknown as DrawingSource).find(d => d.id === (dim as { id: string }).id)!);
+    },
+    removeDimension(id: string) {
+      if (typeof id !== 'string') fail('INVALID_ARGUMENT', 'id must be a string');
+      if (!get().removeDrawingDimension(id)) fail('NOT_FOUND', `No drawing dimension ${JSON.stringify(id)}`);
+    },
   });
 
   return Object.freeze({

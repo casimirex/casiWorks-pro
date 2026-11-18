@@ -2,7 +2,9 @@
 import { CommandError, CommandRegistry } from './CommandRegistry.ts';
 import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
 import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
-import { drawingFile } from '../drawings/drawingSheet.ts';
+import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension } from '../drawings/drawingSheet.ts';
+import { DIMENSION_KINDS } from '../drawings/associative.ts';
+import type { DimensionKind, DimensionView } from '../drawings/associative.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
 import { MATE_DEFAULTS } from '../assembly/mateDefaults.ts';
@@ -619,6 +621,37 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       state().setDrawingOptions(next);
       return { ...state().drawingOptions };
     },
+  },
+  {
+    id: 'drawing.addDimension', label: 'Add drawing dimension', category: 'Drawing',
+    description: "args: { view: 'front' | 'top' | 'right', kind?: 'auto' | 'horizontal' | 'vertical' | 'diameter' | 'radius', points: [{ x, y }] } — points in mm in the view as it is seen (x right, y up); each snaps to the nearest corner, circle centre or circle. One point on a circle: diameter (radius for an arc); two points: a distance. The dimension follows the model",
+    run: ({ state }, args: { view?: DimensionView; kind?: DimensionKind | 'auto'; points?: Array<{ x: number; y: number }> } | undefined) => {
+      const kind = args?.kind ?? 'auto';
+      if (kind !== 'auto' && !DIMENSION_KINDS.includes(kind)) throw new CommandError('INVALID_ARGUMENT', `kind must be 'auto' or one of ${DIMENSION_KINDS.join(', ')}`);
+      const points = args?.points;
+      if (!Array.isArray(points) || points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new CommandError('INVALID_ARGUMENT', 'points must be an array of { x, y }');
+      const sheet = buildDrawingSheet({ ...state(), drawingOptions: { ...state().drawingOptions, subject: 'part' } });
+      if (!sheet) throw new CommandError('NOT_AVAILABLE', 'Create a solid body first: the drawing is made from it');
+      const dim = newDimension(sheet, args?.view as DimensionView, kind, points);
+      if (typeof dim === 'string') throw new CommandError('INVALID_ARGUMENT', dim);
+      state().addDrawingDimension(dim);
+      state().setStatus(`Drawing dimension added: ${dim.kind} ${dim.value.toFixed(2)} mm`);
+      return { id: dim.id, view: dim.view, kind: dim.kind, value: dim.value };
+    },
+  },
+  {
+    id: 'drawing.removeDimension', label: 'Delete drawing dimension', category: 'Drawing',
+    description: 'args: { id } — a dimension placed on the drawing sheet',
+    run: ({ state }, args: { id?: string } | undefined) => {
+      if (typeof args?.id !== 'string') throw new CommandError('INVALID_ARGUMENT', 'id must be a string');
+      if (!state().removeDrawingDimension(args.id)) throw new CommandError('INVALID_ARGUMENT', `No drawing dimension ${JSON.stringify(args.id)}`);
+      return { id: args.id };
+    },
+  },
+  {
+    id: 'drawing.dimensions', label: 'List drawing dimensions', category: 'Drawing', record: false,
+    description: 'The dimensions placed on the drawing sheet with their current values; dangling ones (attachment not found on the changed model) have value null',
+    run: ({ state }) => dimensionInfo(state()),
   },
   {
     id: 'drawing.export', label: 'Export drawing (SVG / DXF / PDF)', category: 'Drawing', requiresUI: true, record: false,

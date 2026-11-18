@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { arcPoint, arcsInChain, chainSmooth, intervalsToArcs, mergeStraight, subtractIntervals, unionIntervals, wrapInterval } from './curves.ts';
 import type { Intervals } from './curves.ts';
+import { autoDiameters, dimensionSide, measureDimension, viewFeatures } from './associative.ts';
+import type { DimensionView, DrawingDimension, MeasuredDimension } from './associative.ts';
 import type { DrawingArc } from './curves.ts';
 
 export type { DrawingArc } from './curves.ts';
@@ -157,6 +159,8 @@ export interface SheetData {
   titleBlock?: TitleBlock;
   bomTable?: BomTable;
   balloons?: Balloon[];
+  /** The stored dimensions measured on this sheet: value in mm, or null when dangling (an attachment was not found). */
+  dimensionValues?: Array<{ id: string; value: number | null }>;
 }
 
 export interface SheetOptions {
@@ -167,6 +171,12 @@ export interface SheetOptions {
   material?: string;
   /** Room kept free directly above the title block, right-aligned with it (e.g. for a parts list). */
   reserveAboveTitle?: { width: number; height: number };
+  /** Dimensions placed by the user, attached to the model (5.2). */
+  dimensions?: DrawingDimension[];
+  /** Hole callouts (Ø of each size of visible circle) on the front view. Default true. */
+  holeCallouts?: boolean;
+  /** Text of a length in mm. Default "12.5 mm". */
+  formatLength?: (mm: number) => string;
 }
 export interface ProjectOptions { enableHLR?: boolean; creaseAngleDeg?: number }
 
@@ -818,6 +828,13 @@ export class DrawingEngine {
     return { projMat: mat, viewDir };
   }
 
+  /** A model point that projects to (u, v) in a view (at depth 0). */
+  _modelPoint(view: string, p: Point2D): { x: number; y: number; z: number } {
+    const { projMat } = this._getProjectionMatrix(view);
+    const q = new THREE.Vector3(p.x, p.y, 0).applyMatrix4(projMat.clone().invert());
+    return { x: q.x, y: q.y, z: q.z };
+  }
+
   /** Where a model point appears in a placed view, in sheet millimetres. */
   sheetPoint(view: SheetView, p: { x: number; y: number; z: number }): Point2D {
     const { projMat } = this._getProjectionMatrix(view.view);
@@ -855,13 +872,48 @@ export class DrawingEngine {
       maxX: sheetSize.width - margin - inner - 4,
       maxY: sheetSize.height - margin - titleBlockHeight - 4,
     };
-    const BAND = {
+    const BASE_BAND = {
       label: 9, // label baseline below a view
       frontLeft: 26, // height dimension and its text
       frontAbove: 16, // feature control frame
       frontBelow: 34, // datum, width dimension, label
       gap: 10, // between columns and rows
       topRight: 24, // depth dimension and its text right of the top view
+    };
+    let BAND = { ...BASE_BAND };
+
+    // Dimensions measured on the current geometry, and how many rows each band needs
+    const formatLength = sheetOptions.formatLength ?? ((mm: number) => `${mm.toFixed(1)} mm`);
+    const projected: Record<DimensionView, ProjectedView> = { front: frontView, top: topView, right: rightView };
+    const features = { front: viewFeatures(frontView), top: viewFeatures(topView), right: viewFeatures(rightView) };
+    const dimensionValues: Array<{ id: string; value: number | null }> = [];
+    const userMeasured: MeasuredDimension[] = [];
+    for (const d of sheetOptions.dimensions ?? []) {
+      const m = projected[d.view] ? measureDimension(d, features[d.view], projected[d.view].bounds) : null;
+      dimensionValues.push({ id: d.id, value: m ? m.value : null });
+      if (m) userMeasured.push(m);
+    }
+    // Hole callouts (smallest first), not for a size the user dimensioned already
+    const userSizes = userMeasured.filter(m => m.view === 'front' && m.prefix === 'Ø').map(m => m.value);
+    const callouts = sheetOptions.holeCallouts === false ? [] : autoDiameters('front', frontView).filter(a => !userSizes.some(v => Math.abs(v - a.value) < 1e-3));
+    let measured: MeasuredDimension[] = [...userMeasured, ...callouts];
+    const rows = (view: DimensionView, side: 'above' | 'left' | 'right') => measured.filter(m => m.view === view && dimensionSide(view, m.orientation) === side);
+    const ROW = 7; // between stacked horizontal dimensions
+    const COL = 16; // between stacked vertical dimensions (their text is horizontal)
+    /** Height taken by n rows above a view, up to the text of the outermost. */
+    const rowsTop = (n: number) => (n ? 11 + ROW * (n - 1) : 0);
+    let nFrontAbove = 0, topAbove = 0, rightRight = 0;
+    /** Room for the dimensions in `measured`. */
+    const setBands = () => {
+      nFrontAbove = rows('front', 'above').length;
+      const nRightAbove = rows('right', 'above').length, nTopAbove = rows('top', 'above').length;
+      const nFrontLeft = rows('front', 'left').length, nTopRight = rows('top', 'right').length, nRightRight = rows('right', 'right').length;
+      BAND = { ...BASE_BAND };
+      BAND.frontAbove = Math.max(16 + rowsTop(nFrontAbove), rowsTop(nRightAbove) + 3);
+      BAND.frontLeft += COL * nFrontLeft;
+      BAND.topRight += COL * nTopRight;
+      topAbove = nTopAbove ? rowsTop(nTopAbove) + 2 : 0;
+      rightRight = nRightRight ? 20 + COL * (nRightRight - 1) : 0;
     };
 
     const size = (v: ProjectedView) => ({ w: v.bounds.width || 0, h: v.bounds.height || 0 });
@@ -876,8 +928,8 @@ export class DrawingEngine {
 
     /** Positions at scale k, and how much room is left (negative = does not fit). */
     const arrange = (k: number) => {
-      const width = BAND.frontLeft + k * col1 + Math.max(BAND.topRight, BAND.gap) + k * col2;
-      const row1H = Math.max(k * T.h, k * I.h) + BAND.label;
+      const width = BAND.frontLeft + k * col1 + Math.max(BAND.topRight, BAND.gap) + k * col2 + rightRight;
+      const row1H = Math.max(topAbove + k * T.h, k * I.h) + BAND.label;
       const frontTop = BAND.frontAbove + row1H + BAND.gap; // from the top of the area
       const col1Bottom = frontTop + k * F.h + BAND.frontBelow;
       const col2Bottom = frontTop + k * R.h + BAND.label;
@@ -891,10 +943,27 @@ export class DrawingEngine {
     // Largest standard scale that fits (ISO 5455); a non-standard one only for huge parts
     const STANDARD_SCALES = [10, 5, 2, 1, 1 / 2, 1 / 5, 1 / 10, 1 / 20, 1 / 50, 1 / 100, 1 / 200, 1 / 500, 1 / 1000];
     const fits = (k: number) => { const a = arrange(k); return a.roomX >= 0 && a.roomY >= 0; };
-    let scale = STANDARD_SCALES.find(fits) ?? 0;
-    if (!scale) {
-      scale = 1 / 1000;
-      while (!fits(scale) && scale > 1e-6) scale /= 2;
+    const bestScale = () => {
+      let k = STANDARD_SCALES.find(fits) ?? 0;
+      if (!k) {
+        k = 1 / 1000;
+        while (!fits(k) && k > 1e-6) k /= 2;
+      }
+      return k;
+    };
+    // Hole callouts never cost scale: the largest are left out until the sheet fits as without them
+    measured = userMeasured;
+    setBands();
+    const scaleWithout = bestScale();
+    const kept = [...callouts];
+    measured = [...userMeasured, ...kept];
+    setBands();
+    let scale = bestScale();
+    while (kept.length && scale < scaleWithout) {
+      kept.pop();
+      measured = [...userMeasured, ...kept];
+      setBands();
+      scale = bestScale();
     }
     const scaleText = scale >= 1 ? `Scale: ${Math.round(scale)}:1` : `Scale: 1:${Math.round(1 / scale)}`;
 
@@ -946,28 +1015,55 @@ export class DrawingEngine {
 
     const views = [
       // Top view directly above the front view (same x), front and right side by side (same y)
-      placeView(topView, col1X, row1Y, 'TOP VIEW', BAND.label - 2),
+      placeView(topView, col1X, row1Y + topAbove, 'TOP VIEW', BAND.label - 2),
       placeView(frontView, col1X, frontY, 'FRONT VIEW', BAND.frontBelow - 2),
       placeView(rightView, col2X, frontY, 'RIGHT VIEW', BAND.label - 2),
       placeView(isoView, col2X, row1Y, 'ISOMETRIC VIEW', BAND.label - 2),
     ];
 
     // Generate automatic overall dimensions on Front and Top views
-    const dimensions = this._generateStandardDimensions(views[1], views[0], scale);
+    const dimensions = this._generateStandardDimensions(views[1], views[0], scale, formatLength);
+
+    // Dimensions attached to the model, stacked outward from their view
+    const placed: Record<DimensionView, SheetView> = { top: views[0], front: views[1], right: views[2] };
+    for (const view of ['front', 'top', 'right'] as const) {
+      const v = placed[view];
+      const b = v.bounds as Required<ViewBounds>;
+      const text = (m: MeasuredDimension) => `${m.prefix}${formatLength(m.value)}`;
+      rows(view, 'above').forEach((m, i) => {
+        const p1 = this.sheetPoint(v, { ...this._modelPoint(view, m.p1) }), p2 = this.sheetPoint(v, { ...this._modelPoint(view, m.p2) });
+        const y = b.minY - 6 - ROW * i;
+        dimensions.push(this.createLinearDimension(p1, p2, { orientation: 'horizontal', offset: y - Math.max(p1.y, p2.y), text: text(m) }));
+      });
+      for (const side of ['left', 'right'] as const) {
+        rows(view, side).forEach((m, i) => {
+          const p1 = this.sheetPoint(v, { ...this._modelPoint(view, m.p1) }), p2 = this.sheetPoint(v, { ...this._modelPoint(view, m.p2) });
+          // Outside the overall height (front, left) or depth (top, right) dimension
+          const x = side === 'left' ? b.minX - 14 - COL * (i + 1) : b.maxX + 12 + COL * (view === 'top' ? i + 1 : i);
+          const offset = side === 'left' ? x - Math.min(p1.x, p2.x) : x - Math.max(p1.x, p2.x);
+          dimensions.push(this.createLinearDimension(p1, p2, { orientation: 'vertical', offset, text: text(m) }));
+        });
+      }
+    }
 
     // Add GD&T symbols & Feature Control Frames
     const gdtFrames = [
       // In the band above the front view
       this.createFeatureControlFrame(
-        { x: views[1].bounds.minX, y: views[1].bounds.minY - 13 },
+        { x: views[1].bounds.minX, y: views[1].bounds.minY - 13 - rowsTop(nFrontAbove) },
         { characteristic: GDT_SYMBOLS.PERPENDICULARITY.symbol, tolerance: '⌀0.05', datums: ['A'] }
       ),
       // On the bottom face of the front view, left of the width dimension text
       this.createDatumSymbol(
-        { x: views[1].bounds.minX + Math.min(8, (views[1].bounds.maxX - views[1].bounds.minX) / 4), y: views[1].bounds.maxY },
+        // Clear of the width dimension's extension line at the left edge (the symbol is 8 mm wide)
+        { x: views[1].bounds.minX + Math.min(Math.max(5, (views[1].bounds.maxX - views[1].bounds.minX) / 4), 8), y: views[1].bounds.maxY },
         'A'
       ),
     ];
+    // Dimension texts clear of each other's lines and of the GD&T symbols
+    clearDimensionTexts(dimensions, gdtFrames.map(f => (f.type === 'gdt_fcf'
+      ? { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height }
+      : { minX: f.x - 4, minY: f.y, maxX: f.x + 4, maxY: f.y + 9 + f.boxHeight })));
 
     const sheetData = {
       sheetSize,
@@ -975,6 +1071,7 @@ export class DrawingEngine {
       views,
       dimensions,
       gdtFrames,
+      dimensionValues,
       border: {
         x: margin,
         y: margin,
@@ -1002,7 +1099,7 @@ export class DrawingEngine {
   /**
    * Helper: generate standard linear dimensions with witness/extension lines and arrows
    */
-  _generateStandardDimensions(frontView: SheetView | undefined, topView: SheetView | undefined, scale: number): LinearDimension[] {
+  _generateStandardDimensions(frontView: SheetView | undefined, topView: SheetView | undefined, scale: number, formatLength: (mm: number) => string = mm => `${mm.toFixed(1)} mm`): LinearDimension[] {
     const dims = [];
 
     if (frontView && frontView.bounds) {
@@ -1015,7 +1112,7 @@ export class DrawingEngine {
         dims.push(this.createLinearDimension(
           { x: fb.minX, y: fb.maxY },
           { x: fb.maxX, y: fb.maxY },
-          { offset: 24, orientation: 'horizontal', text: `${(width / scale).toFixed(1)} mm` }
+          { offset: 24, orientation: 'horizontal', text: formatLength(width / scale) }
         ));
       }
 
@@ -1024,7 +1121,7 @@ export class DrawingEngine {
         dims.push(this.createLinearDimension(
           { x: fb.minX, y: fb.minY },
           { x: fb.minX, y: fb.maxY },
-          { offset: -14, orientation: 'vertical', text: `${(height / scale).toFixed(1)} mm` }
+          { offset: -14, orientation: 'vertical', text: formatLength(height / scale) }
         ));
       }
     }
@@ -1037,7 +1134,7 @@ export class DrawingEngine {
         dims.push(this.createLinearDimension(
           { x: tb.maxX, y: tb.minY },
           { x: tb.maxX, y: tb.maxY },
-          { offset: 12, orientation: 'vertical', text: `${(depth / scale).toFixed(1)} mm` }
+          { offset: 12, orientation: 'vertical', text: formatLength(depth / scale) }
         ));
       }
     }
@@ -1394,7 +1491,7 @@ export default DrawingEngine;
 // =====================================================================
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
-export interface SheetElementBox { kind: 'view' | 'label' | 'dimension' | 'gdt' | 'datum' | 'titleBlock' | 'bom' | 'balloon'; name: string; box: Box }
+export interface SheetElementBox { kind: 'view' | 'label' | 'dimension' | 'dimensionLine' | 'gdt' | 'datum' | 'titleBlock' | 'bom' | 'balloon'; name: string; box: Box }
 
 /** Approximate extent of a line of text (Helvetica-like proportions). */
 function textBox(x: number, baseline: number, text: string, size: number, anchor: 'middle' | 'start' = 'middle'): Box {
@@ -1417,9 +1514,8 @@ export function sheetElementBoxes(sheet: SheetData): SheetElementBox[] {
   // A dimension is its three lines and its text (the space between the extension lines is free)
   sheet.dimensions.forEach((d, i) => {
     const name = `dimension ${i + 1} (${d.text})`;
-    for (const box of [segBox(d.dimLine), segBox(d.extLine1), segBox(d.extLine2), textBox(d.textPos.x, d.textPos.y, d.text, 3.2)]) {
-      out.push({ kind: 'dimension', name, box });
-    }
+    for (const box of [segBox(d.dimLine), segBox(d.extLine1), segBox(d.extLine2)]) out.push({ kind: 'dimensionLine', name, box });
+    out.push({ kind: 'dimension', name, box: textBox(d.textPos.x, d.textPos.y, d.text, 3.2) });
   });
   for (const f of sheet.gdtFrames) {
     if (f.type === 'gdt_fcf') out.push({ kind: 'gdt', name: 'feature control frame', box: { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height } });
@@ -1434,6 +1530,51 @@ export function sheetElementBoxes(sheet: SheetData): SheetElementBox[] {
   const tb = sheet.titleBlock;
   if (tb) out.push({ kind: 'titleBlock', name: 'title block', box: { minX: tb.x, minY: tb.y, maxX: tb.x + tb.width, maxY: tb.y + tb.height } });
   return out;
+}
+
+/**
+ * Move dimension texts that sit on another dimension's lines or text along
+ * their own dimension line (either way, outward in steps) to the first clear
+ * place; also clear of `obstacles`. Dimensions are taken in order; earlier
+ * ones keep their place.
+ */
+export function clearDimensionTexts(dims: LinearDimension[], obstacles: Box[] = []): void {
+  const hits = (a: Box, b: Box, gap = 0.5) => a.minX < b.maxX + gap && b.minX < a.maxX + gap && a.minY < b.maxY + gap && b.minY < a.maxY + gap;
+  dims.forEach((d, i) => {
+    const others: Box[] = [...obstacles];
+    // Texts already placed, and what else a line run on to a moved text must not cross
+    const texts: Box[] = [...obstacles];
+    // Its own extension lines too: a text wider than the gap goes beside it
+    others.push(segBox(d.extLine1), segBox(d.extLine2));
+    dims.forEach((o, j) => {
+      if (j === i) return;
+      others.push(segBox(o.dimLine), segBox(o.extLine1), segBox(o.extLine2));
+      if (j < i) {
+        const t = textBox(o.textPos.x, o.textPos.y, o.text, 3.2);
+        others.push(t);
+        texts.push(t);
+      }
+    });
+    const horizontal = Math.abs(d.dimLine.p1.y - d.dimLine.p2.y) < 1e-9;
+    const w = textBox(0, 0, d.text, 3.2);
+    const step = horizontal ? (w.maxX - w.minX) / 2 + 2 : 5;
+    const base = { ...d.textPos };
+    for (let k = 0; k <= 12; k++) {
+      const shift = k === 0 ? 0 : (k % 2 ? 1 : -1) * Math.ceil(k / 2) * step;
+      const pos = horizontal ? { x: base.x + shift, y: base.y } : { x: base.x, y: base.y + shift };
+      const box = textBox(pos.x, pos.y, d.text, 3.2);
+      if (others.some(o => hits(box, o))) continue;
+      // A text moved beside its line: the line runs on under it, clear of other texts
+      const [a, b] = d.dimLine.p1.x <= d.dimLine.p2.x ? [d.dimLine.p1, d.dimLine.p2] : [d.dimLine.p2, d.dimLine.p1];
+      const run = !horizontal || k === 0 ? null
+        : box.maxX < a.x ? { minX: box.minX, maxX: a.x, y: a.y, end: a, to: box.minX }
+          : box.minX > b.x ? { minX: b.x, maxX: box.maxX, y: b.y, end: b, to: box.maxX } : null;
+      if (run && texts.some(t => hits({ minX: run.minX, maxX: run.maxX, minY: run.y, maxY: run.y }, t))) continue;
+      d.textPos = pos;
+      if (run) run.end.x = run.to;
+      return;
+    }
+  });
 }
 
 /**
@@ -1458,6 +1599,9 @@ export function layoutProblems(sheet: SheetData, gap = 0.5): string[] {
     for (let j = i + 1; j < boxes.length; j++) {
       const [p, q] = [boxes[i], boxes[j]];
       if (p.name === q.name) continue; // parts of one dimension
+      // Dimension lines may cross views (extension lines from points inside) and each other
+      const lines = (k: SheetElementBox['kind']) => p.kind === 'dimensionLine' && q.kind === k || q.kind === 'dimensionLine' && p.kind === k;
+      if (lines('view') || lines('dimensionLine')) continue;
       // The datum triangle sits on the edge it marks
       // Boxes must be `t` apart; a datum may touch the view edge it marks
       const t = (p.kind === 'datum' && q.kind === 'view') || (q.kind === 'datum' && p.kind === 'view') ? -0.01 : gap;

@@ -341,5 +341,7 @@ export interface ProjectFile {
   activeConfiguration?: string | null;
   /** Exploded view steps (assemblies). */
   explodeSteps?: unknown[];
+  /** Dimensions placed on the drawing sheet (5.2). */
+  drawingDimensions?: unknown[];
   timestamp: number;
 }

@@ -539,9 +539,28 @@ const CHECKS: Check[] = [
       await sleep(2500);
       await p.eval(`window.casiworks.commands.execute('drawing.open')`);
       const lines = await waitFor(() => p.eval<number>(`document.querySelectorAll('svg line.visible-line').length`), 'drawing sheet');
+      const circles = await p.eval<number>(`document.querySelectorAll('.drawing-sheet-view #FRONT_VIEW circle.visible-line').length`);
+      assert(circles >= 2, `holes drawn as true circles in the front view: ${circles}`);
+      // Dimension tool: a click on a hole's circle places its diameter, listed and drawn
+      await p.click('Dimension');
+      const rim = await p.eval<{ x: number; y: number } | null>(`(() => {
+        const c = document.querySelector('.drawing-sheet-view #FRONT_VIEW circle.visible-line');
+        if (!c) return null;
+        const pt = new DOMPoint(+c.getAttribute('cx') + +c.getAttribute('r'), +c.getAttribute('cy')).matrixTransform(c.ownerSVGElement.getScreenCTM());
+        return { x: pt.x, y: pt.y };
+      })()`);
+      assert(rim, 'a hole to click');
+      await p.mouseClick(rim!.x, rim!.y);
+      const listed = await waitFor(() => p.eval<string>(`document.querySelector('.drawing-dimension')?.textContent`), 'placed dimension');
+      assert(/^Front · Ø10\.00 mm/.test(listed), `listed: ${listed}`);
+      assert(await p.eval<boolean>(`[...document.querySelectorAll('.drawing-sheet-view text.dim-text')].some(t => t.textContent === 'Ø10.0 mm')`), 'diameter drawn on the sheet');
       await p.screenshot('03-drawing');
+      // Escape leaves the dimension tool, a second Escape closes the sheet
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(200);
       await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
       await sleep(300);
+      await p.eval(`window.casiworks.commands.execute('drawing.removeDimension', { id: window.casiworks.commands.execute('drawing.dimensions')[0].id })`);
       // Study setup: the same face for fixture and load is refused
       const pick = (cls: string, value: string) => p.eval(`(() => {
         const sel = document.querySelector('.${cls}');

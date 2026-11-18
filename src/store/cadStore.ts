@@ -10,6 +10,8 @@ import * as THREE from 'three';
 import { generateId, referencePlaneFrame } from '../utils/math.ts';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES, MATERIALS } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
+import { sanitizeDimensions } from '../drawings/associative.ts';
+import type { DrawingDimension } from '../drawings/associative.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent, MateOptions, MateRef } from '../assembly/AssemblyManager.ts';
 import { safeDeepClone } from '../utils/clone.ts';
@@ -116,7 +118,7 @@ export interface DrawingOptions {
   sheetSize: DrawingSheetSize;
   /** Hidden line removal: drop edges that are behind faces. */
   hiddenLines: boolean;
-  /** Overall dimensions on the front and top views. */
+  /** Dimensions: overall sizes, hole callouts and the dimensions placed on the sheet. */
   dimensions: boolean;
   /** Datum symbol and feature control frame. */
   gdt: boolean;
@@ -163,6 +165,7 @@ interface DocumentSnapshot {
   variables: GlobalVariable[];
   configurations: Configuration[];
   activeConfiguration: string | null;
+  drawingDimensions?: DrawingDimension[];
 }
 
 interface UndoEntry {
@@ -294,6 +297,8 @@ export interface CADState {
   activeConfiguration: string | null;
   /** Drawing sheet display options (a session preference, not saved in the project). */
   drawingOptions: DrawingOptions;
+  /** Dimensions placed on the drawing sheet, attached to the model (saved with the document). */
+  drawingDimensions: DrawingDimension[];
 
   // Rebuild
   needsRebuild: boolean;
@@ -404,6 +409,9 @@ export interface CADActions {
   setComponentMaterial(componentIds: string[], material: string | null): void;
   setExplodedView(settings: ExplodedViewSettings | null): void;
   setDrawingOptions(options: Partial<DrawingOptions>): void;
+  addDrawingDimension(dimension: DrawingDimension): void;
+  /** False when there is no dimension with that id. */
+  removeDrawingDimension(id: string): boolean;
   /** Replace the global variables and update every parameter linked to them (one undo step). */
   setVariables(variables: GlobalVariable[]): void;
   /** Add an FEA probe (a node already probed is not added twice; at most 12, oldest dropped). */
@@ -515,6 +523,7 @@ function snapshotOf(state: Draft<CADStore>): DocumentSnapshot {
     variables: safeDeepClone(state.variables as GlobalVariable[]),
     configurations: safeDeepClone(state.configurations as Configuration[]),
     activeConfiguration: state.activeConfiguration,
+    drawingDimensions: safeDeepClone(state.drawingDimensions as DrawingDimension[]),
   };
 }
 
@@ -528,6 +537,7 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
   state.variables = s.variables ?? [];
   state.configurations = (s.configurations ?? []) as Draft<Configuration>[];
   state.activeConfiguration = s.activeConfiguration ?? null;
+  state.drawingDimensions = s.drawingDimensions ?? [];
   state.needsRebuild = true;
 }
 
@@ -699,6 +709,7 @@ function initialState(): CADState {
     configurations: [],
     activeConfiguration: null,
     drawingOptions: { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
+    drawingDimensions: [],
     needsRebuild: false,
     rebuildCount: 0,
     documentRevision: 0,
@@ -1417,6 +1428,22 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = `Configuration: ${name ?? 'Default'}`;
     }),
 
+    addDrawingDimension: (dimension) => set(state => {
+      get()._captureUndoSnapshot(state, 'Add Drawing Dimension');
+      state.drawingDimensions.push(safeDeepClone(dimension) as Draft<DrawingDimension>);
+      state.isModified = true;
+    }),
+
+    removeDrawingDimension: (id) => {
+      if (!get().drawingDimensions.some(d => d.id === id)) return false;
+      set(state => {
+        get()._captureUndoSnapshot(state, 'Delete Drawing Dimension');
+        state.drawingDimensions = state.drawingDimensions.filter(d => d.id !== id);
+        state.isModified = true;
+      });
+      return true;
+    },
+
     setDrawingOptions: (options) => set(state => {
       Object.assign(state.drawingOptions, options);
     }),
@@ -1460,6 +1487,7 @@ export const useCADStore = create<CADStore>()(
         assemblyComponents,
         mates: state.mates,
         ...(state.explodeSteps.length ? { explodeSteps: state.explodeSteps } : {}),
+        ...(state.drawingDimensions.length ? { drawingDimensions: state.drawingDimensions } : {}),
         timestamp: Date.now(),
       };
       return JSON.stringify(project, null, 2);
@@ -1542,6 +1570,7 @@ export const useCADStore = create<CADStore>()(
         // Restore assembly mates
         if (Array.isArray(project.mates)) assemblyManager.mates = [...project.mates] as AssemblyMate[];
         state.explodeSteps = (Array.isArray(project.explodeSteps) ? project.explodeSteps : []) as Draft<ExplodeStep>[];
+        state.drawingDimensions = sanitizeDimensions(project.drawingDimensions) as Draft<DrawingDimension>[];
         syncAssembly(state);
         state.interference = null;
 
@@ -1565,6 +1594,7 @@ export const useCADStore = create<CADStore>()(
       state.sketchEntities = safeDeepClone(example.sketchEntities || {}) as Draft<SketchEntityMap>;
       state.sketchConstraints = {};
       state.sketchDimensions = {};
+      state.drawingDimensions = [];
       state.rollbackIndex = -1;
       state.activeFeatureIndex = state.features.length > 0 ? 0 : -1;
       state.isSketchActive = false;
