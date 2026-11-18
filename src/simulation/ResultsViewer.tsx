@@ -455,6 +455,11 @@ export default function ResultsViewer() {
                   </div>
                 );
               })()}
+              {results.solverConverged === false && (
+                <div className="fea-not-converged" style={{ color: '#f87171', fontWeight: 600 }}>
+                  The solver stopped before it converged ({results.solverIterations?.toLocaleString()} iterations): these numbers are not reliable. Try a coarser mesh.
+                </div>
+              )}
               <div><strong>Max von Mises:</strong> {results.maxStressMPa.toFixed(1)} MPa</div>
               <div><strong>Max Deflection:</strong> {(results.maxDisplacementMM * 1000).toFixed(3)} μm</div>
               <div style={{

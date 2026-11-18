@@ -123,7 +123,9 @@ export function sameStudyFace(a: StudyFace, b: StudyFace): boolean {
  */
 export function nodesOnFace(mesh: SolidMesh, facePositions: Float32Array): number[] {
   const cell = mesh.cellSize ?? mesh.size.clone().divideScalar(8);
+  // The grid may be graded: each boundary triangle is judged by its own cell (its longest edge is a cell face's diagonal)
   const tol = 0.75 * Math.max(cell.x, cell.y, cell.z);
+  const pts = mesh.nodes.map(n => n.point);
   const count = facePositions.length / 9;
   const tris = Array.from({ length: count }, (_, i) => new THREE.Triangle(
     new THREE.Vector3().fromArray(facePositions, i * 9), new THREE.Vector3().fromArray(facePositions, i * 9 + 3), new THREE.Vector3().fromArray(facePositions, i * 9 + 6)));
@@ -135,13 +137,15 @@ export function nodesOnFace(mesh: SolidMesh, facePositions: Float32Array): numbe
   const key = (a: number, b: number) => (a < b ? `${a}_${b}` : `${b}_${a}`);
   for (const bf of mesh.boundaryFaces) {
     if (!box.containsPoint(bf.centroid)) continue;
+    const [na, nb, nc] = bf.nodes;
+    const local = 0.55 * Math.max(pts[na].distanceTo(pts[nb]), pts[nb].distanceTo(pts[nc]), pts[nc].distanceTo(pts[na]));
     let best = Infinity, bestN: THREE.Vector3 | null = null;
     for (let i = 0; i < tris.length; i++) {
       tris[i].closestPointToPoint(bf.centroid, q);
       const d = q.distanceToSquared(bf.centroid);
       if (d < best) { best = d; bestN = normals[i]; }
     }
-    if (best > tol * tol || !bestN || bf.normal.dot(bestN) < 0.3) continue;
+    if (best > local * local || !bestN || bf.normal.dot(bestN) < 0.3) continue;
     const [a, b, c] = bf.nodes;
     corners.add(a); corners.add(b); corners.add(c);
     edges.add(key(a, b)); edges.add(key(b, c)); edges.add(key(c, a));

@@ -952,9 +952,9 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
       </ol>
       <figure class="shot"><img loading="lazy" src="img/28-fea-setup.webp" alt="FEA setup with load arrows"><figcaption>Study setup: the load arrows on the chosen face.</figcaption></figure>
       <ol class="steps" start="6" style="counter-reset: step 5">
-        <li>Read the results: <b>Mesh</b> 5,040 elements covering 98% of the part's volume, <b>Max von Mises</b> 99.1 MPa, <b>Max Deflection</b> 93.7 µm, <b>Safety Factor</b> 2.79.</li>
+        <li>Read the results: <b>Mesh</b> 4,032 elements covering 100% of the part's volume, <b>Max von Mises</b> 86.1 MPa, <b>Max Deflection</b> 90.2 µm, <b>Safety Factor</b> 3.21.</li>
         <li>With <b>Show on model</b> ticked, the part is coloured by stress, from blue (low) to red (high).</li>
-        <li>Switch the plot to <b>Displacement</b> and tick <b>Deformed</b>. The bend is scaled up (here ×104) so you can see it.</li>
+        <li>Switch the plot to <b>Displacement</b> and tick <b>Deformed</b>. The bend is scaled up so you can see it; the legend says by how much.</li>
       </ol>
       <div class="gallery">
         <figure class="shot"><img loading="lazy" src="img/29-fea-stress.webp" alt="von Mises stress plot"><figcaption>von Mises stress plot.</figcaption></figure>
@@ -995,7 +995,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
         <li>Set <b>Fixed Face</b> to <i>Faces picked on the model</i>. Picking starts: the <b>Pick</b> button turns into a green <b>Done</b>.</li>
         <li>Click the inside of each bolt hole. Each one turns green on the model and is listed as <i>Hole Ø10 mm</i>. Clicking a picked face again removes it, and so does its <b>×</b> in the list.</li>
         <li>Set <b>Load On</b> to <i>Faces picked on the model</i>, and click the top end of the upright (<i>Flat face, 480 mm²</i>). Set <b>Load Direction</b> to <i>+X</i> and keep 5000 N. Red arrows spread over the face show the load. Click <b>Done</b> or press <kbd>Esc</kbd> to stop picking.</li>
-        <li>Click <b>Solve</b>. Held only by its two bolts, the bracket reaches 445 MPa at the inside corner, deflects 0.97 mm, and has a safety factor of 0.62. It would bend permanently. With 1000 N it passes, with a safety factor of about 3.1: the stress scales with the load.</li>
+        <li>Click <b>Solve</b>. Held only by its two bolts, the bracket reaches 507 MPa at the inside corner, deflects 0.89 mm, and has a safety factor of 0.54. It would bend permanently. With 1000 N it passes, with a safety factor of about 2.7: the stress scales with the load.</li>
       </ol>
       <div class="gallery">
         <figure class="shot"><img loading="lazy" src="img/30d-fea-faces.webp" alt="Bolt holes picked as fixed faces and the upright end picked for the load"><figcaption>The two holes held (green), and the load on the upright's end (red arrows).</figcaption></figure>
@@ -1007,11 +1007,12 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
   <div class="callout warn"><span class="ic">⚠</span><div><b class="label">How a picked face is meshed</b><p>The FEA mesh is made of small cubes, so a round hole becomes a staircase. The mesh nodes on the staircase next to the picked face, facing the same way, are held or loaded. A face smaller than the cubes, for example a 2 mm hole on a coarse mesh, has no nodes, and <b>Solve</b> asks for a finer mesh.</p></div></div>
   <h3>Reading the numbers like an engineer</h3>
   <div class="cards">
-    <div class="card"><b>Safety factor</b><p>Yield strength ÷ peak stress: 276 ÷ 99.1 ≈ 2.79. Most machine parts aim for 1.5–3, so this bracket passes with margin.</p></div>
-    <div class="card"><b>Mesh coverage</b><p>Should be close to 100%. A low figure means the mesh missed thin walls, so try a finer mesh.</p></div>
+    <div class="card"><b>Safety factor</b><p>Yield strength ÷ peak stress: 276 ÷ 86.1 ≈ 3.21. Most machine parts aim for 1.5–3, so this bracket passes with margin.</p></div>
+    <div class="card"><b>Mesh coverage</b><p>Should be close to 100%. Walls and steps square to the axes are meshed at their true thickness; round and slanted faces are a staircase, so a part with many of them may read a few per cent off.</p></div>
     <div class="card"><b>Convergence</b><p>Solve on Medium, then on Fine. If the peak stress changes by less than about 5%, the answer is settled.</p></div>
     <div class="card"><b>Out of date</b><p>If you change the part, its material or the load after solving, the results grey out until you solve again.</p></div>
   </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">How the part is meshed</b><p>The mesh is a grid of small boxes, each split into six tetrahedra. The grid lines run through every flat face that is square to X, Y or Z, so a 2 mm sheet wall gets elements through its thickness even when the boxes are 6 mm across. Across holes and other curved faces the boxes are half the size, and the size changes gradually from there. Thin and slender parts take longer to solve, up to a minute on Medium. If the solver ever stops before its answer settles, the results say so in red.</p></div></div>
   <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limits</b><p>A fixed face holds every direction: there is no sliding or pin support yet, and a load is a force spread evenly over its faces, with no pressure or bearing load. The study is linear static: small deflections, no contact. Sharp inside corners give stress peaks that are higher than reality, and a real fillet would lower them.</p></div></div>
   <div class="exercise"><b>Exercise 13.</b> Solve the bracket again in AISI 1020 Steel and in Titanium Ti-6Al-4V. Make a table of mass, deflection and safety factor for all three materials. Which would you choose for a weight-critical drone mount?<label><input type="checkbox" data-done="ch13"> I've done this</label></div>
 </section>

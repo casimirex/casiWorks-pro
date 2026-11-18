@@ -3,6 +3,7 @@
 // 3D Elasticity Stiffness Matrix, Boundary Conditions, PCG Linear Solver,
 // 3D Cauchy Stress & Strain Tensors, Principal Stresses, von Mises Stress,
 // Factor of Safety, and Colormap Deformed Mesh Visualization.
+import { EnvelopeCholesky, SpdSolver } from './linearSolvers.ts';
 import * as THREE from 'three';
 
 export const ELEMENT_TYPES = {
@@ -63,7 +64,7 @@ export interface SolidMesh {
   geometry: THREE.BufferGeometry;
   boundingBox: THREE.Box3;
   size: THREE.Vector3;
-  /** Grid cell size (mm) of the voxel mesh. */
+  /** Largest grid cell size (mm) of the voxel mesh along x, y and z. */
   cellSize?: THREE.Vector3;
   elementType: ElementType;
   numNodes: number;
@@ -92,6 +93,8 @@ export interface MeshOptions {
   ny?: number;
   nz?: number;
   numStations?: number;
+  /** Grid lines along x, y and z (mm, ascending, from the part's min to its max): a fitted, graded grid instead of equal divisions. */
+  grid?: { x: number[]; y: number[]; z: number[] };
 }
 
 export interface Fixture { type?: string; plane?: BoxPlane; nodeIndices?: number[]; dof?: number }
@@ -153,6 +156,9 @@ export interface FEAResults {
   solidResult: SolidResult | null;
   is3DSolid: boolean;
   isVerifiedLinearStatic: boolean;
+  /** The linear solver reached its tolerance (false: the numbers are not to be trusted). */
+  solverConverged?: boolean;
+  solverIterations?: number;
 }
 
 export interface Tet4Stiffness {
@@ -433,9 +439,14 @@ export class FEAEngine {
       }
     }
 
-    const dx = sizeX / nx;
-    const dy = sizeY / ny;
-    const dz = sizeZ / nz;
+    // Grid lines: equal divisions, or the fitted lines given (roadmap 6.2)
+    const lines = (lo: number, size: number, n: number) => Array.from({ length: n + 1 }, (_, i) => lo + (i * size) / n);
+    const xs = options.grid?.x ?? lines(min.x, sizeX, nx);
+    const ys = options.grid?.y ?? lines(min.y, sizeY, ny);
+    const zs = options.grid?.z ?? lines(min.z, sizeZ, nz);
+    if (options.grid) { nx = xs.length - 1; ny = ys.length - 1; nz = zs.length - 1; }
+    const widest = (c: number[]) => c.reduce((m, v, i) => (i ? Math.max(m, v - c[i - 1]) : m), 0);
+    const dx = widest(xs), dy = widest(ys), dz = widest(zs);
 
     const pos = geometry.getAttribute('position');
     const index = geometry.getIndex();
@@ -491,9 +502,9 @@ export class FEAEngine {
       const existing = nodeMap.get(key);
       if (existing !== undefined) return existing;
 
-      const px = min.x + ix * dx;
-      const py = min.y + iy * dy;
-      const pz = min.z + iz * dz;
+      const px = xs[ix];
+      const py = ys[iy];
+      const pz = zs[iz];
 
       const id = nodes.length;
       const node = {
@@ -515,9 +526,9 @@ export class FEAEngine {
     for (let ix = 0; ix < nx; ix++) {
       for (let iy = 0; iy < ny; iy++) {
         for (let iz = 0; iz < nz; iz++) {
-          const cx = min.x + (ix + 0.5) * dx;
-          const cy = min.y + (iy + 0.5) * dy;
-          const cz = min.z + (iz + 0.5) * dz;
+          const cx = (xs[ix] + xs[ix + 1]) / 2;
+          const cy = (ys[iy] + ys[iy + 1]) / 2;
+          const cz = (zs[iz] + zs[iz + 1]) / 2;
 
           const inside = isPointInside([cx, cy, cz]);
           if (!inside && numTris > 12) continue;
@@ -591,6 +602,40 @@ export class FEAEngine {
         if (V > 1e-15 && Number.isFinite(V)) {
           elements.push({ id: elements.length, type: ELEMENT_TYPES.TET4, nodes: [n0, n1, n2, n3], volume: V });
         }
+      }
+    }
+
+    // Keep the largest piece joined through faces: a piece touching the rest only at an edge or a corner
+    // is a hinge (or floats), which makes the stiffness matrix singular. Then drop the unused nodes.
+    {
+      const parent = elements.map((_, i) => i);
+      const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+      const owner = new Map<string, number>();
+      elements.forEach((el, i) => {
+        const [a, b, c, d] = el.nodes;
+        for (const f of [[a, b, c], [a, b, d], [a, c, d], [b, c, d]]) {
+          const k = f.sort((x, y) => x - y).join('_');
+          const o = owner.get(k);
+          if (o === undefined) owner.set(k, i); else parent[find(o)] = find(i);
+        }
+      });
+      const volume = new Map<number, number>();
+      elements.forEach((el, i) => volume.set(find(i), (volume.get(find(i)) ?? 0) + el.volume));
+      if (volume.size > 1) {
+        const keep = [...volume.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+        const kept = elements.filter((_, i) => find(i) === keep);
+        elements.length = 0;
+        kept.forEach((el, i) => elements.push({ ...el, id: i }));
+      }
+      const used = new Set<number>();
+      for (const el of elements) for (const nIdx of el.nodes) used.add(nIdx);
+      if (used.size < nodes.length) {
+        const remap = new Map<number, number>();
+        const kept = nodes.filter(nd => used.has(nd.id));
+        kept.forEach((nd, i) => remap.set(nd.id, i));
+        nodes.length = 0;
+        kept.forEach((nd, i) => nodes.push({ ...nd, id: i }));
+        for (const el of elements) el.nodes = el.nodes.map(nIdx => remap.get(nIdx)!);
       }
     }
 
@@ -907,9 +952,62 @@ export class FEAEngine {
     return I;
   }
 
-  _solvePCG(K: SparseMatrix, F: Float64Array, maxIter = 2500, tol = 1e-7): Float64Array {
+  /** How the last linear solve went: method, iterations, relative residual, whether it reached the tolerance. */
+  lastSolve: { iterations: number; residual: number; converged: boolean; method: 'direct' | 'ic-cg' | 'jacobi-cg' } | null = null;
+
+  /**
+   * K·U = F for a static solve: direct (envelope Cholesky) when it fits in
+   * memory, which is exact however thin or slender the part; otherwise CG with
+   * an incomplete Cholesky preconditioner; Jacobi CG as the last resort.
+   */
+  _solveLinear(K: SparseMatrix, F: Float64Array): Float64Array {
+    const n = F.length;
+    let normF = 0;
+    for (let i = 0; i < n; i++) normF += F[i] * F[i];
+    normF = Math.sqrt(normF) || 1;
+    const residualOf = (U: Float64Array) => {
+      const KU = K.toCSR().mult(U, new Float64Array(n));
+      let r = 0;
+      for (let i = 0; i < n; i++) r += (F[i] - KU[i]) ** 2;
+      return Math.sqrt(r) / normF;
+    };
+    // IC-CG first (fast on chunky parts); if it is slow to converge (thin walls, slender parts),
+    // the direct solver when it fits in memory; otherwise CG goes on from where it stopped
+    let cg: SpdSolver | null = null;
+    let U: Float64Array | null = null;
+    try {
+      cg = new SpdSolver(K);
+      U = cg.solve(F, 1e-7, 400);
+      if (U.every(Number.isFinite) && cg.residual < 1e-7) {
+        this.lastSolve = { iterations: cg.iterations, residual: cg.residual, converged: true, method: 'ic-cg' };
+        return U;
+      }
+    } catch { cg = null; /* could not be factorised */ }
+    try {
+      const direct = EnvelopeCholesky.create(K);
+      if (direct) {
+        const D = direct.solve(F);
+        if (D.every(Number.isFinite)) {
+          const residual = residualOf(D);
+          this.lastSolve = { iterations: cg?.iterations ?? 0, residual, converged: residual < 1e-6, method: 'direct' };
+          return D;
+        }
+      }
+    } catch { /* not positive definite: the iterative solvers report it */ }
+    if (cg && U && U.every(Number.isFinite)) {
+      const V = cg.solve(F, 1e-7, 20000, U);
+      if (V.every(Number.isFinite)) {
+        this.lastSolve = { iterations: cg.iterations, residual: cg.residual, converged: cg.residual < 1e-6, method: 'ic-cg' };
+        return V;
+      }
+    }
+    return this._solvePCG(K, F);
+  }
+
+  _solvePCG(K: SparseMatrix, F: Float64Array, maxIter = 20000, tol = 1e-7): Float64Array {
     const n = F.length;
     const U = new Float64Array(n);
+    this.lastSolve = { iterations: 0, residual: 0, converged: true, method: 'jacobi-cg' };
     if (n === 0) return U;
 
     const r = new Float64Array(n);
@@ -917,7 +1015,7 @@ export class FEAEngine {
     const p = new Float64Array(n);
     const Kp = new Float64Array(n);
 
-    const safeMaxIter = Math.max(10, Math.min(100000, Number(maxIter) || 2500));
+    const safeMaxIter = Math.max(10, Math.min(100000, Number(maxIter) || 20000));
     const safeTol = Math.max(1e-15, Number(tol) || 1e-7);
 
     // Diagonal preconditioner (Jacobi)
@@ -927,14 +1025,17 @@ export class FEAEngine {
       M[i] = (Number.isFinite(diag) && Math.abs(diag) > 1e-12) ? 1.0 / diag : 1.0;
     }
 
+    const csr = K.toCSR();
+    const precondition = (res: Float64Array, out: Float64Array) => { for (let i = 0; i < n; i++) out[i] = M[i] * res[i]; };
+
     let normF = 0;
     for (let i = 0; i < n; i++) {
       const fi = Number.isFinite(F[i]) ? F[i] : 0;
       r[i] = fi;
       normF += fi * fi;
-      z[i] = M[i] * fi;
-      p[i] = z[i];
     }
+    precondition(r, z);
+    p.set(z);
     normF = Math.sqrt(normF);
     // Early exit on zero residual ||r|| ~ 0 or zero external load
     if (normF < 1e-15) return U;
@@ -943,8 +1044,9 @@ export class FEAEngine {
     for (let i = 0; i < n; i++) rzOld += r[i] * z[i];
     if (Math.abs(rzOld) < 1e-30 || !Number.isFinite(rzOld)) return U;
 
-    const csr = K.toCSR();
+    let iterations = 0, residual = 1;
     for (let iter = 0; iter < safeMaxIter; iter++) {
+      iterations = iter + 1;
       csr.mult(p, Kp);
       let pKp = 0;
       for (let i = 0; i < n; i++) pKp += p[i] * Kp[i];
@@ -964,10 +1066,11 @@ export class FEAEngine {
       for (let i = 0; i < n; i++) normR += r[i] * r[i];
       normR = Math.sqrt(normR);
 
+      residual = normR / (normF || 1.0);
       // Early exit on zero residual ||r|| ~ 0 or convergence to tolerance
-      if (normR < 1e-15 || (normR / (normF || 1.0)) < safeTol) break;
+      if (normR < 1e-15 || residual < safeTol) break;
 
-      for (let i = 0; i < n; i++) z[i] = M[i] * r[i];
+      precondition(r, z);
       let rzNew = 0;
       for (let i = 0; i < n; i++) rzNew += r[i] * z[i];
 
@@ -986,6 +1089,7 @@ export class FEAEngine {
     for (let i = 0; i < n; i++) {
       if (!Number.isFinite(U[i])) U[i] = 0;
     }
+    this.lastSolve = { iterations, residual, converged: residual < safeTol * 10, method: 'jacobi-cg' };
 
     return U;
   }
@@ -1231,7 +1335,7 @@ export class FEAEngine {
 
     // 4. Solve K * U = F
     K.applyDirichlet(fixedDofs, F);
-    const U = this._solvePCG(K, F);
+    const U = this._solveLinear(K, F);
 
     // 5. Displacements
     const displacements = new Float32Array(numNodes);
@@ -1671,6 +1775,8 @@ export class FEAEngine {
       solidResult,
       is3DSolid: !!solidResult,
       isVerifiedLinearStatic: true,
+      solverConverged: this.lastSolve?.converged ?? true,
+      solverIterations: this.lastSolve?.iterations ?? 0,
     };
 
     return this.results;

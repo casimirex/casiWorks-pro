@@ -544,6 +544,7 @@ const SHOTS: Shot[] = [
       await p.eval(`[...document.querySelectorAll('.fea-panel button')].find(b => b.textContent.trim() === 'Solve').click()`);
       await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 60000);
       await sleep(800);
+      console.log('    ' + (await p.eval<string>(`document.querySelector('.fea-results')?.innerText.replace(/\\n+/g, ' | ').slice(0, 260) ?? ''`)));
       await p.screenshot('29-fea-stress');
       await pick(p, '.fea-quantity', 'displacement');
       await p.eval(`document.querySelector('.fea-deformed')?.click()`);
@@ -567,6 +568,7 @@ const SHOTS: Shot[] = [
       await waitFor(() => p.eval<number>(`document.querySelectorAll('.fea-mode').length || null`), 'modes', 60000);
       await p.eval(`document.querySelectorAll('.fea-mode')[1].click()`);
       await sleep(800);
+      console.log('    ' + (await p.eval<string>(`document.querySelector('.fea-modal')?.innerText.replace(/\\n+/g, ' | ').slice(0, 260) ?? ''`)));
       await p.screenshot('30c-fea-modal');
       await pick(p, '.fea-analysis', 'static');
       await pick(p, '.fea-mesh-quality', 'medium');

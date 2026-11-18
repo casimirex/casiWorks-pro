@@ -50,7 +50,7 @@ casiworks/
 │   │   └── AssemblyManager.ts    # Multi-body solver: Standard & Advanced mates (Tangent, Width, Path), Exploded Views
 │   │
 │   ├── simulation/
-│   │   ├── FEAEngine.ts          # 3D Solid FEA: Tet4/Tet10 meshing, 12x12 stiffness matrix, PCG solver, Cauchy tensor
+│   │   ├── FEAEngine.ts          # 3D Solid FEA: Tet4/Tet10 meshing, stiffness assembly, static solve, Cauchy tensor
 │   │   └── ResultsViewer.tsx     # Simulation panel: max von Mises, deflection, factor of safety, stress tensor
 │   │
 │   ├── drawings/
@@ -167,7 +167,7 @@ export writes faceted (triangulated) geometry.
 
 ### 5. 3D Solid Linear Static FEA Simulation
 - **3D Tetrahedral Meshing** (`src/simulation/FEAEngine.ts`):
-  - Voxelizes arbitrary CAD solids via ray-triangle parity containment testing.
+  - Voxelizes arbitrary CAD solids via ray-triangle parity containment testing, on a grid fitted to the part: grid lines through every axis-aligned face (thin walls meshed at their thickness), half-size cells across curved faces, graded at most 2.5× between neighbours; loose pieces dropped.
   - Decomposes voxels into 6 tetrahedra using Kuhn's decomposition.
   - Supports **Tet4** (linear 4-node) and **Tet10** (quadratic 10-node with mid-edge nodes) elements.
   - Tracks surface boundary faces with outward normal vectors and surface areas.
@@ -178,7 +178,7 @@ export writes faceted (triangulated) geometry.
   - Strictly symmetric ($K_{ij} = K_{ji}$) verified to machine precision.
 - **Global Solver**:
   - `SparseMatrix` assembly with symmetric Dirichlet elimination for fixed fixtures ($u_x = u_y = u_z = 0$), pin/roller supports, boundary plane selectors, and pressure loads.
-  - **Preconditioned Conjugate Gradient (PCG)** solver with Jacobi preconditioning.
+  - Linear solve: IC(0)-preconditioned conjugate gradient, the direct envelope Cholesky when CG is slow and the matrix fits, Jacobi CG as a last resort; results say when the solver did not converge.
 - **3D Stress & Strain Tensor**:
   - Computes all 6 Cauchy stress components: $\sigma_{xx}, \sigma_{yy}, \sigma_{zz}, \tau_{xy}, \tau_{yz}, \tau_{zx}$.
   - Analytical principal stresses ($\sigma_1 \ge \sigma_2 \ge \sigma_3$) via Cardano's cubic formula for the characteristic polynomial.
@@ -449,7 +449,7 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
 5. **3D Solid FEA Simulation**:
    - Automated Tet4/Tet10 tetrahedral mesh generation.
    - 3D elasticity stiffness matrix solution ($12 \times 12$ per element).
-   - Preconditioned Conjugate Gradient (PCG) solver with Dirichlet fixture boundary conditions.
+   - IC(0) conjugate gradient and direct (envelope Cholesky) solvers with Dirichlet fixture boundary conditions.
    - Fixtures and loads on the bounding-box sides or on faces picked on the model (flat faces and cylinders such as bolt holes), found again after the part changes.
    - Cauchy stress components, analytical principal stresses, von Mises equivalent stress, and Factor of Safety (FOS) contour colormap.
 
