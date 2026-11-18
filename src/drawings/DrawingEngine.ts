@@ -4,6 +4,11 @@
 // Geometric Dimensioning & Tolerancing (GD&T) datum symbols and feature control frames,
 // standard drawing sheets (A4, A3) with title blocks, and SVG / DXF vector exports.
 import * as THREE from 'three';
+import { arcPoint, arcsInChain, chainSmooth, intervalsToArcs, mergeStraight, subtractIntervals, unionIntervals, wrapInterval } from './curves.ts';
+import type { Intervals } from './curves.ts';
+import type { DrawingArc } from './curves.ts';
+
+export type { DrawingArc } from './curves.ts';
 
 export const PROJECTION_VIEWS = {
   FRONT: 'front',
@@ -59,6 +64,8 @@ export interface ViewBounds { minX: number; maxX: number; minY: number; maxY: nu
 export interface ProjectedView {
   visible: DrawingLine[];
   hidden: DrawingLine[];
+  /** True arcs and circles (visible and hidden), counter-clockwise in view coordinates. */
+  arcs: DrawingArc[];
   bounds: Required<ViewBounds>;
   view: string;
 }
@@ -77,6 +84,10 @@ export interface SheetView {
   offsetY?: number;
   visible: DrawingLine[];
   hidden: DrawingLine[];
+  /** Arcs and circles on the sheet (y down): from startAngle to endAngle with the angle increasing, i.e. clockwise as seen. */
+  arcs: DrawingArc[];
+  /** Centre marks of the circles, kept inside the view. */
+  centerlines: DrawingLine[];
   bounds: ViewBounds;
 }
 
@@ -179,7 +190,8 @@ export function escapeXml(str: unknown): string {
 // Hidden-line pipeline helpers
 // =====================================================================
 
-interface ViewTriangle { v: [number, number, number]; normal: THREE.Vector3; front: boolean }
+/** `facing`: projected area over true area, signed (+1 faces the viewer, 0 edge-on, −1 faces away). */
+interface ViewTriangle { v: [number, number, number]; normal: THREE.Vector3; front: boolean; facing: number }
 interface ViewMesh { verts: THREE.Vector3[]; tris: ViewTriangle[]; frontTriangles: CamTriangle[] }
 
 /**
@@ -214,13 +226,16 @@ export function buildViewMesh(geometry: THREE.BufferGeometry, projMat: THREE.Mat
     if (v[0] === v[1] || v[1] === v[2] || v[0] === v[2]) continue;
     const [w1, w2, w3] = v.map(i => world[i]);
     const normal = new THREE.Vector3().subVectors(w2, w1).cross(new THREE.Vector3().subVectors(w3, w1));
-    if (normal.lengthSq() < 1e-18) continue;
+    const area3D = normal.length();
+    if (area3D < 1e-9) continue;
     normal.normalize();
     const [p1, p2, p3] = v.map(i => verts[i]);
     const area2D = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y);
     const front = area2D > 0;
-    tris.push({ v, normal, front });
-    if (front) {
+    tris.push({ v, normal, front, facing: area2D / area3D });
+    // Faces seen edge-on (hole walls in a view along the hole) hide nothing: their
+    // depth across a sliver is ill-conditioned and would cut the rims they meet
+    if (front && area2D > 1e-3 * area3D) {
       frontTriangles.push({
         p1, p2, p3,
         minX: Math.min(p1.x, p2.x, p3.x), maxX: Math.max(p1.x, p2.x, p3.x),
@@ -312,10 +327,14 @@ export function extractDrawingEdges(mesh: ViewMesh, creaseAngleDeg: number, { si
     let draw = faces.length === 1; // a genuine open boundary
     if (!draw) {
       const tris = faces.map(f => mesh.tris[f]);
-      const anyFront = tris.some(t => t.front);
-      const anyBack = tris.some(t => !t.front);
+      // Faces seen edge-on (a hole's wall, looking along the hole) count as both
+      // sides, but an edge between edge-on faces only is no silhouette
+      const EDGE_ON = 1e-3;
+      const edgeOn = tris.filter(t => Math.abs(t.facing) <= EDGE_ON).length;
+      const anyFront = tris.some(t => t.facing > EDGE_ON) || edgeOn > 0;
+      const anyBack = tris.some(t => t.facing < -EDGE_ON) || edgeOn > 0;
       const crease = tris.some((t, i) => tris.some((u, j) => j > i && t.normal.dot(u.normal) < cosCrease));
-      draw = crease || (silhouettes && anyFront && anyBack);
+      draw = crease || (silhouettes && anyFront && anyBack && edgeOn < tris.length);
     }
     if (draw) out.push({ a: V[e.a], b: V[e.b] });
   }
@@ -364,7 +383,7 @@ class TriangleGrid {
   private iy(y: number) { return Math.max(0, Math.min(this.n + 2, Math.floor((y - this.y0) / this.cell))); }
 
   /** True when a front-facing triangle lies in front of point p (view coordinates). */
-  occludes(p: THREE.Vector3, depthTol: number): boolean {
+  occludes(p: THREE.Vector3, depthTol: number, edgeTol = 1e-6): boolean {
     for (const t of this.cells.get(this.ix(p.x) * (this.n + 3) + this.iy(p.y)) ?? []) {
       if (p.x < t.minX || p.x > t.maxX || p.y < t.minY || p.y > t.maxY) continue;
       const d = (t.p2.y - t.p3.y) * (t.p1.x - t.p3.x) + (t.p3.x - t.p2.x) * (t.p1.y - t.p3.y);
@@ -372,8 +391,13 @@ class TriangleGrid {
       const l1 = ((t.p2.y - t.p3.y) * (p.x - t.p3.x) + (t.p3.x - t.p2.x) * (p.y - t.p3.y)) / d;
       const l2 = ((t.p3.y - t.p1.y) * (p.x - t.p3.x) + (t.p1.x - t.p3.x) * (p.y - t.p3.y)) / d;
       const l3 = 1 - l1 - l2;
-      if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
-      const z = l1 * t.p1.z + l2 * t.p2.z + l3 * t.p3.z;
+      // Inside by distance, not by barycentric weight: on slivers (left by booleans)
+      // a point on a shared edge can fail a weight test in both triangles
+      const out = (l: number, a: THREE.Vector3, b: THREE.Vector3) => l < 0 && (-l * Math.abs(d)) / (Math.hypot(b.x - a.x, b.y - a.y) || 1) > edgeTol;
+      if (out(l1, t.p2, t.p3) || out(l2, t.p3, t.p1) || out(l3, t.p1, t.p2)) continue;
+      // Depth from the clamped weights: extrapolating across a sliver would be wild
+      const w1 = Math.max(0, l1), w2 = Math.max(0, l2), w3 = Math.max(0, l3);
+      const z = (w1 * t.p1.z + w2 * t.p2.z + w3 * t.p3.z) / (w1 + w2 + w3 || 1);
       if (z > p.z + depthTol) return true;
     }
     return false;
@@ -444,6 +468,122 @@ function forEachRun(states: boolean[], n: number, cb: (t0: number, t1: number, s
   }
 }
 
+/** A circle or arc found on the model's edges, in view coordinates, with the edges it was made from. */
+interface ViewArc extends DrawingArc { depth: number; segments: Array<[THREE.Vector3, THREE.Vector3]> }
+
+/**
+ * Arcs and circles among a view's edges: chains of edges (joined at shared
+ * mesh vertices) at one depth whose corners lie on a circle. The other edges
+ * are returned in `rest`.
+ */
+export function findViewArcs(edges: Array<{ a: THREE.Vector3; b: THREE.Vector3 }>, size: number): { arcs: ViewArc[]; rest: Array<{ a: THREE.Vector3; b: THREE.Vector3 }> } {
+  const ids = new Map<THREE.Vector3, number>();
+  const pts: THREE.Vector3[] = [];
+  const id = (p: THREE.Vector3) => {
+    let k = ids.get(p);
+    if (k === undefined) { k = pts.length; ids.set(p, k); pts.push(p); }
+    return k;
+  };
+  const pairs = edges.map(e => [id(e.a), id(e.b)] as [number, number]);
+  const depthTol = 1e-4 * size + 1e-9;
+  const arcs: ViewArc[] = [];
+  const rest: Array<{ a: THREE.Vector3; b: THREE.Vector3 }> = [];
+  // Polygon corners of arcs turn by a few degrees; carry on through junctions up to 25°
+  for (const chain of chainSmooth(pairs, pts, (25 * Math.PI) / 180, depthTol)) {
+    const p3 = chain.map(k => pts[k]);
+    const z0 = p3[0].z;
+    const flat = p3.length >= 4 && p3.every(p => Math.abs(p.z - z0) <= depthTol);
+    const pieces = flat ? arcsInChain(p3.map(p => ({ x: p.x, y: p.y })), size) : [{ ids: p3.map((_, i) => i) }];
+    for (const piece of pieces) {
+      const segs = piece.ids.slice(1).map((k, i) => [p3[piece.ids[i]], p3[k]] as [THREE.Vector3, THREE.Vector3]);
+      if (piece.arc) arcs.push({ ...piece.arc, depth: z0, segments: segs });
+      else for (const [a, b] of segs) rest.push({ a, b });
+    }
+  }
+  // Short pieces along a found circle at its depth (past a sliver corner, or a second
+  // path along the rim) belong to that circle: hidden-line removal runs along them with it
+  const owner = (e: { a: THREE.Vector3; b: THREE.Vector3 }) => arcs.find(arc => {
+    const c = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+    if (c > 0.2 * arc.radius || Math.abs(e.a.z - arc.depth) > depthTol || Math.abs(e.b.z - arc.depth) > depthTol) return false;
+    const tol = depthTol + 0.01 * arc.radius;
+    const off = (x: number, y: number) => Math.hypot(x - arc.center.x, y - arc.center.y) - arc.radius;
+    return Math.abs(off(e.a.x, e.a.y)) <= tol && Math.abs(off(e.b.x, e.b.y)) <= tol && Math.abs(off((e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2)) <= tol + (c * c) / (4 * arc.radius);
+  });
+  const kept: typeof rest = [];
+  for (const e of rest) {
+    const arc = arcs.length ? owner(e) : undefined;
+    if (arc) arc.segments.push([e.a, e.b]);
+    else kept.push(e);
+  }
+  return { arcs, rest: kept };
+}
+
+/** Angle intervals an arc's segments cover, about its centre. */
+function segmentIntervals(arc: ViewArc, pieces: Array<[THREE.Vector3, THREE.Vector3]> = arc.segments): Intervals {
+  const out: Intervals = [];
+  for (const [a, b] of pieces) {
+    let u0 = Math.atan2(a.y - arc.center.y, a.x - arc.center.x), u1 = Math.atan2(b.y - arc.center.y, b.x - arc.center.x);
+    if (u1 < u0) [u0, u1] = [u1, u0];
+    // A piece across angle ±π
+    out.push(...(u1 - u0 > Math.PI ? wrapInterval(u1, u0 + Math.PI * 2) : wrapInterval(u0, u1)));
+  }
+  return out;
+
+}
+
+/**
+ * Arcs of the same circle (seen at several depths) merged: drawn visible
+ * where any of them is visible, hidden where one is hidden and none visible.
+ */
+function mergeArcs(list: Array<{ arc: DrawingArc; visible: Intervals; hidden: Intervals }>, minLength: number): DrawingArc[] {
+  const groups: Array<{ center: Point2D; radius: number; visible: Intervals; hidden: Intervals }> = [];
+  const tol = Math.max(minLength * 0.05, 1e-6);
+  // The longest arc of a circle gives its centre and radius (full circles fit best)
+  const sorted = [...list].sort((p, q) => (q.arc.endAngle - q.arc.startAngle) - (p.arc.endAngle - p.arc.startAngle));
+  for (const { arc, visible, hidden } of sorted) {
+    const g = groups.find(q => Math.hypot(q.center.x - arc.center.x, q.center.y - arc.center.y) <= tol && Math.abs(q.radius - arc.radius) <= tol);
+    if (g) { g.visible.push(...visible); g.hidden.push(...hidden); }
+    else groups.push({ center: arc.center, radius: arc.radius, visible: [...visible], hidden: [...hidden] });
+  }
+  const out: DrawingArc[] = [];
+  for (const g of groups) {
+    const vis = unionIntervals(g.visible, minLength / g.radius);
+    out.push(...intervalsToArcs(vis, g.center, g.radius, LINE_TYPES.VISIBLE, minLength));
+    out.push(...intervalsToArcs(subtractIntervals(g.hidden, vis), g.center, g.radius, LINE_TYPES.HIDDEN, minLength));
+  }
+  return out;
+}
+
+/**
+ * Centre marks for the circles of a placed view: a cross through each centre
+ * reaching 2 mm past the circle (thin chain lines), clipped to the view.
+ * Circles of the same centre and concentric arcs share one mark.
+ */
+export function centerMarks(arcs: DrawingArc[], bounds: ViewBounds): DrawingLine[] {
+  const marks: Array<{ c: Point2D; r: number }> = [];
+  for (const a of arcs) {
+    if (!a.full || a.radius < 0.5) continue;
+    const same = marks.find(m => Math.hypot(m.c.x - a.center.x, m.c.y - a.center.y) < 0.05);
+    if (same) same.r = Math.max(same.r, a.radius);
+    else marks.push({ c: a.center, r: a.radius });
+  }
+  const clip = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const out: DrawingLine[] = [];
+  for (const { c, r } of marks) {
+    const e = r + 2;
+    out.push({ p1: { x: clip(c.x - e, bounds.minX, bounds.maxX), y: c.y }, p2: { x: clip(c.x + e, bounds.minX, bounds.maxX), y: c.y }, type: LINE_TYPES.CENTER });
+    out.push({ p1: { x: c.x, y: clip(c.y - e, bounds.minY, bounds.maxY) }, p2: { x: c.x, y: clip(c.y + e, bounds.minY, bounds.maxY) }, type: LINE_TYPES.CENTER });
+  }
+  return out;
+}
+
+/** SVG path data of an arc on the sheet (angle increasing = SVG's positive sweep). */
+function svgArcPath(a: DrawingArc): string {
+  const p = arcPoint(a, a.startAngle), q = arcPoint(a, a.endAngle);
+  const large = a.endAngle - a.startAngle > Math.PI ? 1 : 0;
+  return `M ${p.x.toFixed(3)} ${p.y.toFixed(3)} A ${a.radius.toFixed(3)} ${a.radius.toFixed(3)} 0 ${large} 1 ${q.x.toFixed(3)} ${q.y.toFixed(3)}`;
+}
+
 export class DrawingEngine {
   sheet: { size: SheetSize; scale: number; views: SheetView[]; dimensions: LinearDimension[]; gdtFrames: unknown[]; centerlines: unknown[]; titleBlock: Record<string, string> };
 
@@ -476,7 +616,7 @@ export class DrawingEngine {
    * Output coordinates are model units, u to the right and v up.
    */
   projectGeometry(geometry: THREE.BufferGeometry | null | undefined, view: string = PROJECTION_VIEWS.FRONT, options: ProjectOptions = {}): ProjectedView {
-    const empty: ProjectedView = { visible: [], hidden: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
+    const empty: ProjectedView = { visible: [], hidden: [], arcs: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 }, view };
     const pos = geometry?.getAttribute('position');
     if (!geometry || !pos || pos.count === 0) return empty;
 
@@ -504,29 +644,56 @@ export class DrawingEngine {
     const seg = (a: THREE.Vector3, b: THREE.Vector3, type: LineType): DrawingLine =>
       ({ p1: { x: a.x, y: a.y }, p2: { x: b.x, y: b.y }, type, length: Math.hypot(b.x - a.x, b.y - a.y) });
 
-    if (!enableHLR) {
-      return { visible: edges.map(e => seg(e.a, e.b, LINE_TYPES.VISIBLE)), hidden: [], bounds, view };
-    }
-
     const diag = Math.hypot(bounds.width, bounds.height) || 1;
     // Edges along the line of sight project to a point: nothing to draw
     const drawable = edges.filter(e => Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) > 1e-6 * diag);
+    // Circles and arcs facing the viewer, found on the model's edges (not in the isometric view, where they are ellipses)
+    const { arcs: modelArcs, rest } = view === PROJECTION_VIEWS.ISOMETRIC ? { arcs: [], rest: drawable } : findViewArcs(drawable, diag);
+    const minLength = 1e-3 * diag;
+    // Pieces shorter than this are dropped by the hidden-line pass: bridge them when merging straight runs
+    const gap = 1.5e-3 * diag;
+    const finish = (visibleLines: DrawingLine[], hiddenLines: DrawingLine[], arcs: DrawingArc[]): ProjectedView => ({
+      visible: mergeStraight(visibleLines, LINE_TYPES.VISIBLE, diag, gap),
+      hidden: mergeStraight(hiddenLines, LINE_TYPES.HIDDEN, diag, gap),
+      arcs,
+      bounds,
+      view,
+    });
+    if (!enableHLR) {
+      const arcs = mergeArcs(modelArcs.map(a => ({ arc: a, visible: segmentIntervals(a), hidden: [] })), minLength);
+      return finish(rest.map(e => seg(e.a, e.b, LINE_TYPES.VISIBLE)), [], arcs);
+    }
+
     const occluder = new TriangleGrid(mesh.frontTriangles, bounds, 64);
     const depthTol = 1e-4 * diag + 1e-6;
-
-    // 1. Split every edge into visible / hidden runs by dense sampling
-    const visibleRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
-    const hiddenRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
+    // Mesh corners are welded at 1e-4 mm: a point this close to a face's edge counts as on it
+    const edgeTol = 1e-5 * diag + 2e-4;
     const stepLen = diag / 400;
-    for (const e of drawable) {
-      const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+    const runsOf = (a: THREE.Vector3, b: THREE.Vector3, cb: (t0: number, t1: number, visible: boolean) => void) => {
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
       const n = Math.max(4, Math.min(256, Math.ceil(len / stepLen)));
       const states: boolean[] = [];
       for (let k = 0; k <= n; k++) {
         const t = Math.min(1 - 1e-6, Math.max(1e-6, k / n));
-        states.push(!occluder.occludes(e.a.clone().lerp(e.b, t), depthTol));
+        states.push(!occluder.occludes(a.clone().lerp(b, t), depthTol, edgeTol));
       }
-      forEachRun(states, n, (t0, t1, isVisible) => {
+      forEachRun(states, n, cb);
+    };
+
+    // 0. Arcs: visible and hidden runs along their polygon, as angle intervals
+    const arcs = mergeArcs(modelArcs.map(arc => {
+      const visible: Array<[THREE.Vector3, THREE.Vector3]> = [], hidden: Array<[THREE.Vector3, THREE.Vector3]> = [];
+      for (const [a, b] of arc.segments) {
+        runsOf(a, b, (t0, t1, isVisible) => (isVisible ? visible : hidden).push([a.clone().lerp(b, t0), a.clone().lerp(b, t1)]));
+      }
+      return { arc, visible: segmentIntervals(arc, visible), hidden: segmentIntervals(arc, hidden) };
+    }), minLength);
+
+    // 1. Split every other edge into visible / hidden runs by dense sampling
+    const visibleRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
+    const hiddenRuns: Array<[THREE.Vector3, THREE.Vector3]> = [];
+    for (const e of rest) {
+      runsOf(e.a, e.b, (t0, t1, isVisible) => {
         (isVisible ? visibleRuns : hiddenRuns).push([e.a.clone().lerp(e.b, t0), e.a.clone().lerp(e.b, t1)]);
       });
     }
@@ -560,7 +727,7 @@ export class DrawingEngine {
     const hiddenCover = new SegmentGrid(visible, bounds, 64);
     const hidden = accept(hiddenRuns, LINE_TYPES.HIDDEN, hiddenCover);
 
-    return { visible, hidden, bounds, view };
+    return finish(visible, hidden, arcs);
   }
 
 
@@ -746,6 +913,14 @@ export class DrawingEngine {
       const offsetY = y + b.maxY * scale;
       const place = (p: Point2D): Point2D => ({ x: p.x * scale + offsetX, y: offsetY - p.y * scale });
       const transformLine = (line: DrawingLine): DrawingLine => ({ p1: place(line.p1), p2: place(line.p2), type: line.type });
+      // Sheet y runs down: angles change sign, so the arc runs from −end to −start
+      const transformArc = (arc: DrawingArc): DrawingArc => ({
+        ...arc,
+        center: place(arc.center),
+        radius: arc.radius * scale,
+        startAngle: arc.full ? 0 : -arc.endAngle,
+        endAngle: arc.full ? Math.PI * 2 : -arc.startAngle,
+      });
       const bounds = {
         minX: b.minX * scale + offsetX,
         maxX: b.maxX * scale + offsetX,
@@ -763,6 +938,8 @@ export class DrawingEngine {
         offsetY,
         visible: viewData.visible.map(transformLine),
         hidden: viewData.hidden.map(transformLine),
+        arcs: viewData.arcs.map(transformArc),
+        centerlines: viewData.view === PROJECTION_VIEWS.ISOMETRIC ? [] : centerMarks(viewData.arcs.map(transformArc), bounds),
         bounds,
       };
     };
@@ -974,8 +1151,9 @@ export class DrawingEngine {
     svg += `    .sheet-bg { fill: #ffffff; }\n`;
     svg += `    .border-outer { stroke: #000000; stroke-width: 0.7; fill: none; }\n`;
     svg += `    .border-inner { stroke: #000000; stroke-width: 0.35; fill: none; }\n`;
-    svg += `    .visible-line { stroke: #111111; stroke-width: 0.45; stroke-linecap: round; }\n`;
-    svg += `    .hidden-line { stroke: #666666; stroke-width: 0.25; stroke-dasharray: 2.5 1.5; }\n`;
+    svg += `    .visible-line { stroke: #111111; stroke-width: 0.45; stroke-linecap: round; fill: none; }\n`;
+    svg += `    .hidden-line { stroke: #666666; stroke-width: 0.25; stroke-dasharray: 2.5 1.5; fill: none; }\n`;
+    svg += `    .center-line { stroke: #666666; stroke-width: 0.18; stroke-dasharray: 6 1.2 1 1.2; fill: none; }\n`;
     svg += `    .dim-line { stroke: #0055aa; stroke-width: 0.25; fill: none; }\n`;
     svg += `    .dim-text { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3.2px; fill: #0055aa; text-anchor: middle; }\n`;
     svg += `    .view-label { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3.5px; font-weight: bold; fill: #222222; text-anchor: middle; }\n`;
@@ -1030,9 +1208,21 @@ export class DrawingEngine {
           svg += `    <line class="hidden-line" x1="${line.p1.x.toFixed(2)}" y1="${line.p1.y.toFixed(2)}" x2="${line.p2.x.toFixed(2)}" y2="${line.p2.y.toFixed(2)}" />\n`;
         }
 
+        for (const line of (v.centerlines || [])) {
+          svg += `    <line class="center-line" x1="${line.p1.x.toFixed(2)}" y1="${line.p1.y.toFixed(2)}" x2="${line.p2.x.toFixed(2)}" y2="${line.p2.y.toFixed(2)}" />\n`;
+        }
+
         // Visible lines
         for (const line of (v.visible || [])) {
           svg += `    <line class="visible-line" x1="${line.p1.x.toFixed(2)}" y1="${line.p1.y.toFixed(2)}" x2="${line.p2.x.toFixed(2)}" y2="${line.p2.y.toFixed(2)}" />\n`;
+        }
+
+        // Arcs and circles (hidden ones dashed)
+        for (const a of (v.arcs || [])) {
+          const cls = a.type === LINE_TYPES.HIDDEN ? 'hidden-line' : 'visible-line';
+          svg += a.full
+            ? `    <circle class="${cls}" cx="${a.center.x.toFixed(3)}" cy="${a.center.y.toFixed(3)}" r="${a.radius.toFixed(3)}" />\n`
+            : `    <path class="${cls}" d="${svgArcPath(a)}" />\n`;
         }
         svg += `  </g>\n`;
       }
@@ -1138,10 +1328,12 @@ export class DrawingEngine {
     dxf += '0\nTABLE\n2\nLTYPE\n70\n2\n';
     dxf += '0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n';
     dxf += '0\nLTYPE\n2\nDASHED\n70\n0\n3\n__ __ __ __\n72\n65\n73\n2\n40\n4.5\n49\n3.0\n49\n-1.5\n';
+    dxf += '0\nLTYPE\n2\nCENTER\n70\n0\n3\n____ _ ____ _\n72\n65\n73\n4\n40\n9.4\n49\n6.0\n49\n-1.2\n49\n1.0\n49\n-1.2\n';
     dxf += '0\nENDTAB\n';
-    dxf += '0\nTABLE\n2\nLAYER\n70\n4\n';
+    dxf += '0\nTABLE\n2\nLAYER\n70\n5\n';
     dxf += '0\nLAYER\n2\nVISIBLE\n70\n0\n62\n7\n6\nCONTINUOUS\n';
     dxf += '0\nLAYER\n2\nHIDDEN\n70\n0\n62\n8\n6\nDASHED\n';
+    dxf += '0\nLAYER\n2\nCENTER\n70\n0\n62\n8\n6\nCENTER\n';
     dxf += '0\nLAYER\n2\nDIMENSION\n70\n0\n62\n4\n6\nCONTINUOUS\n';
     dxf += '0\nLAYER\n2\nBORDER\n70\n0\n62\n7\n6\nCONTINUOUS\n';
     dxf += '0\nENDTAB\n0\nENDSEC\n';
@@ -1150,6 +1342,14 @@ export class DrawingEngine {
     for (const v of views) {
       for (const l of v.visible) dxf += line('VISIBLE', l.p1, l.p2);
       for (const l of v.hidden) dxf += line('HIDDEN', l.p1, l.p2);
+      for (const l of v.centerlines ?? []) dxf += line('CENTER', l.p1, l.p2);
+      // DXF is y-up: a sheet arc from s to e (clockwise as seen) is counter-clockwise from −e to −s
+      for (const a of v.arcs ?? []) {
+        const layer = a.type === LINE_TYPES.HIDDEN ? 'HIDDEN' : 'VISIBLE';
+        const head = `8\n${layer}\n10\n${f(a.center.x)}\n20\n${f(H - a.center.y)}\n30\n0.0\n40\n${f(a.radius)}\n`;
+        const deg = (r: number) => f((((r * 180) / Math.PI) % 360 + 360) % 360);
+        dxf += a.full ? `0\nCIRCLE\n${head}` : `0\nARC\n${head}50\n${deg(-a.endAngle)}\n51\n${deg(-a.startAngle)}\n`;
+      }
     }
     for (const d of dimensions ?? []) {
       dxf += line('DIMENSION', d.dimLine.p1, d.dimLine.p2);

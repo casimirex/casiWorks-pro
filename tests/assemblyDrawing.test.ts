@@ -56,7 +56,7 @@ test('Assembly drawing: SVG and DXF carry the table and balloons; empty assembly
   assert.equal((svg.text.match(/class="balloon"/g) ?? []).length, 3);
   assert.match(svg.text, />UNTITLED PART ASSEMBLY</);
   const dxf = drawingFile(s(), 'dxf')!.text;
-  assert.equal((dxf.match(/\nCIRCLE\n/g) ?? []).length, 3);
+  assert.equal((dxf.match(/\nCIRCLE\n8\nDIMENSION\n/g) ?? []).length, 3, 'one circle per balloon');
   assert.match(dxf, /\nPin_Shaft\n/);
 
   assert.throws(() => r.execute('drawing.options', { subject: 'drawing' }), /subject must be/);

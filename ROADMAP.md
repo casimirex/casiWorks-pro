@@ -123,7 +123,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 
 ## Phase 5 — Drawings
 
-- [ ] **5.1** Views generated from exact geometry (crisp edges, true arcs)
+- [x] **5.1** Views generated from exact geometry (crisp edges, true arcs) — *on the mesh kernel*: before hidden-line removal the model's edges are chained (through boolean slivers, along the smoothest path) and a chain facing the viewer whose corners lie on one circle becomes a true arc or circle with the exact centre and radius; hidden-line removal runs along the arcs, and the same circle seen at several depths is drawn once (visible wins). Straight runs are merged into single lines; circles get centre marks. SVG `<circle>`/arc paths, DXF CIRCLE/ARC (CENTER linetype), PDF Bézier arcs. Circles seen at an angle (the isometric view) stay polylines
 - [ ] **5.2** Associative dimensions that update with the model (today the sheet has fixed views and overall dimensions; the Drawing tab switches hidden lines, dimensions and GD&T, picks the sheet size and exports SVG / DXF)
 - [x] **5.3** BOM tables and balloons from assemblies (Drawing tab: Part / Assembly. The assembly sheet draws the assembled components, puts the parts list on the title block and numbers each item with a balloon placed clear of the other sheet elements. Checked with `layoutProblems` on every sheet size; SVG and DXF)
 - [ ] **5.4** Sheet formats and title block editor (layout done: reserved bands per view, title block kept clear, standard ISO 5455 scales, overlap checker `layoutProblems` tested on every example and sheet size; editor still to do)

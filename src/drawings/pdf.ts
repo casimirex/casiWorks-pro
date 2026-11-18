@@ -6,6 +6,8 @@
 // in WinAnsi encoding, so nothing is embedded. Characters outside WinAnsi are
 // replaced (⌀ → Ø); the perpendicularity symbol ⊥ is drawn as lines.
 import type { Point2D, SheetData } from './DrawingEngine.ts';
+import { arcBeziers } from './curves.ts';
+import type { DrawingArc } from './curves.ts';
 
 const PT = 72 / 25.4; // points per mm
 
@@ -77,6 +79,12 @@ class Content {
   }
   line(a: Point2D, b: Point2D): void {
     this.ops.push(`${this.X(a.x)} ${this.Y(a.y)} m ${this.X(b.x)} ${this.Y(b.y)} l S`);
+  }
+  /** An arc (sheet angles) as cubic Bézier pieces. */
+  arc(a: DrawingArc): void {
+    const P = (p: Point2D) => `${this.X(p.x)} ${this.Y(p.y)}`;
+    const pieces = arcBeziers(a);
+    this.ops.push(`${P(pieces[0][0])} m ${pieces.map(([, c1, c2, e]) => `${P(c1)} ${P(c2)} ${P(e)} c`).join(' ')} S`);
   }
   rect(x: number, y: number, w: number, h: number, fill = false): void {
     this.ops.push(`${this.X(x)} ${this.Y(y + h)} ${n(w * PT)} ${n(h * PT)} re ${fill ? 'B' : 'S'}`);
@@ -171,8 +179,12 @@ export function sheetToPdf(sheet: SheetData, title = 'Drawing'): string {
   for (const v of sheet.views) {
     c.style(0.25, GREY, [2.5, 1.5]);
     for (const l of v.hidden) c.line(l.p1, l.p2);
+    for (const a of v.arcs ?? []) if (a.type === 'hidden') c.arc(a);
+    c.style(0.18, GREY, [6, 1.2, 1, 1.2]);
+    for (const l of v.centerlines ?? []) c.line(l.p1, l.p2);
     c.style(0.45, [0.067, 0.067, 0.067]);
     for (const l of v.visible) c.line(l.p1, l.p2);
+    for (const a of v.arcs ?? []) if (a.type !== 'hidden') c.arc(a);
     c.text((v.bounds.minX + v.bounds.maxX) / 2, v.labelY ?? v.bounds.maxY + 8, 3.5, v.label, { bold: true, anchor: 'middle', color: [0.133, 0.133, 0.133] });
   }
 
