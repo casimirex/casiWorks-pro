@@ -26,6 +26,8 @@ import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { LeaderLine } from '../assembly/AssemblyManager.ts';
 import { formatMm, measure, snapPick } from '../kernel/measure.ts';
+import { useUnits } from '../components/common/useUnits.ts';
+import { parseLength, toLength, unitSystemOf } from '../utils/units.ts';
 import { constraintLabel } from '../kernel/sketchSolve.ts';
 import { isPlainNumber } from '../features/equations.ts';
 import type { SketchPick } from '../kernel/sketchSolve.ts';
@@ -305,6 +307,7 @@ function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
     : null), [picks]);
   useEffect(() => () => line?.dispose(), [line]);
   const m = picks.length === 2 ? measure(picks[0], picks[1]) : null;
+  const u = useUnits();
   const mid = picks.length === 2
     ? [(picks[0].point.x + picks[1].point.x) / 2, (picks[0].point.y + picks[1].point.y) / 2, (picks[0].point.z + picks[1].point.z) / 2] as [number, number, number]
     : null;
@@ -323,7 +326,7 @@ function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
       )}
       {m && mid && (
         <Html position={mid} center zIndexRange={[20, 0]} pointerEvents="none" style={{ pointerEvents: 'none' }}>
-          <div className="measure-label">{formatMm(m.gap ?? m.distance)} mm{m.gap !== null ? ' ⟂' : ''}</div>
+          <div className="measure-label">{u.len(m.gap ?? m.distance, { extra: 1 })}{m.gap !== null ? ' ⟂' : ''}</div>
         </Html>
       )}
     </group>
@@ -332,6 +335,7 @@ function MeasureMarks({ picks }: { picks: MeasurePick[] }) {
 
 /** FEA probes on the result plot: a dot and a numbered label with the values at that node. */
 function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] }) {
+  const u = useUnits();
   return (
     <group name="FeaProbes">
       {probes.map((p, i) => {
@@ -345,7 +349,7 @@ function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] 
             </mesh>
             <Html center={false} style={{ transform: 'translate(6px, -50%)', pointerEvents: 'none' }} zIndexRange={[20, 0]} pointerEvents="none">
               <div className="fea-probe-label">
-                <b>{i + 1}</b> {p.vonMisesMPa.toFixed(1)} MPa · {p.displacementMM.toPrecision(3)} mm
+                <b>{i + 1}</b> {p.vonMisesMPa.toFixed(1)} MPa · {+toLength(p.displacementMM, u.system).toPrecision(3)} {u.lengthUnit}
               </div>
             </Html>
           </group>
@@ -357,8 +361,9 @@ function FeaProbeMarks({ plot, probes }: { plot: ResultPlot; probes: FeaProbe[] 
 
 /** The value box for a new or changed sketch dimension. */
 function DimensionPrompt({ value, label, diameter, expression, onCommit, onCancel }: { value: number; label: string; diameter?: boolean; expression?: string; onCommit(text: string): void; onCancel(): void }) {
-  // A linked dimension is edited as its expression; a number or an expression is accepted
-  const [text, setText] = useState(expression ? `=${expression}` : String(+value.toFixed(4)));
+  // A linked dimension is edited as its expression; a number (in the document's units, or with its unit) or an expression is accepted
+  const u = useUnits();
+  const [text, setText] = useState(expression ? `=${expression}` : u.num(value, 2));
   const commit = () => { if (text.trim()) onCommit(text.trim()); else onCancel(); };
   return (
     <div className="dim-prompt" role="dialog" aria-label="Dimension value">
@@ -371,7 +376,7 @@ function DimensionPrompt({ value, label, diameter, expression, onCommit, onCance
         onFocus={(e) => e.target.select()}
         onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') commit(); if (e.key === 'Escape') onCancel(); }}
       />
-      <span>mm</span>
+      <span>{u.lengthUnit}</span>
       <button className="dim-prompt-ok" onClick={commit}>OK</button>
       <span className="dim-prompt-hint">or an equation, e.g. =wall*2</span>
       <button className="icon-btn" onClick={onCancel} aria-label="Cancel">✕</button>
@@ -381,6 +386,7 @@ function DimensionPrompt({ value, label, diameter, expression, onCommit, onCance
 
 /** The interference results card over the viewport. */
 function InterferencePanel({ current, results }: { current: boolean; results: Array<{ a: string; b: string; aName: string; bName: string; volume: number }> }) {
+  const u = useUnits();
   return (
     <div className="measure-panel interference-panel" role="status">
       <div className="measure-head" style={{ color: results.length && current ? '#f87171' : '#4ade80' }}>
@@ -399,7 +405,7 @@ function InterferencePanel({ current, results }: { current: boolean; results: Ar
           {results.map(r => (
             <div key={`${r.a}-${r.b}`} className="measure-row interference-row">
               <span>{r.aName} ↔ {r.bName}</span>
-              <span>{formatMm(r.volume)} mm³</span>
+              <span>{u.volume(r.volume)}</span>
             </div>
           ))}
           <div className="measure-hint">Overlaps are shown in red. Fix them with mates, positions or sizes, then check again.</div>
@@ -412,7 +418,8 @@ function InterferencePanel({ current, results }: { current: boolean; results: Ar
 /** The Measure results card over the viewport. */
 function MeasurePanel({ picks }: { picks: MeasurePick[] }) {
   const m = picks.length === 2 ? measure(picks[0], picks[1]) : null;
-  const pt = (p: MeasurePick) => `${formatMm(p.point.x)}, ${formatMm(p.point.y)}, ${formatMm(p.point.z)}${p.kind === 'vertex' ? ' (corner)' : ''}`;
+  const u = useUnits();
+  const pt = (p: MeasurePick) => `${u.num(p.point.x, 1)}, ${u.num(p.point.y, 1)}, ${u.num(p.point.z, 1)} ${u.lengthUnit}${p.kind === 'vertex' ? ' (corner)' : ''}`;
   return (
     <div className="measure-panel" role="status">
       <div className="measure-head">
@@ -424,10 +431,10 @@ function MeasurePanel({ picks }: { picks: MeasurePick[] }) {
       {picks.length === 1 && <div className="measure-hint">Click the second point.</div>}
       {m && (
         <div className="measure-results">
-          <div className="measure-row big"><span>Distance</span><span className="measure-distance">{formatMm(m.distance)} mm</span></div>
-          <div className="measure-row"><span>dX · dY · dZ</span><span>{formatMm(m.dx)} · {formatMm(m.dy)} · {formatMm(m.dz)}</span></div>
+          <div className="measure-row big"><span>Distance</span><span className="measure-distance">{u.len(m.distance, { extra: 1 })}</span></div>
+          <div className="measure-row"><span>dX · dY · dZ</span><span>{u.num(m.dx, 1)} · {u.num(m.dy, 1)} · {u.num(m.dz, 1)}</span></div>
           {m.angle !== null && <div className="measure-row"><span>Angle between faces</span><span className="measure-angle">{formatMm(m.angle)}°</span></div>}
-          {m.gap !== null && <div className="measure-row big"><span>Parallel faces, gap</span><span className="measure-gap">{formatMm(m.gap)} mm</span></div>}
+          {m.gap !== null && <div className="measure-row big"><span>Parallel faces, gap</span><span className="measure-gap">{u.len(m.gap, { extra: 1 })}</span></div>}
           <div className="measure-hint">Click again to start a new measurement.</div>
         </div>
       )}
@@ -570,6 +577,9 @@ interface ActiveSketchOverlayProps {
 }
 
 function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities, currentPoints, previewEntities, highlightIds, constraints, solveState, onEditDimension, onRemoveConstraint }: ActiveSketchOverlayProps) {
+  // Dimension values in the document's units (MMGS: the plain number)
+  const u = useUnits();
+  const dimText = useCallback((mm: number) => (u.system === 'MMGS' ? String(+mm.toFixed(3)) : u.len(mm, { extra: 1 })), [u]);
   const entities = (activeSketchId && sketchEntities[activeSketchId]) || [];
 
   // Sketch point → world point, exactly as the kernel maps the sketch plane
@@ -593,7 +603,7 @@ function ActiveSketchOverlay({ activeSketchId, activeSketchPlane, sketchEntities
 
       {/* Relation tags and dimensions: double-click a dimension to change it; ✕ deletes */}
       {(() => { const seen = new Map<string, number>(); return constraints.map(c => {
-        const label = constraintLabel(c, entities);
+        const label = constraintLabel(c, entities, dimText);
         if (!label) return null;
         const isDim = c.type === 'dimension';
         // Several tags at one place sit side by side
@@ -984,7 +994,9 @@ export default function Viewport3D() {
   // A number or an expression ('wall * 2'); through the commands, which report problems in the status bar
   const commitDimension = useCallback((text: string) => {
     if (!dimPrompt || !activeSketchId) { setDimPrompt(null); return; }
-    const value = isPlainNumber(text) ? parseFloat(text) : text;
+    // A number is in the document's units (or carries its unit); an expression is in mm
+    const mm = parseLength(text, unitSystemOf(useCADStore.getState().settings.units));
+    const value = mm !== null ? mm : isPlainNumber(text) ? parseFloat(text) : text;
     if (dimPrompt.editId) runCommand('sketch.setDimension', { id: dimPrompt.editId, value });
     else runCommand('sketch.dimensionPicks', { picks: dimPrompt.picks, value });
     keepStatusRef.current = true;

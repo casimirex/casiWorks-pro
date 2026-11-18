@@ -12,6 +12,8 @@ import { DIMENSION_VIEWS, makeDimension, pickRef, sheetViewToModel, viewFeatures
 import type { DimensionKind, DimensionView, DrawingDimension } from './associative.ts';
 import type { Point2D } from './DrawingEngine.ts';
 import { generateId } from '../utils/math.ts';
+import { formatLength, unitSystemOf } from '../utils/units.ts';
+import type { UnitSystem } from '../utils/units.ts';
 
 export type DrawingFormat = 'svg' | 'dxf' | 'pdf';
 
@@ -25,6 +27,14 @@ export interface DrawingSource {
   assemblyComponents?: Array<DrawingComponent & BomComponent>;
   /** Dimensions placed on the part sheet. */
   drawingDimensions?: DrawingDimension[];
+  /** The document's unit system (dimension texts); MMGS when absent. */
+  settings?: { units?: UnitSystem | string };
+}
+
+/** Dimension text on the sheet: one decimal in mm, as the system shows lengths otherwise ("12.5 mm", "0.492 in"). */
+export function sheetLengthFormat(src: Pick<DrawingSource, 'settings'>): (mm: number) => string {
+  const system = unitSystemOf(src.settings?.units);
+  return system === 'MMGS' ? (mm: number) => `${mm.toFixed(1)} mm` : (mm: number) => formatLength(mm, system, { fixed: true });
 }
 
 /** The full sheet (all annotations), or null when there is nothing to draw. */
@@ -49,6 +59,7 @@ export function buildDrawingSheet(src: DrawingSource): SheetData | null {
     partNumber: 'DWG-' + (name.slice(0, 4).toUpperCase() || 'PART'),
     material: src.activeMaterial || 'Steel 1020',
     dimensions: src.drawingDimensions ?? [],
+    formatLength: sheetLengthFormat(src),
   });
 }
 

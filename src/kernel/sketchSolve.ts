@@ -226,7 +226,7 @@ export function dimensionConstraint(picks: SketchPick[], value: number, entities
 }
 
 /** Where a relation tag or dimension label sits in the sketch, and the text of a dimension. */
-export function constraintLabel(c: SketchConstraint & { diameter?: boolean }, entities: SketchEntity[]): { at: Point2; text: string } | null {
+export function constraintLabel(c: SketchConstraint & { diameter?: boolean }, entities: SketchEntity[], format: (mm: number) => string = v => String(+v.toFixed(3))): { at: Point2; text: string } | null {
   const e1 = entities.find(e => e.id === (c.entity1Id ?? c.entityId));
   if (!e1) return null;
   const e2 = c.entity2Id ? entities.find(e => e.id === c.entity2Id) : undefined;
@@ -247,7 +247,7 @@ export function constraintLabel(c: SketchConstraint & { diameter?: boolean }, en
     if (e.type === 'point') return { x: e.x, y: e.y };
     return { x: 0, y: 0 };
   };
-  const f = (v: number) => String(+v.toFixed(3));
+  const f = format;
   if (c.type === 'dimension') {
     const p1 = pointOf(e1, c.point1), p2 = e2 ? pointOf(e2, c.point2) : null;
     const at = p1 && p2 ? { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 } : e2 ? { x: (middle(e1).x + middle(e2).x) / 2, y: (middle(e1).y + middle(e2).y) / 2 } : middle(e1);

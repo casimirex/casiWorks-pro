@@ -1,4 +1,5 @@
 // CasiWorks Pro - The assembly in the tree: components (with what the mates leave them free to do) and mates
+import { useUnits } from '../common/useUnits.ts';
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, Box, Link2, Trash2, AlertTriangle } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
@@ -14,6 +15,7 @@ const TAG: Record<string, { text: string; cls: string; label: string }> = {
 const LINK: Record<string, string> = { workspace: 'linked', library: 'library', cached: 'cached copy' };
 
 export default function AssemblyTree({ filter = '' }: { filter?: string }) {
+  const units = useUnits();
   const components = useCADStore(s => s.assemblyComponents);
   const mates = useCADStore(s => s.mates);
   const dof = useCADStore(s => s.assemblyDof);
@@ -77,7 +79,7 @@ export default function AssemblyTree({ filter = '' }: { filter?: string }) {
         <div role="list" aria-label="Mates">
           {shownMates.map(m => {
             const bad = conflicts.has(m.id);
-            const value = m.type === 'distance' ? ` ${m.offset} mm` : m.type === 'angle' ? ` ${Math.round(m.angle * 10) / 10}°` : '';
+            const value = m.type === 'distance' ? ` ${units.len(m.offset)}` : m.type === 'angle' ? ` ${Math.round(m.angle * 10) / 10}°` : '';
             const label = `${m.type[0].toUpperCase()}${m.type.slice(1)}${value}: ${nameOf(m.comp1Id)} – ${nameOf(m.comp2Id)}`;
             return (
               <div key={m.id} role="listitem" style={{ display: 'flex', alignItems: 'center' }}>

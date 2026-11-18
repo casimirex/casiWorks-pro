@@ -188,6 +188,18 @@ body, html, #root {
   border-radius: 4px;
 }
 
+/* The unit system selector looks like the other title tags */
+.doc-units-select {
+  border: none;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.doc-units-select option {
+  background: #1e1e1e;
+  color: #e5e5e5;
+}
+
 /* Quick Access Buttons */
 .qa-btn {
   background: transparent;

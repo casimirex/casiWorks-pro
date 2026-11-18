@@ -4,6 +4,8 @@ import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
 import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
 import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension } from '../drawings/drawingSheet.ts';
 import { DIMENSION_KINDS } from '../drawings/associative.ts';
+import { SYSTEMS, UNIT_SYSTEMS, massUnit, unitSystemOf } from '../utils/units.ts';
+import type { UnitSystem } from '../utils/units.ts';
 import type { DimensionKind, DimensionView } from '../drawings/associative.ts';
 import type { DrawingFormat } from '../drawings/drawingSheet.ts';
 import { downloadBlob } from '../utils/download.ts';
@@ -623,6 +625,18 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
     },
   },
   {
+    id: 'settings.units', label: 'Unit system', category: 'View', record: false,
+    description: "args: { system: 'MMGS' | 'CGS' | 'MKS' | 'IPS' } — what lengths, masses and volumes are shown and typed in; the model, files and API stay in mm. Without args: the current one",
+    run: ({ state }, args: { system?: UnitSystem } | undefined) => {
+      if (args?.system !== undefined) {
+        if (!UNIT_SYSTEMS.includes(args.system)) throw new CommandError('INVALID_ARGUMENT', `system must be one of ${UNIT_SYSTEMS.join(', ')}`);
+        state().setUnitSystem(args.system);
+      }
+      const system = state().settings.units;
+      return { system, ...SYSTEMS[system] };
+    },
+  },
+  {
     id: 'drawing.addDimension', label: 'Add drawing dimension', category: 'Drawing',
     description: "args: { view: 'front' | 'top' | 'right', kind?: 'auto' | 'horizontal' | 'vertical' | 'diameter' | 'radius', points: [{ x, y }] } — points in mm in the view as it is seen (x right, y up); each snaps to the nearest corner, circle centre or circle. One point on a circle: diameter (radius for an arc); two points: a distance. The dimension follows the model",
     run: ({ state }, args: { view?: DimensionView; kind?: DimensionKind | 'auto'; points?: Array<{ x: number; y: number }> } | undefined) => {
@@ -947,7 +961,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       const s = state();
       if (s.assemblyComponents.length === 0) throw new CommandError('NOT_AVAILABLE', 'Insert components first: the assembly is empty');
       const filename = `${(s.documentName || 'Assembly').replace(/\s+/g, '_')}_BOM.csv`;
-      downloadBlob(bomCSV(buildBom(s.assemblyComponents, s.activeMaterial)), filename, 'text/csv;charset=utf-8');
+      downloadBlob(bomCSV(buildBom(s.assemblyComponents, s.activeMaterial), massUnit(unitSystemOf(s.settings.units))), filename, 'text/csv;charset=utf-8');
       s.setStatus(`Bill of materials exported: ${filename}`);
       return { filename };
     },

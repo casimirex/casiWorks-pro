@@ -58,7 +58,7 @@ export default function EquationsDialog({ isOpen, onClose }: DialogProps) {
         <div className="dialog-body" onKeyDown={(e) => e.stopPropagation()}>
           <p style={{ fontSize: 11, color: '#999', margin: '0 0 8px' }}>
             Name sizes once and use them anywhere: type an expression such as <code>wall * 2</code> into a feature&apos;s number field.
-            Lengths are in mm, angles in degrees. Operators: + − * / ^ ( ); functions sqrt, abs, round, floor, ceil, sin, cos, tan, min, max; constant pi.
+            Lengths are in mm (whatever the unit system: equations work in model units), angles in degrees. Operators: + − * / ^ ( ); functions sqrt, abs, round, floor, ceil, sin, cos, tan, min, max; constant pi.
           </p>
           {config && (
             <p className="eq-config-note" style={{ fontSize: 11, color: '#38bdf8', margin: '0 0 8px' }}>

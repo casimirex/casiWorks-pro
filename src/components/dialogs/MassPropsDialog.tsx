@@ -6,10 +6,8 @@ import { materialLibrary } from '../../kernel/MaterialLibrary.ts';
 import { geometryEngine } from '../../kernel/GeometryEngine.ts';
 import { featureFrame, massPropertiesIn } from '../../features/coordinateSystems.ts';
 import { useDialog } from '../common/useDialog.ts';
-
-/** Two decimals, without a minus sign on zero. */
-const mm = (v: number) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
-const formatInertia = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? v.toPrecision(6) : '—');
+import { useUnits } from '../common/useUnits.ts';
+import { KG_PER, MM_PER, toLength } from '../../utils/units.ts';
 
 interface DialogProps {
   isOpen: boolean;
@@ -19,6 +17,12 @@ interface DialogProps {
 export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
+  // In the document's units: lengths with the system's decimals (no minus sign on zero), inertia in mass·length²
+  const u = useUnits();
+  const decimals = u.system === 'MMGS' ? 2 : u.system === 'IPS' || u.system === 'CGS' ? 3 : 4;
+  const mm = (v: number) => { const x = toLength(v, u.system); return (Math.abs(x) < 0.5 * 10 ** -decimals ? 0 : x).toFixed(decimals); };
+  const inertiaFactor = 1 / (KG_PER[u.massUnit as keyof typeof KG_PER] * MM_PER[u.lengthUnit as keyof typeof MM_PER] ** 2);
+  const formatInertia = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? (v * inertiaFactor).toPrecision(6) : '—');
 
   const features = useCADStore(s => s.features);
   // Report in the model frame, or in a coordinate system
@@ -55,7 +59,7 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
           {massProps ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
               <div style={{ background: '#1c1c1f', padding: 8, borderRadius: 4 }}>
-                <strong>Material:</strong> {matData.name} (Density: {matData.density} kg/m³)
+                <strong>Material:</strong> {matData.name} (Density: {u.system === 'MKS' ? `${matData.density} kg/m³` : `${u.density(matData.density)} · ${matData.density} kg/m³`})
               </div>
               {systems.length > 0 && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -72,39 +76,39 @@ export default function MassPropsDialog({ isOpen, onClose }: DialogProps) {
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
                   <div style={{ color: '#aaa' }}>Total Mass</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#4fc3f7', marginTop: 4 }}>
-                    {(massProps.mass * 1000).toFixed(2)} g
-                    <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>({massProps.mass.toFixed(4)} kg)</span>
+                    {u.massUnit === 'g' ? `${(massProps.mass * 1000).toFixed(2)} g` : u.mass(massProps.mass)}
+                    {u.massUnit !== 'kg' && <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>({massProps.mass.toFixed(4)} kg)</span>}
                   </div>
                 </div>
 
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
                   <div style={{ color: '#aaa' }}>Volume</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#81c784', marginTop: 4 }}>
-                    {(massProps.volume / 1000).toFixed(2)} cm³
+                    {u.volume(massProps.volume)}
                   </div>
                 </div>
 
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
                   <div style={{ color: '#aaa' }}>Surface Area</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#ffb74d', marginTop: 4 }}>
-                    {(massProps.surfaceArea / 100).toFixed(2)} cm²
+                    {u.area(massProps.surfaceArea)}
                   </div>
                 </div>
 
                 <div style={{ background: '#252529', padding: 8, borderRadius: 4 }}>
                   <div style={{ color: '#aaa' }}>Center of Mass (X, Y, Z){system ? ` in ${system.name}` : ''}</div>
                   <div className="mass-props-com" style={{ fontSize: 13, fontWeight: 600, color: '#ce93d8', marginTop: 4 }}>
-                    ({mm(massProps.centerOfMass.x)}, {mm(massProps.centerOfMass.y)}, {mm(massProps.centerOfMass.z)}) mm
+                    ({mm(massProps.centerOfMass.x)}, {mm(massProps.centerOfMass.y)}, {mm(massProps.centerOfMass.z)}) {u.lengthUnit}
                   </div>
                 </div>
               </div>
 
               <div style={{ background: '#1c1c1f', padding: 8, borderRadius: 4, fontFamily: 'monospace', fontSize: 11 }}>
-                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia at center of mass{system ? `, along ${system.name}'s axes` : ''} (kg · mm²):</div>
+                <div style={{ color: '#aaa', marginBottom: 4 }}>Moments of Inertia at center of mass{system ? `, along ${system.name}'s axes` : ''} ({u.massUnit} · {u.lengthUnit}²):</div>
                 <div>Ixx: {formatInertia(massProps.momentOfInertia?.Ixx)}</div>
                 <div>Iyy: {formatInertia(massProps.momentOfInertia?.Iyy)}</div>
                 <div>Izz: {formatInertia(massProps.momentOfInertia?.Izz)}</div>
-                <div style={{ color: '#aaa', margin: '6px 0 4px' }}>About the {system ? `${system.name} origin` : 'model origin'} (kg · mm²):</div>
+                <div style={{ color: '#aaa', margin: '6px 0 4px' }}>About the {system ? `${system.name} origin` : 'model origin'} ({u.massUnit} · {u.lengthUnit}²):</div>
                 <div className="mass-props-origin">Ixx: {formatInertia(massProps.momentOfInertiaAtOrigin?.Ixx)}  Iyy: {formatInertia(massProps.momentOfInertiaAtOrigin?.Iyy)}  Izz: {formatInertia(massProps.momentOfInertiaAtOrigin?.Izz)}</div>
               </div>
             </div>

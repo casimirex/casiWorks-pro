@@ -227,6 +227,38 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'unit system: inches shown and typed (IPS) from the title bar; the model stays in mm',
+    async run(p) {
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      const setUnits = (u: string) => p.eval(`(() => {
+        const sel = document.querySelector('.doc-units-select');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(u)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      const found = await p.eval<string>(`document.querySelector('.doc-units-select')?.tagName ?? 'none'`);
+      assert(found === 'SELECT', `unit selector in the title bar: ${found}`);
+      await setUnits('IPS');
+      await sleep(200);
+      const shownUnits = await p.eval<string>(`document.querySelector('.status-unit-badge')?.textContent ?? ''`);
+      assert(shownUnits === 'IPS', `status bar units: ${shownUnits}`);
+      await p.eval(`window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: 0, y: 0 }, corner2: { x: 50.8, y: 25.4 } }] })`);
+      await p.click('Features');
+      await p.click('Extruded Boss/Base', 500);
+      const unit = await p.eval<string>(`document.querySelector('.property-panel .numeric-unit-tag')?.textContent ?? ''`);
+      await setField(p, 'Extrude Depth', '0.5');
+      await sleep(200);
+      await p.eval(`document.querySelector('.action-btn-green').click()`);
+      await sleep(1200);
+      const v = await volume(p);
+      assert(unit === 'in', `depth field unit "${unit}"`);
+      assert(Math.abs(v - 50.8 * 25.4 * 12.7) < 1e-3, `0.5 in deep: volume ${v} mm³, expected ${50.8 * 25.4 * 12.7}`);
+      const title = await p.eval<string>(`document.querySelector('.doc-units-select')?.value ?? ''`);
+      await setUnits('MMGS');
+      await sleep(200);
+      return `depth typed as 0.5 (${unit}) → ${v.toFixed(1)} mm³ (2 × 1 × 0.5 in³); title bar ${title} → MMGS`;
+    },
+  },
+  {
     name: 'measure: two clicks on opposite faces give the wall thickness',
     async run(p) {
       await p.eval(`window.casiworks.commands.execute('document.new')`);
@@ -1271,7 +1303,9 @@ async function main(): Promise<number> {
   }
   return withApp({ chrome, profile: 'e2e', shots: { dir: OUT, format: 'png' } }, async ({ page }) => {
     let failed = 0;
-    for (const check of CHECKS) {
+    // E2E_ONLY=text runs only the checks whose name contains it (the first check, the start, always runs)
+    const only = process.env.E2E_ONLY;
+    for (const check of only ? CHECKS.filter((c, i) => i === 0 || c.name.includes(only)) : CHECKS) {
       const t = Date.now();
       try {
         const detail = await Promise.race([

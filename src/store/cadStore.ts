@@ -11,6 +11,8 @@ import { generateId, referencePlaneFrame } from '../utils/math.ts';
 import { TOOLS, APP_MODES, DEFAULT_SETTINGS, FEATURE_TYPES, MATERIALS } from '../utils/constants.ts';
 import type { AppMode, AppSettings, MateType, ToolId, ViewOrientation } from '../utils/constants.ts';
 import { sanitizeDimensions } from '../drawings/associative.ts';
+import { SYSTEMS, unitSystemOf } from '../utils/units.ts';
+import type { UnitSystem } from '../utils/units.ts';
 import type { DrawingDimension } from '../drawings/associative.ts';
 import { assemblyManager } from '../assembly/AssemblyManager.ts';
 import type { AssemblyComponent, MateOptions, MateRef } from '../assembly/AssemblyManager.ts';
@@ -410,6 +412,8 @@ export interface CADActions {
   setExplodedView(settings: ExplodedViewSettings | null): void;
   setDrawingOptions(options: Partial<DrawingOptions>): void;
   addDrawingDimension(dimension: DrawingDimension): void;
+  /** The document's unit system: what lengths, masses and volumes are shown and typed in (the model stays in mm). */
+  setUnitSystem(system: UnitSystem): void;
   /** False when there is no dimension with that id. */
   removeDrawingDimension(id: string): boolean;
   /** Replace the global variables and update every parameter linked to them (one undo step). */
@@ -1428,6 +1432,13 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = `Configuration: ${name ?? 'Default'}`;
     }),
 
+    setUnitSystem: (system) => set(state => {
+      if (state.settings.units === system) return;
+      state.settings.units = system;
+      state.isModified = true;
+      state.statusMessage = `Units: ${SYSTEMS[system].name}`;
+    }),
+
     addDrawingDimension: (dimension) => set(state => {
       get()._captureUndoSnapshot(state, 'Add Drawing Dimension');
       state.drawingDimensions.push(safeDeepClone(dimension) as Draft<DrawingDimension>);
@@ -1522,6 +1533,7 @@ export const useCADStore = create<CADStore>()(
         state.rollbackIndex = Number.isInteger(project.rollbackIndex) ? project.rollbackIndex! : features.length - 1;
         state.activeMaterial = project.activeMaterial || 'Steel_1020';
         state.settings = { ...DEFAULT_SETTINGS, ...(project.settings || {}) };
+        state.settings.units = unitSystemOf(state.settings.units);
         state.variables = Array.isArray(project.variables)
           ? project.variables.filter(v => v && typeof v.name === 'string' && typeof v.expression === 'string').map(v => ({ name: v.name, expression: v.expression }))
           : [];
@@ -1610,11 +1622,13 @@ export const useCADStore = create<CADStore>()(
       assemblyManager.mates = [];
       const { documentRevision, rebuildCount } = state;
       const drawingOptions = { ...state.drawingOptions };
+      const units = state.settings.units;
       Object.assign(state, initialState());
-      // Counters keep counting across documents; the drawing preferences stay
+      // Counters keep counting across documents; the drawing preferences and the unit system stay
       state.documentRevision = documentRevision + 1;
       state.rebuildCount = rebuildCount;
       state.drawingOptions = drawingOptions;
+      state.settings.units = units;
     }),
 
     setDocumentName: (name) => set(state => {

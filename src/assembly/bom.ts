@@ -3,6 +3,7 @@
 // One row per distinct part (same name, shape, size and material), with its
 // quantity. Volumes are exact for the primitive shapes (not the faceted display
 // mesh); mass uses each component's material, or the document's when it has none.
+import type { MassUnit } from '../utils/units.ts';
 import type { PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
 import { MATERIALS } from '../utils/constants.ts';
 
@@ -104,10 +105,16 @@ const csvCell = (v: string | number) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-/** The BOM as CSV (spreadsheet-ready; masses in grams). */
-export function bomCSV(bom: Bom): string {
-  const head = ['Item', 'Part number', 'Description', 'Qty', 'Material', 'Unit mass (g)', 'Total mass (g)'];
-  const lines = bom.rows.map(r => [r.item, r.partNumber, r.description, r.quantity, r.material, (r.unitMass * 1000).toFixed(2), (r.totalMass * 1000).toFixed(2)]);
-  lines.push(['', 'Total', '', bom.totalQuantity, '', '', (bom.totalMass * 1000).toFixed(2)]);
+/** Kilograms per mass unit, and the decimals masses are written with. */
+const MASS: Record<MassUnit, { kg: number; decimals: number }> = { g: { kg: 0.001, decimals: 2 }, kg: { kg: 1, decimals: 4 }, lb: { kg: 0.45359237, decimals: 4 } };
+
+/** A mass (kg) as a number in `unit`, with that unit's decimals. */
+export const massIn = (kg: number, unit: MassUnit = 'g') => (kg / MASS[unit].kg).toFixed(MASS[unit].decimals);
+
+/** The BOM as CSV (spreadsheet-ready; masses in grams, or in `unit`). */
+export function bomCSV(bom: Bom, unit: MassUnit = 'g'): string {
+  const head = ['Item', 'Part number', 'Description', 'Qty', 'Material', `Unit mass (${unit})`, `Total mass (${unit})`];
+  const lines = bom.rows.map(r => [r.item, r.partNumber, r.description, r.quantity, r.material, massIn(r.unitMass, unit), massIn(r.totalMass, unit)]);
+  lines.push(['', 'Total', '', bom.totalQuantity, '', '', massIn(bom.totalMass, unit)]);
   return [head, ...lines].map(l => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

@@ -1,4 +1,5 @@
 // CasiWorks Pro - Properties Side Panel (Elevated Modern Design)
+import { useUnits } from '../common/useUnits.ts';
 import { useState, useEffect, useMemo } from 'react';
 import { Check, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
@@ -85,6 +86,7 @@ interface PanelContentFields {
 }
 
 export default function PropertyPanel() {
+  const units = useUnits();
   const propertyPanelOpen = useCADStore(s => s.propertyPanelOpen);
   const propertyPanelContent = useCADStore(s => s.propertyPanelContent) as PanelContentFields | null;
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
@@ -465,7 +467,7 @@ export default function PropertyPanel() {
             <div className="property-card-body">
               <div className="property-row">
                 <span className="property-label">Explode Distance:</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8' }}>{explodeDist} mm</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#38bdf8' }}>{units.len(explodeDist)}</span>
               </div>
               <input
                 type="range"

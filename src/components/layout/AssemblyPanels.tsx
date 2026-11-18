@@ -1,4 +1,6 @@
 // CasiWorks Pro - Assembly panels: mate two picked faces, drive a mate (motion), explode steps
+import { unitsFor, useUnits } from '../common/useUnits.ts';
+import type { Units } from '../common/useUnits.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Play, Square, Trash2, Plus, Wand2 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
@@ -18,7 +20,7 @@ const MATE_LABEL: Record<string, string> = {
   tangent: 'Tangent (cylinder on face)',
 };
 
-const faceText = (f: PickedFace) => (f.kind === 'plane' ? `flat face, ${f.area.toFixed(0)} mm²` : `cylinder Ø${(f.radius * 2).toFixed(2)} mm`);
+const faceText = (f: PickedFace, u: Units = unitsFor('MMGS')) => (f.kind === 'plane' ? `flat face, ${u.area(f.area)}` : `cylinder Ø${u.len(f.radius * 2, { fixed: true })}`);
 
 /** Shared frame: OK / Cancel header, a title, and the body. */
 function PanelFrame({ title, onOk, onCancel, okLabel = 'OK', okDisabled, children }: {
@@ -42,6 +44,7 @@ function PanelFrame({ title, onOk, onCancel, okLabel = 'OK', okDisabled, childre
 
 /** Choose the mate between the two faces picked with the Mate tool. */
 export function MateFacesPanel() {
+  const units = useUnits();
   const picks = useCADStore(s => s.matePicks);
   const components = useCADStore(s => s.assemblyComponents);
   const closePropertyPanel = useCADStore(s => s.closePropertyPanel);
@@ -64,7 +67,7 @@ export function MateFacesPanel() {
           {picks.map((p, i) => (
             <div key={i} className="property-row mate-pick" style={{ fontSize: 12 }}>
               <span className="property-label">{i + 1}. {nameOf(p.componentId)}</span>
-              <span style={{ color: '#22d3ee' }}>{faceText(p.face)}</span>
+              <span style={{ color: '#22d3ee' }}>{faceText(p.face, units)}</span>
             </div>
           ))}
           {picks.length < 2 && <div style={{ fontSize: 11, color: '#94a3b8' }}>Pick a face on another component.</div>}
@@ -201,6 +204,7 @@ const dirName = (d: { x: number; y: number; z: number }) =>
 
 /** Explode steps inside the exploded view panel: list, add from the selection, play. */
 export function ExplodeStepsCard() {
+  const units = useUnits();
   const steps = useCADStore(s => s.explodeSteps);
   const components = useCADStore(s => s.assemblyComponents);
   const selected = useCADStore(s => s.selectedEntities);
@@ -255,7 +259,7 @@ export function ExplodeStepsCard() {
             <li key={s.id} className="explode-step" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11 }}>
               <span style={{ color: '#38bdf8', fontWeight: 700, minWidth: 18 }}>{i + 1}</span>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.componentIds.map(nameOf).join(', ')}>
-                {s.componentIds.map(nameOf).join(', ')} · {dirName(s.direction)} {s.distance} mm
+                {s.componentIds.map(nameOf).join(', ')} · {dirName(s.direction)} {units.len(s.distance)}
               </span>
               <button className="icon-btn" onClick={() => removeStep(i)} title={`Delete step ${i + 1}`} aria-label={`Delete step ${i + 1}`}><Trash2 size={12} /></button>
             </li>

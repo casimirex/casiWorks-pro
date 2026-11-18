@@ -1,4 +1,5 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
+import { useUnits } from '../components/common/useUnits.ts';
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { X, Download, Eye, FileText, Check, Ruler } from 'lucide-react';
 import { drawingEngine } from './DrawingEngine.ts';
@@ -22,6 +23,8 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const documentName = useCADStore(s => s.documentName);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const drawingDimensions = useCADStore(s => s.drawingDimensions);
+  const settings = useCADStore(s => s.settings);
+  const units = useUnits();
   // Shared with the Drawing tab, so the ribbon and this window always agree
   const options = useCADStore(s => s.drawingOptions);
   const setOptions = useCADStore(s => s.setDrawingOptions);
@@ -68,12 +71,12 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const sheetData = useMemo(() => {
     if (!isOpen) return null;
     try {
-      return buildDrawingSheet({ bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, drawingOptions: { subject, sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
+      return buildDrawingSheet({ bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, settings, drawingOptions: { subject, sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
     } catch (err) {
       console.error('Failed to generate drawing sheet:', err);
       return null;
     }
-  }, [isOpen, bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, enableHLR, sheetSizeKey, subject]);
+  }, [isOpen, bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, settings, enableHLR, sheetSizeKey, subject]);
 
   const sheetSvg = useMemo(() => {
     if (!sheetData) return '';
@@ -87,7 +90,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
 
   const canDimension = subject === 'part' && !!sheetData;
   const dims = canDimension ? dimensionInfo({ bodies, documentName, activeMaterial, drawingOptions: options, drawingDimensions }, sheetData) : [];
-  const fmt = (mm: number) => `${mm.toFixed(2)} mm`;
+  const fmt = (mm: number) => units.len(mm, { fixed: true });
   const dimLabel = (d: (typeof dims)[number]) => `${d.view[0].toUpperCase()}${d.view.slice(1)} · ${d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : d.kind === 'horizontal' ? '↔ ' : '↕ '}`;
 
   /** A click on the sheet with the dimension tool: attach to the nearest corner, centre or circle. */

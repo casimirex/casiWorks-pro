@@ -1,6 +1,8 @@
 // CasiWorks Pro - Application Constants
 
 // Application modes
+import type { UnitSystem } from './units.ts';
+
 export const APP_MODES = {
   PART: 'part',
   ASSEMBLY: 'assembly',
@@ -162,7 +164,8 @@ export const MATERIALS: Readonly<Record<string, MaterialData>> = {
 
 // Default settings
 export interface AppSettings {
-  units: 'mm';
+  /** The document's unit system (display and typing only: the model is in mm). Older files say 'mm'. */
+  units: UnitSystem;
   gridSize: number;
   gridSubdivisions: number;
   snapToGrid: boolean;
@@ -181,7 +184,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
-  units: 'mm',
+  units: 'MMGS',
   gridSize: 10,
   gridSubdivisions: 10,
   snapToGrid: true,

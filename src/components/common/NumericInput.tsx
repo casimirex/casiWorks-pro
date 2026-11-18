@@ -1,10 +1,15 @@
 // CasiWorks Pro - Reusable Numeric Input Component
-// Provides a number input with increment/decrement buttons and unit suffix
+// Provides a number input with increment/decrement buttons and unit suffix.
+// A field with unit "mm" is a length: it shows and takes the document's unit
+// system (inches in IPS), and also takes a number with its unit ("25 mm").
+// Its value, onChange, min, max and step stay in millimetres.
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { isPlainNumber, parseExpression } from '../../features/equations.ts';
+import { useCADStore } from '../../store/cadStore.ts';
+import { fromLength, lengthUnit, niceStep, parseLength, toLength, unitSystemOf } from '../../utils/units.ts';
 
 export interface NumericInputProps {
   value?: number;
@@ -32,10 +37,12 @@ export interface NumericInputProps {
   onExpressionChange?: (expression: string | null) => void;
   /** Called with the reason when an expression cannot be evaluated. */
   onError?: (message: string) => void;
+  /** Read typed text as a number (null: not a number, try it as an expression). Default: a plain number. */
+  parse?: (text: string) => number | null;
 }
 
 /** A numeric input with spin buttons and unit display. */
-const NumericInput = ({
+const NumberField = ({
   value = 0,
   onChange,
   min = -Infinity,
@@ -50,6 +57,7 @@ const NumericInput = ({
   expression = null,
   onExpressionChange,
   onError,
+  parse,
 }: NumericInputProps) => {
   // Internal string representation for editing
   const [editValue, setEditValue] = useState(String(value));
@@ -84,7 +92,8 @@ const NumericInput = ({
   const commitValue = useCallback(() => {
     // Read the latest text: a blur can arrive before React re-renders after the last keystroke
     const text = editValueRef.current;
-    if (evaluate && text.trim() && !isPlainNumber(text)) {
+    const direct = parse ? parse(text) : (isPlainNumber(text) ? parseFloat(text) : null);
+    if (evaluate && text.trim() && direct === null) {
       try {
         const result = clamp(evaluate(text));
         const expr = text.trim().replace(/^=\s*/, '');
@@ -100,7 +109,7 @@ const NumericInput = ({
       return;
     }
     if (expression && text.trim() !== `=${expression}`) onExpressionChange?.(null);
-    const parsed = parseFloat(text);
+    const parsed = direct ?? (parse ? NaN : parseFloat(text));
     if (isNaN(parsed)) {
       setEditValue(formatValue(value));
     } else {
@@ -111,7 +120,7 @@ const NumericInput = ({
       }
     }
     setIsEditing(false);
-  }, [value, clamp, onChange, formatValue, evaluate, expression, onExpressionChange, onError]);
+  }, [value, clamp, onChange, formatValue, evaluate, expression, onExpressionChange, onError, parse]);
 
   /** Handle text input change */
   const handleInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
@@ -250,6 +259,36 @@ const NumericInput = ({
         </button>
       </div>
     </div>
+  );
+};
+
+/** A length field in the document's units (see the top of the file); any other field as it is. */
+const NumericInput = (props: NumericInputProps) => {
+  const system = unitSystemOf(useCADStore(s => s.settings.units));
+  const { unit, value = 0, onChange, min = -Infinity, max = Infinity, step = 1, evaluate, precision = 4 } = props;
+  const isLength = unit === 'mm';
+  const toShown = useCallback((mm: number) => toLength(mm, system), [system]);
+  const parse = useCallback((text: string) => {
+    const mm = parseLength(text, system);
+    return mm === null ? null : toLength(mm, system);
+  }, [system]);
+  const change = useCallback((v: number) => onChange?.(fromLength(v, system)), [onChange, system]);
+  // Expressions and variables are in mm: shown converted
+  const evaluateShown = useMemo(() => (evaluate ? (text: string) => toShown(evaluate(text)) : undefined), [evaluate, toShown]);
+  if (!isLength) return <NumberField {...props} />;
+  return (
+    <NumberField
+      {...props}
+      value={toShown(value)}
+      onChange={change}
+      min={toShown(min)}
+      max={toShown(max)}
+      step={system === 'MMGS' ? step : niceStep(step, system)}
+      unit={lengthUnit(system)}
+      precision={system === 'MMGS' ? precision : Math.max(precision, 4)}
+      evaluate={evaluateShown}
+      parse={parse}
+    />
   );
 };
 

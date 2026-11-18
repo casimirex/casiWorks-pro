@@ -3,7 +3,8 @@ import { useMemo } from 'react';
 import { X, FileText, Download } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore.ts';
 import { MATERIALS } from '../../utils/constants.ts';
-import { buildBom } from '../../assembly/bom.ts';
+import { buildBom, massIn } from '../../assembly/bom.ts';
+import { useUnits } from '../common/useUnits.ts';
 import { runCommand } from '../../commands/index.ts';
 import { useDialog } from '../common/useDialog.ts';
 
@@ -12,12 +13,14 @@ interface DialogProps {
   onClose(): void;
 }
 
-const grams = (kg: number) => (kg * 1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function BomDialog({ isOpen, onClose }: DialogProps) {
   const components = useCADStore(s => s.assemblyComponents);
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const bom = useMemo(() => buildBom(components, activeMaterial), [components, activeMaterial]);
+  // Masses in the document's mass unit (g, kg or lb)
+  const u = useUnits();
+  const grams = (kg: number) => Number(massIn(kg, u.massUnit as 'g' | 'kg' | 'lb')).toLocaleString(undefined, { minimumFractionDigits: u.massUnit === 'g' ? 2 : 4, maximumFractionDigits: u.massUnit === 'g' ? 2 : 4 });
 
   const dialog = useDialog(isOpen, onClose, 'Bill of Materials');
   if (!isOpen) return null;
@@ -48,7 +51,7 @@ export default function BomDialog({ isOpen, onClose }: DialogProps) {
                     <tr>
                       <th style={th}>Item</th><th style={th}>Part number</th><th style={th}>Description</th>
                       <th style={{ ...th, textAlign: 'right' }}>Qty</th><th style={th}>Material</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Unit mass (g)</th><th style={{ ...th, textAlign: 'right' }}>Total (g)</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Unit mass ({u.massUnit})</th><th style={{ ...th, textAlign: 'right' }}>Total ({u.massUnit})</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -154,7 +154,7 @@ The "experience platform" layer: data management and a server-side API.
 
 - [x] **8.1** Performance budgets (load time, rebuild time) tracked in CI (`npm run perf`: gzipped bundle, rebuild of every example, static and modal FEA, cold app load in Chrome, each against `perf-budgets.json`; CI runs it after e2e and keeps the results; the browser harness is shared by e2e, tutorial shots and perf)
 - [x] **8.2** Accessibility and keyboard-only operation (command palette Ctrl+K / F1 for every command; dialogs are named modals that take and keep focus, Esc closes and returns focus; ribbon tabs are an ARIA tablist with arrow keys; the feature tree is a tree with one Tab stop, arrows, Enter edit, Delete, S suppress, R roll back; the 3D view turns, pans and zooms from the keyboard; visible focus ring; every control has an accessible name, checked by an in-page audit in e2e. Drawing sketch geometry still needs a pointer or the scripting console)
-- [ ] **8.3** Internationalization and unit systems (MMGS, IPS, …)
+- [ ] **8.3** Internationalization and unit systems (MMGS, IPS, …) — *unit systems done*: MMGS, CGS, MKS, IPS per document (title-bar selector, `settings.units` command; saved with the project, older files open as MMGS; New keeps the choice). Length fields show and take the system's unit and also a number with its unit ("25 mm", "1 in", "2'"); measure, sketch dimensions, mass properties (mass, volume, area, centre of mass, inertia), BOM and its CSV, mates, FEA probes and drawing dimension texts follow it. The model, files, equations and the API stay in mm. *Translations of the interface still to do*
 - [ ] **8.4** Security review, CSP, dependency policy
 - [ ] **8.5** Crash reporting and opt-in telemetry
 - [ ] **8.6** User documentation and tutorials

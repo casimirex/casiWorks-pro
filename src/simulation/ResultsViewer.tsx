@@ -1,4 +1,6 @@
 // CasiWorks Pro - FEA Results Viewer (Responsive Mobile & Desktop, 3D Solid & Beam FEA)
+import { useUnits } from '../components/common/useUnits.ts';
+import { toLength } from '../utils/units.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Play, ShieldAlert, Award, ChevronDown, ChevronUp, FileText } from 'lucide-react';
@@ -21,6 +23,7 @@ import { feaReportHtml } from './report.ts';
 import { downloadBlob } from '../utils/download.ts';
 
 export default function ResultsViewer() {
+  const units = useUnits();
   const documentType = useCADStore(s => s.documentType);
   const bodies = useCADStore(s => s.bodies);
   const activeMaterial = useCADStore(s => s.activeMaterial);
@@ -489,7 +492,7 @@ export default function ResultsViewer() {
                         <div key={p.node} className="fea-probe-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
                           <span style={{ color: '#fde047' }}>{i + 1}</span>
                           <span>{p.vonMisesMPa.toFixed(1)} MPa</span>
-                          <span>{p.displacementMM.toPrecision(3)} mm</span>
+                          <span>{+toLength(p.displacementMM, units.system).toPrecision(3)} {units.lengthUnit}</span>
                         </div>
                       ))}
                       <button className="fea-clear-probes" onClick={clearFeaProbes}

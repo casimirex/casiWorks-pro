@@ -1,9 +1,11 @@
 // CasiWorks Pro - Bottom Status Bar (Modern Engineering Pill Layout)
+import { SYSTEMS, unitSystemOf } from '../../utils/units.ts';
 import { useCADStore } from '../../store/cadStore.ts';
 import { runCommand } from '../../commands/index.ts';
 import { Grid, Layers, Box, Compass, Magnet } from 'lucide-react';
 
 export default function StatusBar() {
+  const unitSystem = unitSystemOf(useCADStore(s => s.settings.units));
   const statusMessage = useCADStore(s => s.statusMessage);
   const isSketchActive = useCADStore(s => s.isSketchActive);
   const solve = useCADStore(s => s.sketchSolveState);
@@ -91,8 +93,8 @@ export default function StatusBar() {
         </div>
 
         {/* Unit Pill */}
-        <div className="status-unit-badge" title="Units: Millimeter, Gram, Second">
-          <span>MMGS</span>
+        <div className="status-unit-badge" title={`Units: ${SYSTEMS[unitSystem].name}`}>
+          <span>{unitSystem}</span>
         </div>
       </div>
     </footer>

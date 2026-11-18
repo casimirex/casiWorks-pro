@@ -1,4 +1,5 @@
 // CasiWorks Pro - CommandManager Ribbon Toolbar (Professional Engineering UI)
+import { SYSTEMS, UNIT_SYSTEMS, unitSystemOf } from '../../utils/units.ts';
 import { useState, useSyncExternalStore } from 'react';
 import {
   FilePlus, FolderOpen, Save, Undo2, Redo2, RefreshCw,
@@ -22,6 +23,7 @@ import type { LifecycleState } from '../../library/client.ts';
 const PLANE_COLORS = { Front: '#38bdf8', Top: '#4ade80', Right: '#c084fc' } as const;
 
 export default function CommandManager() {
+  const unitSystem = unitSystemOf(useCADStore(s => s.settings.units));
   const activeTab = useCADStore(s => s.activeCommandTab);
   const setCommandTab = useCADStore(s => s.setCommandTab);
   const activeTool = useCADStore(s => s.activeTool);
@@ -182,7 +184,17 @@ export default function CommandManager() {
             </button>
           )}
           {activeConfiguration && <span className="doc-unit-tag doc-config-tag" title="Active configuration">{activeConfiguration}</span>}
-          <span className="doc-unit-tag">MMGS</span>
+          {/* The document's unit system: what lengths, masses and volumes are shown and typed in */}
+          <select
+            className="doc-unit-tag doc-units-select"
+            value={unitSystem}
+            onChange={(e) => runCommand('settings.units', { system: e.target.value })}
+            aria-label="Unit system"
+            title={`Unit system: ${SYSTEMS[unitSystem].name}. The model, files and API stay in millimetres.`}
+            style={{ cursor: 'pointer' }}
+          >
+            {UNIT_SYSTEMS.map(u => <option key={u} value={u} title={SYSTEMS[u].name}>{u}</option>)}
+          </select>
         </div>
 
         {/* Right Tools */}
