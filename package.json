@@ -1,6 +1,7 @@
 {
   "name": "casiworks-pro",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "CasiWorks Pro - professional parametric 3D CAD for the web",
   "type": "module",
   "exports": {

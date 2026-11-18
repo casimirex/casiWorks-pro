@@ -26,6 +26,7 @@ Solids are closed triangle meshes, not an exact B-Rep kernel. That choice keeps 
 - [Configuration](#configuration)
 - [Limits](#limits)
 - [Documentation](#documentation)
+- [License](#license)
 
 ---
 
@@ -275,3 +276,9 @@ These follow from the triangle-mesh kernel. An exact B-Rep kernel was evaluated 
 - **API reference**: served by the app at `/api/` (Tools ▸ API Reference).
 - **REST API**: `/api/v1/openapi.json` (OpenAPI 3.1) on a running library server.
 - **[Roadmap](ROADMAP.md)**: what is done and what is open.
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 casimirex
