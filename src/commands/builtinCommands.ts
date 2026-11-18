@@ -1,8 +1,11 @@
 // CasiWorks Pro - Built-in commands: everything the ribbon, status bar and keyboard do
+import { SHEET_SIZE_KEYS } from '../drawings/DrawingEngine.ts';
 import { CommandError, CommandRegistry } from './CommandRegistry.ts';
 import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
 import type { CADStore, DrawingOptions, PrimitiveDims, PrimitiveShape } from '../store/cadStore.ts';
-import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension } from '../drawings/drawingSheet.ts';
+import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension, titleBlockFields } from '../drawings/drawingSheet.ts';
+import { TITLE_BLOCK_FIELDS } from '../drawings/titleBlock.ts';
+import type { TitleBlockFields } from '../drawings/titleBlock.ts';
 import { DIMENSION_KINDS } from '../drawings/associative.ts';
 import { SYSTEMS, UNIT_SYSTEMS, massUnit, unitSystemOf } from '../utils/units.ts';
 import type { UnitSystem } from '../utils/units.ts';
@@ -35,7 +38,7 @@ import { mateRefOf, matesFor } from '../assembly/facePick.ts';
 import { library } from '../library/client.ts';
 import type { ExplodeStep } from '../store/cadStore.ts';
 
-const DRAWING_SHEET_SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'] as const;
+const DRAWING_SHEET_SIZES = SHEET_SIZE_KEYS;
 
 /** An explode direction: '+X' … '-Z' or a vector (made unit length). */
 function directionOf(d: unknown, i: number): { x: number; y: number; z: number } {
@@ -601,7 +604,7 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   { id: 'drawing.open', label: '2D drawing sheet…', category: 'Drawing', requiresUI: true, description: 'Standard 3-view sheet with SVG / DXF export', run: ({ ui }) => ui().openDialog('drawing') },
   {
     id: 'drawing.options', label: 'Drawing sheet options', category: 'Drawing', record: false,
-    description: "args: { subject?: 'part' | 'assembly', sheetSize?: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B', hiddenLines?, dimensions?, gdt? } — only the given ones change",
+    description: `args: { subject?: 'part' | 'assembly', sheetSize?: ${SHEET_SIZE_KEYS.map(k => `'${k}'`).join(' | ')}, hiddenLines?, dimensions?, gdt? } — only the given ones change`,
     run: ({ state }, args: Partial<DrawingOptions> | undefined) => {
       const next: Partial<DrawingOptions> = {};
       if (args?.subject !== undefined) {
@@ -634,6 +637,22 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       }
       const system = state().settings.units;
       return { system, ...SYSTEMS[system] };
+    },
+  },
+  {
+    id: 'drawing.titleBlock', label: 'Edit title block', category: 'Drawing',
+    description: `args: { ${TITLE_BLOCK_FIELDS.map(f => `${f.key}?`).join(', ')} } — text for the title block; '' clears a field back to its generated value. Returns what the title block shows`,
+    run: ({ state }, args: Partial<Record<keyof TitleBlockFields, string>> | undefined) => {
+      const next: Partial<TitleBlockFields> = {};
+      for (const [k, v] of Object.entries(args ?? {})) {
+        const field = TITLE_BLOCK_FIELDS.find(f => f.key === k);
+        if (!field) throw new CommandError('INVALID_ARGUMENT', `Unknown title block field ${JSON.stringify(k)}; fields: ${TITLE_BLOCK_FIELDS.map(f => f.key).join(', ')}`);
+        if (typeof v !== 'string') throw new CommandError('INVALID_ARGUMENT', `${k} must be a string`);
+        if (v.trim().length > field.max) throw new CommandError('INVALID_ARGUMENT', `${k} is longer than ${field.max} characters`);
+        next[field.key] = v;
+      }
+      if (Object.keys(next).length) state().setDrawingTitleBlock(next);
+      return { set: { ...state().drawingTitleBlock }, shown: titleBlockFields(state()) };
     },
   },
   {

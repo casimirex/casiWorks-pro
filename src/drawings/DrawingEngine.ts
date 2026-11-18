@@ -4,6 +4,7 @@
 // Geometric Dimensioning & Tolerancing (GD&T) datum symbols and feature control frames,
 // standard drawing sheets (A4, A3) with title blocks, and SVG / DXF vector exports.
 import * as THREE from 'three';
+import { TITLE_BLOCK_SIZE, titleBlockDrawing } from './titleBlock.ts';
 import { arcPoint, arcsInChain, chainSmooth, intervalsToArcs, mergeStraight, subtractIntervals, unionIntervals, wrapInterval } from './curves.ts';
 import type { Intervals } from './curves.ts';
 import { autoDiameters, dimensionSide, measureDimension, viewFeatures } from './associative.ts';
@@ -47,12 +48,21 @@ export const GDT_SYMBOLS = {
   PROFILE_LINE: { symbol: '⌒', name: 'Profile of a Line' },
 };
 
+/** Sheet formats: ISO 216 A sizes and ANSI/ASME Y14.1 sizes, in mm. */
 export const SHEET_SIZES = {
   A4_LANDSCAPE: { width: 297, height: 210, name: 'A4 Landscape (297 x 210 mm)' },
   A4_PORTRAIT: { width: 210, height: 297, name: 'A4 Portrait (210 x 297 mm)' },
   A3_LANDSCAPE: { width: 420, height: 297, name: 'A3 Landscape (420 x 297 mm)' },
+  A2_LANDSCAPE: { width: 594, height: 420, name: 'A2 Landscape (594 x 420 mm)' },
+  A1_LANDSCAPE: { width: 841, height: 594, name: 'A1 Landscape (841 x 594 mm)' },
+  A0_LANDSCAPE: { width: 1189, height: 841, name: 'A0 Landscape (1189 x 841 mm)' },
+  ANSI_A: { width: 279.4, height: 215.9, name: 'ANSI A (11 x 8.5 in)' },
   ANSI_B: { width: 431.8, height: 279.4, name: 'ANSI B (17 x 11 in)' },
+  ANSI_C: { width: 558.8, height: 431.8, name: 'ANSI C (22 x 17 in)' },
+  ANSI_D: { width: 863.6, height: 558.8, name: 'ANSI D (34 x 22 in)' },
 } as const;
+export type SheetSizeKey = keyof typeof SHEET_SIZES;
+export const SHEET_SIZE_KEYS = Object.keys(SHEET_SIZES) as SheetSizeKey[];
 
 export type ProjectionView = (typeof PROJECTION_VIEWS)[keyof typeof PROJECTION_VIEWS];
 export type LineType = (typeof LINE_TYPES)[keyof typeof LINE_TYPES];
@@ -146,7 +156,12 @@ export interface TitleBlock {
   material: string;
   scaleText: string;
   date: string;
+  /** The revision letter, e.g. "A". */
   revision: string;
+  company?: string;
+  drawnBy?: string;
+  checkedBy?: string;
+  approvedBy?: string;
 }
 
 export interface SheetData {
@@ -169,6 +184,13 @@ export interface SheetOptions {
   title?: string;
   partNumber?: string;
   material?: string;
+  /** Title block fields set by the user (5.4); blank ones take the generated values. */
+  revision?: string;
+  company?: string;
+  drawnBy?: string;
+  checkedBy?: string;
+  approvedBy?: string;
+  date?: string;
   /** Room kept free directly above the title block, right-aligned with it (e.g. for a parts list). */
   reserveAboveTitle?: { width: number; height: number };
   /** Dimensions placed by the user, attached to the model (5.2). */
@@ -862,15 +884,15 @@ export class DrawingEngine {
     // strip at the bottom is kept clear.
     const margin = 12;
     const inner = 2; // border inner frame
-    const titleBlockWidth = 90;
-    const titleBlockHeight = 40;
+    const titleBlockWidth = TITLE_BLOCK_SIZE.width;
+    const titleBlockHeight = TITLE_BLOCK_SIZE.height;
     const availWidth = sheetSize.width - 2 * margin;
     const availHeight = sheetSize.height - 2 * margin;
     const area = {
       minX: margin + inner + 4,
       minY: margin + inner + 4,
       maxX: sheetSize.width - margin - inner - 4,
-      maxY: sheetSize.height - margin - titleBlockHeight - 4,
+      maxY: sheetSize.height - margin - inner - titleBlockHeight - 4,
     };
     const BASE_BAND = {
       label: 9, // label baseline below a view
@@ -922,8 +944,8 @@ export class DrawingEngine {
     const col2 = Math.max(R.w, I.w);
     // Views keep clear of the title block and of anything reserved above it
     const reserve = sheetOptions.reserveAboveTitle;
-    const titleTop = sheetSize.height - margin - titleBlockHeight - (reserve?.height ?? 0) - 4;
-    const titleLeft = sheetSize.width - margin - Math.max(titleBlockWidth, reserve?.width ?? 0) - 4;
+    const titleTop = sheetSize.height - margin - inner - titleBlockHeight - (reserve?.height ?? 0) - 4;
+    const titleLeft = sheetSize.width - margin - inner - Math.max(titleBlockWidth, reserve?.width ?? 0) - 4;
     const bottom = sheetSize.height - margin - inner - 4;
 
     /** Positions at scale k, and how much room is left (negative = does not fit). */
@@ -1080,16 +1102,20 @@ export class DrawingEngine {
         innerMargin: 2,
       },
       titleBlock: {
-        x: sheetSize.width - margin - titleBlockWidth,
-        y: sheetSize.height - margin - titleBlockHeight,
+        x: sheetSize.width - margin - inner - titleBlockWidth,
+        y: sheetSize.height - margin - inner - titleBlockHeight,
         width: titleBlockWidth,
         height: titleBlockHeight,
         title: sheetOptions.title || 'MECHANICAL COMPONENT',
         partNumber: sheetOptions.partNumber || 'CADW-001',
         material: sheetOptions.material || 'Steel 1020',
         scaleText,
-        date: new Date().toISOString().slice(0, 10),
-        revision: 'REV A',
+        date: sheetOptions.date || new Date().toISOString().slice(0, 10),
+        revision: sheetOptions.revision || 'A',
+        ...(sheetOptions.company ? { company: sheetOptions.company } : {}),
+        ...(sheetOptions.drawnBy ? { drawnBy: sheetOptions.drawnBy } : {}),
+        ...(sheetOptions.checkedBy ? { checkedBy: sheetOptions.checkedBy } : {}),
+        ...(sheetOptions.approvedBy ? { approvedBy: sheetOptions.approvedBy } : {}),
       },
     };
 
@@ -1256,7 +1282,8 @@ export class DrawingEngine {
     svg += `    .view-label { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3.5px; font-weight: bold; fill: #222222; text-anchor: middle; }\n`;
     svg += `    .tb-line { stroke: #000000; stroke-width: 0.35; }\n`;
     svg += `    .tb-text-title { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 4px; font-weight: bold; fill: #000; }\n`;
-    svg += `    .tb-text-sm { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.5px; fill: #333; }\n`;
+    svg += `    .tb-text-sm { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.5px; fill: #222; }\n`;
+    svg += `    .tb-label { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 1.6px; fill: #666; letter-spacing: 0.05px; }\n`;
     svg += `    .gdt-rect { stroke: #000000; stroke-width: 0.35; fill: #ffffff; }\n`;
     svg += `    .gdt-text { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 3px; font-weight: bold; fill: #000; text-anchor: middle; }\n`;
     svg += `    .bom-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 2.6px; font-weight: bold; fill: #000; }\n`;
@@ -1280,15 +1307,13 @@ export class DrawingEngine {
       const tb = titleBlock;
       svg += `  <!-- Engineering Title Block -->\n`;
       svg += `  <g id="title-block">\n`;
-      svg += `    <rect class="gdt-rect" x="${tb.x.toFixed(2)}" y="${tb.y.toFixed(2)}" width="${tb.width.toFixed(2)}" height="${tb.height.toFixed(2)}" />\n`;
-      svg += `    <line class="tb-line" x1="${tb.x.toFixed(2)}" y1="${(tb.y + 15).toFixed(2)}" x2="${(tb.x + tb.width).toFixed(2)}" y2="${(tb.y + 15).toFixed(2)}" />\n`;
-      svg += `    <line class="tb-line" x1="${tb.x.toFixed(2)}" y1="${(tb.y + 28).toFixed(2)}" x2="${(tb.x + tb.width).toFixed(2)}" y2="${(tb.y + 28).toFixed(2)}" />\n`;
-      svg += `    <line class="tb-line" x1="${(tb.x + 45).toFixed(2)}" y1="${(tb.y + 15).toFixed(2)}" x2="${(tb.x + 45).toFixed(2)}" y2="${(tb.y + tb.height).toFixed(2)}" />\n`;
-      svg += `    <text class="tb-text-title" x="${(tb.x + 5).toFixed(2)}" y="${(tb.y + 10).toFixed(2)}">${escapeXml(tb.title)}</text>\n`;
-      svg += `    <text class="tb-text-sm" x="${(tb.x + 5).toFixed(2)}" y="${(tb.y + 22).toFixed(2)}">PART NO: ${escapeXml(tb.partNumber)}</text>\n`;
-      svg += `    <text class="tb-text-sm" x="${(tb.x + 50).toFixed(2)}" y="${(tb.y + 22).toFixed(2)}">MATERIAL: ${escapeXml(tb.material)}</text>\n`;
-      svg += `    <text class="tb-text-sm" x="${(tb.x + 5).toFixed(2)}" y="${(tb.y + 35).toFixed(2)}">${escapeXml(tb.scaleText)}</text>\n`;
-      svg += `    <text class="tb-text-sm" x="${(tb.x + 50).toFixed(2)}" y="${(tb.y + 35).toFixed(2)}">DATE: ${escapeXml(tb.date)} | ${escapeXml(tb.revision)}</text>\n`;
+      const { lines, texts } = titleBlockDrawing(tb);
+      svg += `    <rect class="sheet-bg" x="${tb.x.toFixed(2)}" y="${tb.y.toFixed(2)}" width="${tb.width.toFixed(2)}" height="${tb.height.toFixed(2)}" />\n`;
+      for (const [p, q] of lines) svg += `    <line class="tb-line" x1="${p.x.toFixed(2)}" y1="${p.y.toFixed(2)}" x2="${q.x.toFixed(2)}" y2="${q.y.toFixed(2)}" />\n`;
+      for (const t of texts) {
+        const cls = t.kind === 'title' ? 'tb-text-title' : t.kind === 'label' ? 'tb-label' : 'tb-text-sm';
+        svg += `    <text class="${cls}" x="${t.x.toFixed(2)}" y="${t.y.toFixed(2)}" font-size="${t.size}px">${escapeXml(t.text)}</text>\n`;
+      }
       svg += `  </g>\n\n`;
     }
 
@@ -1436,6 +1461,22 @@ export class DrawingEngine {
     dxf += '0\nENDTAB\n0\nENDSEC\n';
 
     dxf += '0\nSECTION\n2\nENTITIES\n';
+    const tText = (layer: string, x: number, y: number, h: number, s: string) =>
+      `0\nTEXT\n8\n${layer}\n10\n${f(x)}\n20\n${f(H - y)}\n30\n0.0\n40\n${f(h)}\n1\n${s.replace(/[\r\n]+/g, ' ')}\n`;
+    // Border and title block
+    const b = sheetData.border;
+    if (b) {
+      for (const inset of [0, b.innerMargin]) {
+        const x0 = b.x + inset, y0 = b.y + inset, x1 = b.x + b.width - inset, y1 = b.y + b.height - inset;
+        dxf += line('BORDER', { x: x0, y: y0 }, { x: x1, y: y0 }) + line('BORDER', { x: x1, y: y0 }, { x: x1, y: y1 })
+          + line('BORDER', { x: x1, y: y1 }, { x: x0, y: y1 }) + line('BORDER', { x: x0, y: y1 }, { x: x0, y: y0 });
+      }
+    }
+    if (sheetData.titleBlock) {
+      const { lines, texts } = titleBlockDrawing(sheetData.titleBlock);
+      for (const [p, q] of lines) dxf += line('BORDER', p, q);
+      for (const t of texts) dxf += tText('BORDER', t.x, t.y, t.size, t.text);
+    }
     for (const v of views) {
       for (const l of v.visible) dxf += line('VISIBLE', l.p1, l.p2);
       for (const l of v.hidden) dxf += line('HIDDEN', l.p1, l.p2);

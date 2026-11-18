@@ -12,6 +12,8 @@ import { DIMENSION_VIEWS, makeDimension, pickRef, sheetViewToModel, viewFeatures
 import type { DimensionKind, DimensionView, DrawingDimension } from './associative.ts';
 import type { Point2D } from './DrawingEngine.ts';
 import { generateId } from '../utils/math.ts';
+import { sanitizeTitleBlock } from './titleBlock.ts';
+import type { TitleBlockFields } from './titleBlock.ts';
 import { formatLength, unitSystemOf } from '../utils/units.ts';
 import type { UnitSystem } from '../utils/units.ts';
 
@@ -27,6 +29,8 @@ export interface DrawingSource {
   assemblyComponents?: Array<DrawingComponent & BomComponent>;
   /** Dimensions placed on the part sheet. */
   drawingDimensions?: DrawingDimension[];
+  /** Title block fields the user set. */
+  drawingTitleBlock?: Partial<TitleBlockFields>;
   /** The document's unit system (dimension texts); MMGS when absent. */
   settings?: { units?: UnitSystem | string };
 }
@@ -37,17 +41,34 @@ export function sheetLengthFormat(src: Pick<DrawingSource, 'settings'>): (mm: nu
   return system === 'MMGS' ? (mm: number) => `${mm.toFixed(1)} mm` : (mm: number) => formatLength(mm, system, { fixed: true });
 }
 
+/**
+ * What the title block says: the fields the user set, the generated values
+ * for the others (title and part number from the document name, the material,
+ * revision A, today's date).
+ */
+export function titleBlockFields(src: Pick<DrawingSource, 'documentName' | 'activeMaterial' | 'drawingOptions' | 'drawingTitleBlock'>): TitleBlockFields {
+  const name = src.documentName || 'Part1';
+  const assembly = src.drawingOptions.subject === 'assembly';
+  const generated: TitleBlockFields = {
+    title: assembly ? `${name.toUpperCase()} ASSEMBLY` : name.toUpperCase(),
+    partNumber: (assembly ? 'ASM-' : 'DWG-') + (name.slice(0, 4).toUpperCase() || (assembly ? 'ASSY' : 'PART')),
+    revision: 'A',
+    material: assembly ? 'SEE PARTS LIST' : src.activeMaterial || 'Steel 1020',
+    company: '', drawnBy: '', checkedBy: '', approvedBy: '',
+    date: new Date().toISOString().slice(0, 10),
+  };
+  return { ...generated, ...sanitizeTitleBlock(src.drawingTitleBlock) };
+}
+
 /** The full sheet (all annotations), or null when there is nothing to draw. */
 export function buildDrawingSheet(src: DrawingSource): SheetData | null {
-  const name = src.documentName || 'Part1';
+  const fields = titleBlockFields(src);
   if (src.drawingOptions.subject === 'assembly') {
     const components = src.assemblyComponents ?? [];
     return createAssemblySheet(components, buildBom(components, src.activeMaterial), {
       sheetSize: SHEET_SIZES[src.drawingOptions.sheetSize] ?? SHEET_SIZES.A4_LANDSCAPE,
       enableHLR: src.drawingOptions.hiddenLines,
-      title: `${name.toUpperCase()} ASSEMBLY`,
-      partNumber: 'ASM-' + (name.slice(0, 4).toUpperCase() || 'ASSY'),
-      material: 'SEE PARTS LIST',
+      ...fields,
     });
   }
   const geometry = src.bodies[0]?.geometry;
@@ -55,9 +76,7 @@ export function buildDrawingSheet(src: DrawingSource): SheetData | null {
   return drawingEngine.createStandardSheet(geometry, {
     sheetSize: SHEET_SIZES[src.drawingOptions.sheetSize] ?? SHEET_SIZES.A4_LANDSCAPE,
     enableHLR: src.drawingOptions.hiddenLines,
-    title: name.toUpperCase(),
-    partNumber: 'DWG-' + (name.slice(0, 4).toUpperCase() || 'PART'),
-    material: src.activeMaterial || 'Steel 1020',
+    ...fields,
     dimensions: src.drawingDimensions ?? [],
     formatLength: sheetLengthFormat(src),
   });

@@ -343,5 +343,7 @@ export interface ProjectFile {
   explodeSteps?: unknown[];
   /** Dimensions placed on the drawing sheet (5.2). */
   drawingDimensions?: unknown[];
+  /** Title block fields of the drawing sheet (5.4). */
+  drawingTitleBlock?: Record<string, string>;
   timestamp: number;
 }

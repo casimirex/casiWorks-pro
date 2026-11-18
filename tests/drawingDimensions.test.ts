@@ -172,7 +172,7 @@ test('Picks snap to corners, centres and circles; bad picks are refused with a r
 test('API 1.17: api.drawings.addDimension / dimensions / removeDimension', () => {
   loadExample('l_bracket');
   const api = createCasiWorksAPI(useCADStore as never);
-  assert.equal(api.version, '1.17.0');
+  assert.ok(api.version >= '1.17.0');
   const d = api.drawings.addDimension({ view: 'front', points: [{ x: 15, y: 5 }] });
   assert.equal(d.kind, 'diameter');
   assert.ok(Math.abs(d.value! - 10) < 1e-3);

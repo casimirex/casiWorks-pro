@@ -1,8 +1,9 @@
 // CasiWorks Pro - 2D Engineering Drawing Sheet Viewer & Vector Exporter Modal
+import TitleBlockPanel from './TitleBlockPanel.tsx';
 import { useUnits } from '../components/common/useUnits.ts';
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { X, Download, Eye, FileText, Check, Ruler } from 'lucide-react';
-import { drawingEngine } from './DrawingEngine.ts';
+import { drawingEngine, SHEET_SIZES, SHEET_SIZE_KEYS } from './DrawingEngine.ts';
 import { buildDrawingSheet, dimensionInfo, pickOnSheet, visibleSheet } from './drawingSheet.ts';
 import type { Point2D } from './DrawingEngine.ts';
 import type { DimensionView } from './associative.ts';
@@ -24,6 +25,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const activeMaterial = useCADStore(s => s.activeMaterial);
   const drawingDimensions = useCADStore(s => s.drawingDimensions);
   const settings = useCADStore(s => s.settings);
+  const drawingTitleBlock = useCADStore(s => s.drawingTitleBlock);
   const units = useUnits();
   // Shared with the Drawing tab, so the ribbon and this window always agree
   const options = useCADStore(s => s.drawingOptions);
@@ -35,6 +37,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const [dimOrientation, setDimOrientation] = useState<'auto' | 'horizontal' | 'vertical'>('auto');
   const [pending, setPending] = useState<{ view: DimensionView; at: Point2D; sheetAt: Point2D } | null>(null);
   const [dimMessage, setDimMessage] = useState<string | null>(null);
+  const [titleBlockOpen, setTitleBlockOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const toolRef = useRef({ dimTool, pending });
   toolRef.current = { dimTool, pending };
@@ -71,12 +74,12 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
   const sheetData = useMemo(() => {
     if (!isOpen) return null;
     try {
-      return buildDrawingSheet({ bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, settings, drawingOptions: { subject, sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
+      return buildDrawingSheet({ bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, drawingTitleBlock, settings, drawingOptions: { subject, sheetSize: sheetSizeKey, hiddenLines: enableHLR, dimensions: true, gdt: true } });
     } catch (err) {
       console.error('Failed to generate drawing sheet:', err);
       return null;
     }
-  }, [isOpen, bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, settings, enableHLR, sheetSizeKey, subject]);
+  }, [isOpen, bodies, assemblyComponents, documentName, activeMaterial, drawingDimensions, drawingTitleBlock, settings, enableHLR, sheetSizeKey, subject]);
 
   const sheetSvg = useMemo(() => {
     if (!sheetData) return '';
@@ -208,6 +211,18 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
             </>
           )}
 
+          {/* Title block editor */}
+          {sheetData && (
+            <button
+              onClick={() => setTitleBlockOpen(!titleBlockOpen)}
+              aria-pressed={titleBlockOpen}
+              style={{ background: titleBlockOpen ? '#094771' : '#2d2d30', border: '1px solid #555', color: '#fff', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}
+              title="Edit the title block: company, title, part number, revision, people, date"
+            >
+              Title block
+            </button>
+          )}
+
           {/* HLR Toggle */}
           <button
             onClick={() => setOptions({ hiddenLines: !enableHLR })}
@@ -275,10 +290,7 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
               cursor: 'pointer',
             }}
           >
-            <option value="A4_LANDSCAPE">A4 Landscape (297 x 210 mm)</option>
-            <option value="A4_PORTRAIT">A4 Portrait (210 x 297 mm)</option>
-            <option value="A3_LANDSCAPE">A3 Landscape (420 x 297 mm)</option>
-            <option value="ANSI_B">ANSI B (17 x 11 in)</option>
+            {SHEET_SIZE_KEYS.map(k => <option key={k} value={k}>{SHEET_SIZES[k].name}</option>)}
           </select>
 
           {/* Export SVG */}
@@ -405,6 +417,8 @@ export default function DrawingViewModal({ isOpen, onClose }: DrawingViewModalPr
           </div>
         )}
       </div>
+
+      {titleBlockOpen && sheetData && <TitleBlockPanel onClose={() => setTitleBlockOpen(false)} />}
 
       {/* Placed dimensions and the dimension tool's messages */}
       {canDimension && (dimMessage || dims.length > 0) && (

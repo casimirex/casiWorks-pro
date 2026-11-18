@@ -586,6 +586,18 @@ const CHECKS: Check[] = [
       const listed = await waitFor(() => p.eval<string>(`document.querySelector('.drawing-dimension')?.textContent`), 'placed dimension');
       assert(/^Front · Ø10\.00 mm/.test(listed), `listed: ${listed}`);
       assert(await p.eval<boolean>(`[...document.querySelectorAll('.drawing-sheet-view text.dim-text')].some(t => t.textContent === 'Ø10.0 mm')`), 'diameter drawn on the sheet');
+      // Title block editor: a company typed in the panel shows in the title block
+      await p.click('Title block');
+      await p.eval(`(() => {
+        const el = document.querySelector('.title-block-company');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, 'Acme Engineering');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      })()`);
+      const company = await waitFor(() => p.eval<boolean>(`[...document.querySelectorAll('.drawing-sheet-view #title-block text')].some(t => t.textContent === 'Acme Engineering') || null`), 'company in the title block');
+      assert(company, 'company shown in the title block');
+      await p.click('Title block');
+      await p.eval(`window.casiworks.commands.execute('drawing.titleBlock', { company: '' })`);
       await p.screenshot('03-drawing');
       // Escape leaves the dimension tool, a second Escape closes the sheet
       await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);

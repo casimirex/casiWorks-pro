@@ -1,4 +1,5 @@
 // CasiWorks Pro - CommandManager Ribbon Toolbar (Professional Engineering UI)
+import { SHEET_SIZES, SHEET_SIZE_KEYS } from '../../drawings/DrawingEngine.ts';
 import { SYSTEMS, UNIT_SYSTEMS, unitSystemOf } from '../../utils/units.ts';
 import { useState, useSyncExternalStore } from 'react';
 import {
@@ -893,10 +894,7 @@ export default function CommandManager() {
                       aria-label="Sheet size"
                       style={{ background: 'transparent', color: 'inherit', border: 'none', fontSize: 10, padding: 0 }}
                     >
-                      <option value="A4_LANDSCAPE">A4 Landscape</option>
-                      <option value="A4_PORTRAIT">A4 Portrait</option>
-                      <option value="A3_LANDSCAPE">A3 Landscape</option>
-                      <option value="ANSI_B">ANSI B</option>
+                      {SHEET_SIZE_KEYS.map(k => <option key={k} value={k}>{SHEET_SIZES[k].name.replace(/ \(.*\)$/, '')}</option>)}
                     </select>
                   </label>
                 </div>

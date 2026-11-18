@@ -12,6 +12,7 @@
 //    always current, with or without the UI running.
 //  - Units: millimetres, degrees, kilograms, kg/m³.
 
+import { SHEET_SIZE_KEYS } from '../drawings/DrawingEngine.ts';
 import type { CommandExecution, CommandInfo } from '../commands/CommandRegistry.ts';
 import type { Macro } from '../commands/macros.ts';
 import { macroToScript, parseMacro } from '../commands/macros.ts';
@@ -28,7 +29,8 @@ import { naturalFrequencies } from '../simulation/modal.ts';
 import { featureFrame, massPropertiesIn } from '../features/coordinateSystems.ts';
 import type { CoordinateFrame } from '../features/coordinateSystems.ts';
 import { FACES } from '../simulation/studySetup.ts';
-import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension } from '../drawings/drawingSheet.ts';
+import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension, titleBlockFields } from '../drawings/drawingSheet.ts';
+import { TITLE_BLOCK_FIELDS } from '../drawings/titleBlock.ts';
 import { DIMENSION_KINDS, DIMENSION_VIEWS } from '../drawings/associative.ts';
 import type { DimensionKind, DimensionView, DrawingDimension } from '../drawings/associative.ts';
 import type { DrawingSource } from '../drawings/drawingSheet.ts';
@@ -65,7 +67,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.17.0';
+export const API_VERSION = '1.18.0';
 
 // =====================================================================
 // Public types
@@ -714,7 +716,8 @@ export interface AssemblyAPI {
 /** What the drawing sheet shows. */
 export interface DrawingOptionsInfo {
   subject: 'part' | 'assembly';
-  sheetSize: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B';
+  /** ISO A4 portrait/landscape, A3–A0 landscape; ANSI A–D. Since 1.18 also A2, A1, A0, ANSI A, C, D. */
+  sheetSize: 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'A2_LANDSCAPE' | 'A1_LANDSCAPE' | 'A0_LANDSCAPE' | 'ANSI_A' | 'ANSI_B' | 'ANSI_C' | 'ANSI_D';
   hiddenLines: boolean;
   dimensions: boolean;
   gdt: boolean;
@@ -752,6 +755,27 @@ export interface DrawingsAPI {
   addDimension(spec: { view: 'front' | 'top' | 'right'; kind?: 'auto' | 'horizontal' | 'vertical' | 'diameter' | 'radius'; points: Array<{ x: number; y: number }> }): DrawingDimensionInfo;
   /** Delete a placed dimension. Throws NOT_FOUND for an unknown id. Since 1.17. */
   removeDimension(id: string): void;
+  /** What the title block shows: the fields set, generated values for the others. Since 1.18. */
+  getTitleBlock(): TitleBlockInfo;
+  /**
+   * Set title block fields; '' clears one back to its generated value. Other
+   * fields keep their value. Returns what the title block shows. Since 1.18.
+   * @example api.drawings.setTitleBlock({ company: 'Acme', drawnBy: 'J. Doe', revision: 'B' })
+   */
+  setTitleBlock(fields: Partial<TitleBlockInfo>): TitleBlockInfo;
+}
+
+/** The title block of the drawing sheet. Since 1.18. */
+export interface TitleBlockInfo {
+  title: string;
+  partNumber: string;
+  revision: string;
+  material: string;
+  company: string;
+  drawnBy: string;
+  checkedBy: string;
+  approvedBy: string;
+  date: string;
 }
 
 /** A dimension placed on the drawing sheet. Since 1.17. */
@@ -899,6 +923,8 @@ export interface ApiStoreState extends RebuildState {
   drawingDimensions: DrawingDimension[];
   addDrawingDimension(dimension: DrawingDimension): void;
   removeDrawingDimension(id: string): boolean;
+  drawingTitleBlock: Partial<TitleBlockInfo>;
+  setDrawingTitleBlock(fields: Partial<TitleBlockInfo>): void;
 }
 
 export interface ApiStore {
@@ -1898,7 +1924,7 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     },
   });
 
-  const SIZES = ['A4_LANDSCAPE', 'A4_PORTRAIT', 'A3_LANDSCAPE', 'ANSI_B'];
+  const SIZES: string[] = SHEET_SIZE_KEYS;
   const sheetText = (format: 'svg' | 'dxf' | 'pdf'): string => {
     ensureRebuilt();
     const st = get();
@@ -1943,6 +1969,19 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
       if (typeof dim === 'string') fail('INVALID_ARGUMENT', dim);
       get().addDrawingDimension(dim as Exclude<typeof dim, string>);
       return clone(dimensionInfo(get() as unknown as DrawingSource).find(d => d.id === (dim as { id: string }).id)!);
+    },
+    getTitleBlock: () => titleBlockFields(get() as unknown as DrawingSource),
+    setTitleBlock(fields: Partial<TitleBlockInfo>) {
+      const o = requireObject(fields, 'fields');
+      const next: Partial<TitleBlockInfo> = {};
+      for (const [k, v] of Object.entries(o)) {
+        const field = TITLE_BLOCK_FIELDS.find(f => f.key === k) ?? fail('INVALID_ARGUMENT', `Unknown title block field ${JSON.stringify(k)}; fields: ${TITLE_BLOCK_FIELDS.map(f => f.key).join(', ')}`);
+        if (typeof v !== 'string') fail('INVALID_ARGUMENT', `${k} must be a string`);
+        if ((v as string).trim().length > field.max) fail('INVALID_ARGUMENT', `${k} is longer than ${field.max} characters`);
+        next[field.key] = v as string;
+      }
+      get().setDrawingTitleBlock(next);
+      return titleBlockFields(get() as unknown as DrawingSource);
     },
     removeDimension(id: string) {
       if (typeof id !== 'string') fail('INVALID_ARGUMENT', 'id must be a string');

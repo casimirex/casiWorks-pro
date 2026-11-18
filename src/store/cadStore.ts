@@ -3,6 +3,9 @@
 // Holds the document (features, sketches, material), UI state, undo/redo and
 // the assembly. All edits go through these actions, so the UI and the public
 // API (src/api) share one source of truth.
+import { sanitizeTitleBlock } from '../drawings/titleBlock.ts';
+import type { TitleBlockFields } from '../drawings/titleBlock.ts';
+import type { SheetSizeKey } from '../drawings/DrawingEngine.ts';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { Draft } from 'immer';
@@ -111,7 +114,7 @@ export type StoreAssemblyComponent = AssemblyComponent & {
 export type AssemblyMate = ReturnType<typeof assemblyManager.addMate>;
 
 /** Sheet sizes the drawing sheet offers (keys of SHEET_SIZES in drawings/DrawingEngine.ts). */
-export type DrawingSheetSize = 'A4_LANDSCAPE' | 'A4_PORTRAIT' | 'A3_LANDSCAPE' | 'ANSI_B';
+export type DrawingSheetSize = SheetSizeKey;
 
 /** What the 2D drawing sheet shows and exports. Shared by the Drawing tab and the sheet window. */
 export interface DrawingOptions {
@@ -168,6 +171,7 @@ interface DocumentSnapshot {
   configurations: Configuration[];
   activeConfiguration: string | null;
   drawingDimensions?: DrawingDimension[];
+  drawingTitleBlock?: Partial<TitleBlockFields>;
 }
 
 interface UndoEntry {
@@ -301,6 +305,8 @@ export interface CADState {
   drawingOptions: DrawingOptions;
   /** Dimensions placed on the drawing sheet, attached to the model (saved with the document). */
   drawingDimensions: DrawingDimension[];
+  /** Title block fields set on the drawing sheet (saved with the document); unset ones take generated values. */
+  drawingTitleBlock: Partial<TitleBlockFields>;
 
   // Rebuild
   needsRebuild: boolean;
@@ -412,6 +418,8 @@ export interface CADActions {
   setExplodedView(settings: ExplodedViewSettings | null): void;
   setDrawingOptions(options: Partial<DrawingOptions>): void;
   addDrawingDimension(dimension: DrawingDimension): void;
+  /** Change the given title block fields; an empty string clears a field back to its generated value. */
+  setDrawingTitleBlock(fields: Partial<TitleBlockFields>): void;
   /** The document's unit system: what lengths, masses and volumes are shown and typed in (the model stays in mm). */
   setUnitSystem(system: UnitSystem): void;
   /** False when there is no dimension with that id. */
@@ -528,6 +536,7 @@ function snapshotOf(state: Draft<CADStore>): DocumentSnapshot {
     configurations: safeDeepClone(state.configurations as Configuration[]),
     activeConfiguration: state.activeConfiguration,
     drawingDimensions: safeDeepClone(state.drawingDimensions as DrawingDimension[]),
+    drawingTitleBlock: { ...state.drawingTitleBlock },
   };
 }
 
@@ -542,6 +551,7 @@ function restoreSnapshot(state: Draft<CADStore>, s: DocumentSnapshot): void {
   state.configurations = (s.configurations ?? []) as Draft<Configuration>[];
   state.activeConfiguration = s.activeConfiguration ?? null;
   state.drawingDimensions = s.drawingDimensions ?? [];
+  state.drawingTitleBlock = s.drawingTitleBlock ?? {};
   state.needsRebuild = true;
 }
 
@@ -714,6 +724,7 @@ function initialState(): CADState {
     activeConfiguration: null,
     drawingOptions: { subject: 'part', sheetSize: 'A4_LANDSCAPE', hiddenLines: true, dimensions: true, gdt: true },
     drawingDimensions: [],
+    drawingTitleBlock: {},
     needsRebuild: false,
     rebuildCount: 0,
     documentRevision: 0,
@@ -1439,6 +1450,16 @@ export const useCADStore = create<CADStore>()(
       state.statusMessage = `Units: ${SYSTEMS[system].name}`;
     }),
 
+    setDrawingTitleBlock: (fields) => set(state => {
+      const next = { ...state.drawingTitleBlock } as Record<string, string>;
+      for (const [k, v] of Object.entries(fields)) next[k] = typeof v === 'string' ? v : '';
+      const clean = sanitizeTitleBlock(next);
+      if (JSON.stringify(clean) === JSON.stringify(state.drawingTitleBlock)) return;
+      get()._captureUndoSnapshot(state, 'Edit Title Block');
+      state.drawingTitleBlock = clean;
+      state.isModified = true;
+    }),
+
     addDrawingDimension: (dimension) => set(state => {
       get()._captureUndoSnapshot(state, 'Add Drawing Dimension');
       state.drawingDimensions.push(safeDeepClone(dimension) as Draft<DrawingDimension>);
@@ -1499,6 +1520,7 @@ export const useCADStore = create<CADStore>()(
         mates: state.mates,
         ...(state.explodeSteps.length ? { explodeSteps: state.explodeSteps } : {}),
         ...(state.drawingDimensions.length ? { drawingDimensions: state.drawingDimensions } : {}),
+        ...(Object.keys(state.drawingTitleBlock).length ? { drawingTitleBlock: state.drawingTitleBlock } : {}),
         timestamp: Date.now(),
       };
       return JSON.stringify(project, null, 2);
@@ -1583,6 +1605,7 @@ export const useCADStore = create<CADStore>()(
         if (Array.isArray(project.mates)) assemblyManager.mates = [...project.mates] as AssemblyMate[];
         state.explodeSteps = (Array.isArray(project.explodeSteps) ? project.explodeSteps : []) as Draft<ExplodeStep>[];
         state.drawingDimensions = sanitizeDimensions(project.drawingDimensions) as Draft<DrawingDimension>[];
+        state.drawingTitleBlock = sanitizeTitleBlock(project.drawingTitleBlock);
         syncAssembly(state);
         state.interference = null;
 
@@ -1607,6 +1630,7 @@ export const useCADStore = create<CADStore>()(
       state.sketchConstraints = {};
       state.sketchDimensions = {};
       state.drawingDimensions = [];
+      state.drawingTitleBlock = {};
       state.rollbackIndex = -1;
       state.activeFeatureIndex = state.features.length > 0 ? 0 : -1;
       state.isSketchActive = false;

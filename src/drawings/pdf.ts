@@ -7,6 +7,7 @@
 // replaced (⌀ → Ø); the perpendicularity symbol ⊥ is drawn as lines.
 import type { Point2D, SheetData } from './DrawingEngine.ts';
 import { arcBeziers } from './curves.ts';
+import { titleBlockDrawing } from './titleBlock.ts';
 import type { DrawingArc } from './curves.ts';
 
 const PT = 72 / 25.4; // points per mm
@@ -165,15 +166,11 @@ export function sheetToPdf(sheet: SheetData, title = 'Drawing'): string {
   const tb = sheet.titleBlock;
   if (tb) {
     c.style(0.35);
-    c.rect(tb.x, tb.y, tb.width, tb.height);
-    c.line({ x: tb.x, y: tb.y + 15 }, { x: tb.x + tb.width, y: tb.y + 15 });
-    c.line({ x: tb.x, y: tb.y + 28 }, { x: tb.x + tb.width, y: tb.y + 28 });
-    c.line({ x: tb.x + 45, y: tb.y + 15 }, { x: tb.x + 45, y: tb.y + tb.height });
-    c.text(tb.x + 5, tb.y + 10, 4, tb.title, { bold: true });
-    c.text(tb.x + 5, tb.y + 22, 2.5, `PART NO: ${tb.partNumber}`, { color: [0.2, 0.2, 0.2] });
-    c.text(tb.x + 50, tb.y + 22, 2.5, `MATERIAL: ${tb.material}`, { color: [0.2, 0.2, 0.2] });
-    c.text(tb.x + 5, tb.y + 35, 2.5, tb.scaleText, { color: [0.2, 0.2, 0.2] });
-    c.text(tb.x + 50, tb.y + 35, 2.5, `DATE: ${tb.date} | ${tb.revision}`, { color: [0.2, 0.2, 0.2] });
+    const { lines, texts } = titleBlockDrawing(tb);
+    for (const [p, q] of lines) c.line(p, q);
+    for (const t of texts) {
+      c.text(t.x, t.y, t.size, t.text, t.kind === 'title' ? { bold: true } : { color: t.kind === 'label' ? [0.4, 0.4, 0.4] : [0.133, 0.133, 0.133] });
+    }
   }
 
   for (const v of sheet.views) {
