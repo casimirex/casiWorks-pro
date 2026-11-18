@@ -469,6 +469,64 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: '26d-drawing-dimensions', async run(p) {
+      await example(p, 'l_bracket');
+      await run(p, 'drawing.open');
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.drawing-sheet-view #FRONT_VIEW circle.visible-line').length`), 'holes on the sheet');
+      await p.click('Dimension', 300);
+      // Click the rim of each hole in the front view: one diameter each
+      const rims = JSON.parse(await p.eval<string>(`JSON.stringify([...document.querySelectorAll('.drawing-sheet-view #FRONT_VIEW circle.visible-line')].slice(0, 2).map(c => {
+        const pt = new DOMPoint(+c.getAttribute('cx') + +c.getAttribute('r'), +c.getAttribute('cy')).matrixTransform(c.ownerSVGElement.getScreenCTM());
+        return { x: pt.x, y: pt.y };
+      }))`)) as Array<{ x: number; y: number }>;
+      for (const r of rims) { await p.mouseClick(r.x, r.y); await sleep(400); }
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('.drawing-dimension').length`), 'placed dimensions');
+      await sleep(300);
+      await p.screenshot('26d-drawing-dimensions');
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(200);
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(300);
+      await p.eval(`window.casiworks.commands.execute('drawing.dimensions').forEach(d => window.casiworks.commands.execute('drawing.removeDimension', { id: d.id }))`);
+    },
+  },
+  {
+    name: '26e-title-block', async run(p) {
+      await example(p, 'l_bracket');
+      await run(p, 'drawing.titleBlock', { company: 'Acme Engineering', partNumber: 'BRK-1001', drawnBy: 'A. Kumar', checkedBy: 'R. Iyer' }, 200);
+      await run(p, 'drawing.open');
+      await waitFor(() => p.eval<number>(`document.querySelectorAll('svg line.visible-line').length`), 'drawing sheet');
+      await p.click('Title block', 400);
+      await p.screenshot('26e-title-block');
+      await p.click('Title block', 200);
+      await p.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+      await sleep(300);
+      await run(p, 'drawing.titleBlock', { company: '', partNumber: '', drawnBy: '', checkedBy: '' }, 200);
+    },
+  },
+  {
+    name: '44-units', async run(p) {
+      await fresh(p);
+      await feaPanel(p, false);
+      await pick(p, '.doc-units-select', 'IPS');
+      await sleep(200);
+      await p.eval(`window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -25.4, y: -12.7 }, corner2: { x: 25.4, y: 12.7 } }] })`);
+      await sleep(400);
+      await p.click('Features', 300);
+      await p.click('Extruded Boss/Base', 500);
+      await setField(p, 'Extrude Depth', '0.5');
+      await sleep(400);
+      await iso(p);
+      await p.screenshot('44-units');
+      await apply(p);
+      await run(p, 'evaluate.massProperties', undefined, 700);
+      await p.screenshot('44b-units-mass');
+      await closeDialog(p);
+      await pick(p, '.doc-units-select', 'MMGS');
+      await sleep(200);
+    },
+  },
+  {
     name: '27-export', async run(p) {
       await run(p, 'file.export', undefined, 500);
       await p.screenshot('27-export');

@@ -267,7 +267,7 @@ npm run dev</pre></div>
       <figure class="shot"><img loading="lazy" src="img/01-interface.webp" alt="The CasiWorks Pro window with the starter block"><figcaption>The app as it first opens, with the starter block in the isometric view.</figcaption></figure>
       <div class="table-wrap"><table>
         <tr><th>Area</th><th>Where</th><th>What it does</th></tr>
-        <tr><td><b>Quick-access bar</b></td><td>Top row</td><td>New, Open, Save, Undo, Redo, Rebuild, the <b>Examples</b> menu, Material, Mass Props and Export.</td></tr>
+        <tr><td><b>Quick-access bar</b></td><td>Top row</td><td>New, Open, Save, Undo, Redo, Rebuild, the <b>Examples</b> menu, Material, Mass Props and Export. In the middle: the part's name and its unit system (MMGS, CGS, MKS or IPS); click the units to change them (Chapter 8).</td></tr>
         <tr><td><b>Ribbon</b></td><td>Below the top bar</td><td>Tabs of commands: Features, Sketch, Assembly, Evaluate, Drawing, Tools and Add-ins. The ⌃ button at the far right folds it away.</td></tr>
         <tr><td><b>Feature tree</b></td><td>Left</td><td>The history of your part: material, reference planes, and every sketch and feature in the order it was made. The <b>rollback bar</b> sits at the bottom.</td></tr>
         <tr><td><b>Viewport</b></td><td>Centre</td><td>The 3D model with the Front, Top and Right planes. The <b>VIEW</b> box (top right) jumps to standard views.</td></tr>
@@ -642,7 +642,7 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
 <section class="chapter" id="ch8" data-title="Materials & mass properties" data-part="intermediate" data-n="8">
   <div class="chapter-head"><span class="badge intermediate">Intermediate</span><span class="meta">Chapter 8 · about 10 min</span></div>
   <h2 class="title">Materials and mass properties</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Give a part a material from the library</li><li>Read its mass, volume, surface area, centre of mass and inertia</li><li>Measure distances, angles and wall thicknesses on the model</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Give a part a material from the library</li><li>Read its mass, volume, surface area, centre of mass and inertia</li><li>Measure distances, angles and wall thicknesses on the model</li><li>Work in inches and pounds, or centimetres or metres</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 8.1</span><h4>Weigh the L-bracket in aluminium</h4><div class="specs"><span>Al 6061-T6</span><span>2700 kg/m³</span><span>141.37 g</span></div></div>
     <div class="example-body">
@@ -695,6 +695,32 @@ casiworks.commands.execute(<span class="tok-s">'equations.list'</span>);  <span 
       <div class="callout tip"><span class="ic">💡</span><div><b class="label">From a script</b><p><code>api.features.coordinateSystem({ origin, rotation: { z: 90 } })</code> adds one, and <code>api.model.massProperties({ coordinateSystem: id })</code> reports in it. Its origin and turns can be driven by equations, e.g. <code>rotation.z</code>.</p></div></div>
     </div>
   </div>
+  <h3>Units: millimetres, inches and more</h3>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 8.4</span><h4>A 2 × 1 × 0.5 inch steel block</h4><div class="specs"><span>IPS</span><span>1 in³</span><span>0.285 lb</span></div></div>
+    <div class="example-body">
+      <p>Each document has a <b>unit system</b>. It sets the units the app shows you and the units it reads when you type a number:</p>
+      <div class="table-wrap"><table>
+        <tr><th>System</th><th>Length</th><th>Mass</th></tr>
+        <tr><td>MMGS (the default)</td><td>millimetre</td><td>gram</td></tr>
+        <tr><td>CGS</td><td>centimetre</td><td>gram</td></tr>
+        <tr><td>MKS</td><td>metre</td><td>kilogram</td></tr>
+        <tr><td>IPS</td><td>inch</td><td>pound</td></tr>
+      </table></div>
+      <ol class="steps">
+        <li>Start a new part. In the top bar, click <b>MMGS</b> next to the part name and choose <b>IPS</b>. The badge at the right of the status bar now says <b>IPS</b>.</li>
+        <li>Sketch a 2 × 1 rectangle on the Front plane. Sketch dimensions are now in inches.</li>
+        <li>Click <b>Extrude</b> and type <code>0.5</code> for the depth. The field shows <b>in</b> after the number. Click <b>OK</b>.</li>
+        <li>Open <b>Mass Props</b>. The volume is 1 in³, the surface area 7 in², and the steel block weighs 0.285 lb. The mass in kilograms is shown next to it in grey.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/44-units.webp" alt="Extrude panel with the depth in inches and IPS in the top bar"><figcaption>IPS: the depth field takes inches.</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/44b-units-mass.webp" alt="Mass properties in cubic inches and pounds"><figcaption>Mass Properties in inches and pounds.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Type any unit</b><p>A number on its own is read in the document's units. Add a unit to type in another one: <code>25.4 mm</code>, <code>1in</code>, <code>1"</code> or <code>2 ft</code> all work in any length field.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Stored in millimetres</b><p>The unit system only changes what you see and type. The model, saved files, equations (Tools ▸ Equations) and the scripting API stay in millimetres, kilograms and seconds. A script that makes a 1 inch extrude passes <code>depth: 25.4</code>. Changing the units never changes the model.</p></div></div>
   <div class="exercise"><b>Exercise 8.</b> Find the lightest material in the library that still has a yield strength above 250 MPa. What does the bracket weigh in it?<label><input type="checkbox" data-done="ch8"> I've done this</label></div>
 </section>
 
@@ -813,30 +839,58 @@ api.assembly.drive(api.assembly.mates().at(-1).id, 90);   <span class="tok-c">//
 </section>
 
 <section class="chapter" id="ch11" data-title="2D engineering drawings" data-part="advanced" data-n="11">
-  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 11 · about 10 min</span></div>
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 11 · about 20 min</span></div>
   <h2 class="title">2D engineering drawings</h2>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as PDF, SVG or DXF</li><li>Make an assembly drawing with a parts list and item balloons</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Make a standard three-view drawing sheet from a part</li><li>Turn hidden lines, dimensions and GD&amp;T on and off</li><li>Export the sheet as PDF, SVG or DXF</li><li>Add your own dimensions that follow the model when it changes</li><li>Fill in the title block: company, part number, revision and names</li><li>Make an assembly drawing with a parts list and item balloons</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 11.1</span><h4>A drawing sheet for the L-bracket</h4><div class="specs"><span>A4 landscape</span><span>Front · Top · Right · Iso</span><span>Title block</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Open the L-bracket and click the <b>Drawing</b> tab on the ribbon.</li>
-        <li>Choose the sheet size in the <b>SHEET</b> group: A4 landscape or portrait, A3 landscape or ANSI B.</li>
+        <li>Choose the sheet size in the <b>SHEET</b> group: ISO A4 (landscape or portrait), A3, A2, A1 or A0, or ANSI A, B, C or D. On a bigger sheet the views are drawn at a bigger scale.</li>
         <li>In the <b>SHOW</b> group, switch <b>Hidden Lines</b>, <b>Dimensions</b> and <b>GD&amp;T</b> on or off. A highlighted button is on.</li>
-        <li>Click <b>Open Sheet</b>. The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date. The green <b>2D Dwg</b> button on the FEA panel opens the same sheet.</li>
+        <li>Click <b>Open Sheet</b>. The sheet shows the front, top and right views, an isometric view and a title block with the part name, material and date. Holes are drawn as true circles with centre marks, and their sizes are given as callouts such as <i>2× Ø10.0 mm</i>. The green <b>2D Dwg</b> button on the FEA panel opens the same sheet.</li>
         <li>Click <b>PDF</b> for a sheet to print or send, <b>SVG</b> to put it in a document or web page, or <b>DXF</b> to open it in AutoCAD or another 2D CAD program. You can export straight from the ribbon without opening the sheet, or use the <b>Export</b> buttons on the sheet. The PDF is vector: lines stay sharp at any zoom, and it prints at true scale on the chosen paper size.</li>
       </ol>
       <figure class="shot"><img loading="lazy" src="img/26-drawing-tab.webp" alt="Drawing tab of the ribbon with sheet, show and export groups"><figcaption>The Drawing tab: sheet size, what to show, and export.</figcaption></figure>
       <figure class="shot"><img loading="lazy" src="img/26-drawing.webp" alt="Drawing sheet of the L-bracket"><figcaption>The drawing sheet, with dimensions, a datum and a feature control frame.</figcaption></figure>
     </div>
   </div>
-  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Shared settings</b><p>The ribbon and the sheet window use the same settings, so a switch changed in one shows in the other. The settings stay when you start a new part. DXF holds the views and dimensions; the GD&amp;T symbols are in the SVG only.</p></div></div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>The views, dimensions and GD&amp;T symbols are placed for you, from the first body. You cannot add a section view or your own dimensions yet.</p></div></div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Shared settings</b><p>The ribbon and the sheet window use the same settings, so a switch changed in one shows in the other. The settings stay when you start a new part. DXF holds the views, circles and arcs, dimensions, border and title block. The GD&amp;T symbols are in the SVG and the PDF.</p></div></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 11.2</span><h4>Dimension the bracket's holes yourself</h4><div class="specs"><span>Dimension tool</span><span>Ø10 × 2</span><span>Follows the model</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>Open the L-bracket's sheet and click <b>Dimension</b> at the top of the sheet window. The picker next to it says <b>Auto</b>.</li>
+        <li>Click the rim of a hole in the front view. Its diameter is placed: <i>Ø10.0 mm</i>. A click on an arc gives its radius.</li>
+        <li>For a distance, click two points: corners, hole centres, or one of each. <b>Auto</b> measures along the longer direction. Choose <b>Horizontal</b> or <b>Vertical</b> to choose the direction yourself.</li>
+        <li>Each dimension you add is listed at the bottom left, with the view it is in. Click its <b>×</b> to delete it. <kbd>Esc</kbd> cancels a half-finished pick, a second <kbd>Esc</kbd> leaves the tool, and a third closes the sheet.</li>
+        <li>Close the sheet and change the hole sketch, for example make the holes Ø12. Open the sheet again: your dimensions now read Ø12.0 mm. They are saved with the part, and <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes them.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/26d-drawing-dimensions.webp" alt="Two diameter dimensions added to the front view, listed at the bottom left"><figcaption>Two diameters added with the Dimension tool, and listed at the bottom left.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">When a dimension loses its edge</b><p>A dimension remembers the corner, centre or circle it was placed on and finds it again after a change. If that feature is gone, for example a hole you deleted, the dimension is taken off the sheet. Its line in the list turns red and says <i>not found on the changed model</i>, with the value it had. Delete it, or undo the change to bring it back.</p></div></div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 11.3</span><h4>Fill in the title block</h4><div class="specs"><span>Company</span><span>Part number</span><span>Drawn · checked · approved</span></div></div>
+    <div class="example-body">
+      <ol class="steps">
+        <li>On the sheet, click <b>Title block</b>. A panel opens on the right with one field for each box in the title block.</li>
+        <li>Empty fields show in grey the value the sheet uses: the title from the part name, revision A, the material and today's date.</li>
+        <li>Type <i>Acme Engineering</i> for the company, <i>BRK-1001</i> for the part number, and names for drawn and checked by. Each one shows on the sheet when you press <kbd>Enter</kbd> or move to the next field.</li>
+        <li>Clear a field to use the generated value again. The fields are saved with the part and print on the PDF, SVG and DXF.</li>
+      </ol>
+      <figure class="shot"><img loading="lazy" src="img/26e-title-block.webp" alt="Title block editor next to the sheet, with company, part number and names filled in"><figcaption>The title block editor. Grey fields use the generated value.</figcaption></figure>
+    </div>
+  </div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limit</b><p>The views are placed for you, from the first body. There are no section or detail views yet, and the automatic dimensions and GD&amp;T cannot be moved by hand.</p></div></div>
   <div class="code"><span class="lang">Console · JavaScript</span><button type="button">Copy</button><pre><span class="tok-c">// The same from the scripting console (chapter 15)</span>
 casiworks.commands.execute(<span class="tok-s">'drawing.options'</span>, { sheetSize: <span class="tok-s">'A3_LANDSCAPE'</span>, dimensions: <span class="tok-k">true</span>, gdt: <span class="tok-k">false</span> });
+casiworks.drawings.addDimension({ view: <span class="tok-s">'front'</span>, points: [{ x: <span class="tok-n">15</span>, y: <span class="tok-n">5</span> }] });  <span class="tok-c">// a point on a hole's rim: its diameter</span>
+casiworks.drawings.setTitleBlock({ company: <span class="tok-s">'Acme Engineering'</span>, partNumber: <span class="tok-s">'BRK-1001'</span> });
 casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format: <span class="tok-s">'dxf'</span> });</pre></div>
   <div class="example">
-    <div class="example-head"><span class="tag">Example 11.2</span><h4>An assembly drawing with a parts list</h4><div class="specs"><span>Plate + 2 brass pins</span><span>Parts list</span><span>Item balloons</span></div></div>
+    <div class="example-head"><span class="tag">Example 11.4</span><h4>An assembly drawing with a parts list</h4><div class="specs"><span>Plate + 2 brass pins</span><span>Parts list</span><span>Item balloons</span></div></div>
     <div class="example-body">
       <ol class="steps">
         <li>Build the assembly from Example 10.1, with a second pin. Make the pins brass in the <b>BOM</b> window (chapter 10).</li>
@@ -1018,7 +1072,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.model</code></td><td><code>massProperties({ coordinateSystem })</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5), <code>interference()</code> (since 1.13)</td></tr>
-    <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5)</td></tr>
+    <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5); <code>addDimension({ view, points })</code>, <code>dimensions()</code>, <code>removeDimension(id)</code> (since 1.17); <code>getTitleBlock()</code>, <code>setTitleBlock({ company, … })</code> (since 1.18)</td></tr>
     <tr><td><code>api.commands</code></td><td><code>list()</code>, <code>execute(id, args)</code>. Every ribbon button is a command.</td></tr>
     <tr><td><code>api.macros</code> · <code>api.plugins</code></td><td><code>start()</code>, <code>stop()</code>, <code>run(macro)</code> · <code>load(url)</code>, <code>unload(id)</code></td></tr>
     <tr><td><code>api.on(event, fn)</code></td><td><code>rebuild</code>, <code>featureAdded</code>, <code>featureRemoved</code>, <code>commandExecuted</code>, …</td></tr>
@@ -1205,7 +1259,7 @@ curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
     <tr><th>Area</th><th>What happens today</th><th>What to do instead</th></tr>
     <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs and Trim; hollow parts with an inward Offset and Extrude Cut.</td></tr>
     <tr><td>Surfaces and sheet metal</td><td>Not available: there are no surface or sheet-metal tools.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
-    <tr><td>Drawing sheet</td><td>Views, dimensions and GD&amp;T are placed for you; no section views or your own dimensions.</td><td>Export DXF and add these in a 2D CAD program.</td></tr>
+    <tr><td>Drawing sheet</td><td>Views are placed for you; no section or detail views. You can add your own dimensions, but the automatic ones and the GD&amp;T cannot be moved.</td><td>Export DXF and add section views in a 2D CAD program.</td></tr>
     <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
     <tr><td>Mates on faces</td><td>Flat faces and cylinders (holes, shafts) are recognised; edges, cones and spheres are not.</td><td>Mate the flat or round face next to the edge, or use a bounding-box face from a script.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
@@ -1236,7 +1290,9 @@ curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
     <tr><td>Tet4 / Tet10</td><td>Tetrahedral finite elements with 4 nodes (linear) or 10 nodes (quadratic).</td></tr>
     <tr><td>von Mises stress</td><td>A single stress value that is compared with the material's yield strength.</td></tr>
     <tr><td>Safety factor</td><td>Yield strength divided by the peak stress. Above 1 means the part does not yield.</td></tr>
-    <tr><td>MMGS</td><td>The unit system: millimetre, gram, second.</td></tr>
+    <tr><td>Unit system</td><td>The units a document is shown and typed in: MMGS (millimetre, gram, second, the default), CGS, MKS or IPS (inch, pound, second). The model itself is always stored in millimetres.</td></tr>
+    <tr><td>Associative dimension</td><td>A dimension on a drawing that is attached to the model's geometry, so it updates when the part changes.</td></tr>
+    <tr><td>Title block</td><td>The box at the bottom right of a drawing sheet with the title, part number, revision, scale, material, date and names.</td></tr>
   </table></div>
   <p class="meta">Screenshots were taken from the real app by <code>scripts/tutorial-shots.ts</code>. Run <code>npm run build &amp;&amp; node scripts/tutorial-shots.ts</code> to update them after the UI changes.</p>
 </section>

@@ -66,7 +66,7 @@ casiworks/
 │   │   │   ├── CommandManager.tsx # Ribbon toolbar (Features, Sketch, Surfaces, Assembly, Drawing, FEA)
 │   │   │   ├── FeatureTree.tsx    # Feature Tree (history, planes, suppression, rollback)
 │   │   │   ├── PropertyPanel.tsx  # Contextual property panel with parameter binding and debounced updates
-│   │   │   ├── StatusBar.tsx      # MMGS units, grid/snap toggles, tool status
+│   │   │   ├── StatusBar.tsx      # Unit system badge, grid/snap toggles, tool status
 │   │   │   └── MainLayout.tsx     # Master flex layout
 │   │   ├── dialogs/
 │   │   │   ├── ExportDialog.tsx   # Multi-format CAD export (STEP, IGES, STL, DXF, OBJ)
@@ -380,7 +380,7 @@ Running a macro file never evaluates code: it is data. Scripts (`.mjs`) run
 where you choose to run them (browser console, `node`).
 
 Namespaces: `document`, `sketches`, `features`, `model`, `materials`, `history`.
-Units are mm, degrees, kg and kg/m³. Invalid calls throw `CasiWorksAPIError`
+Units are mm, degrees, kg and kg/m³, whatever unit system the document is shown in (MMGS, CGS, MKS or IPS). Invalid calls throw `CasiWorksAPIError`
 with a stable `code` (`INVALID_ARGUMENT`, `NOT_FOUND`, `INVALID_DOCUMENT`).
 All return values are plain JSON data.
 
@@ -454,10 +454,11 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
 
 6. **2D Engineering Drawings & GD&T**:
    - Multi-view orthographic projection (Front, Top, Right, Isometric) with Hidden Line Removal (HLR).
-   - Smart dimensions, extension lines, arrowheads, tolerances.
+   - Holes and arcs drawn as true circles and arcs, with centre marks and hole callouts.
+   - Smart dimensions, extension lines, arrowheads, tolerances; your own dimensions placed on the sheet that follow the model when it changes.
    - ASME Y14.5 / ISO 1101 GD&T datum feature symbols and Feature Control Frames.
-   - Standard drawing sheets (A4, A3, ANSI B) with engineering title blocks.
-   - SVG and AutoCAD DXF vector export.
+   - Standard drawing sheets (ISO A4–A0, ANSI A–D) with an editable title block (company, part number, revision, drawn/checked/approved).
+   - SVG, PDF and AutoCAD DXF vector export.
 
 7. **Multi-Component Assembly**:
    - Component insertion and coordinate transformation.
