@@ -103,7 +103,7 @@ test('Long values are cut to their cell, so the title block never overflows', ()
 test('The assembly sheet uses the title block fields too; API 1.18 getTitleBlock / setTitleBlock', () => {
   bracket();
   const api = createCasiWorksAPI(useCADStore as never);
-  assert.equal(api.version, '1.18.0');
+  assert.ok(api.version >= '1.18.0', api.version);
   const shown = api.drawings.setTitleBlock({ company: 'Acme', approvedBy: 'Q. A.' });
   assert.equal(shown.company, 'Acme');
   assert.equal(api.drawings.getTitleBlock().approvedBy, 'Q. A.');

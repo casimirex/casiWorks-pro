@@ -12,7 +12,8 @@ import { ELEMENT_TYPES, FEAEngine, SparseMatrix } from './FEAEngine.ts';
 import type { BoxPlane, ElementType } from './FEAEngine.ts';
 import { autoMesh } from './autoMesh.ts';
 import type { MeshQuality } from './autoMesh.ts';
-import { fixturesFor } from './studySetup.ts';
+import { studyBoundary } from './studySetup.ts';
+import type { StudyFace } from './studyFaces.ts';
 import type { Fixture } from './FEAEngine.ts';
 import { symmetricEigen } from '../utils/jacobiEigen.ts';
 export { symmetricEigen };
@@ -388,6 +389,8 @@ export function solveModal(fea: FEAEngine, opts: ModalOptions): ModalResult {
 export interface FrequencyStudy {
   /** The face held fixed (default zMin, the back face). */
   fixedFace?: BoxPlane;
+  /** Faces picked on the model held fixed instead of fixedFace. */
+  fixedFaces?: StudyFace[];
   /** How many modes (1–20, default 6). */
   modes?: number;
   /** Tet10 (default) is accurate in bending; Tet4 is a quick, too-stiff preview. */
@@ -406,7 +409,9 @@ export function naturalFrequencies(
   const info = autoMesh(fea, geometry, study.elementType ?? ELEMENT_TYPES.TET10, study.quality ?? 'coarse');
   const result = solveModal(fea, {
     youngsModulus: material.youngsModulus, poissonRatio: material.poissonsRatio, density: material.density,
-    fixtures: fixturesFor({ fixedFace: study.fixedFace ?? 'zMin', loadFace: 'zMax', loadDirection: '-Y' }),
+    fixtures: studyBoundary(study.fixedFaces?.length
+      ? { fixedFace: 'faces', fixedFaces: study.fixedFaces, loadFace: 'zMax', loadDirection: '-Y' }
+      : { fixedFace: study.fixedFace ?? 'zMin', loadFace: 'zMax', loadDirection: '-Y' }, geometry, fea.solidMesh!, 0).fixtures,
     modes: study.modes,
   });
   return { ...result, elements: info.elements };

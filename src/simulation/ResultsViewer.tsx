@@ -14,9 +14,9 @@ import { buildResultPlot, COLORMAP_CSS } from './resultPlot.ts';
 import type { PlotMesh, PlotQuantity } from './resultPlot.ts';
 import { COVERAGE_TOLERANCE, MESH_BUDGET } from './autoMesh.ts';
 import type { MeshInfo, MeshQuality } from './autoMesh.ts';
-import { DEFAULT_SETUP, DIRECTIONS, FACES, FACE_LABELS, setupProblems } from './studySetup.ts';
-import type { Direction, StudySetup } from './studySetup.ts';
-import type { BoxPlane } from './FEAEngine.ts';
+import { DIRECTIONS, FACES, FACE_LABELS, faceChoiceLabel, modalSetupProblems, setupProblems } from './studySetup.ts';
+import type { Direction, FaceChoice, StudySetup } from './studySetup.ts';
+import { studyFaceLabel } from './studyFaces.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { runCommand } from '../commands/index.ts';
 import { feaReportHtml } from './report.ts';
@@ -47,7 +47,9 @@ export default function ResultsViewer() {
   const [elementType, setElementType] = useState<ElementType>(ELEMENT_TYPES.TET10);
   const [showTensors, setShowTensors] = useState(false);
   const [quality, setQuality] = useState<MeshQuality>('medium');
-  const [setup, setSetup] = useState<StudySetup>(DEFAULT_SETUP);
+  const setup = useCADStore(s => s.feaSetup);
+  const setSetup = useCADStore(s => s.setFeaSetup);
+  const facePick = useCADStore(s => s.feaFacePick);
   const setFeaSetupMarkers = useCADStore(s => s.setFeaSetupMarkers);
   // Result plot on the model
   const [showPlot, setShowPlot] = useState(true);
@@ -66,14 +68,20 @@ export default function ResultsViewer() {
   const modal = current?.analysis === 'modal' ? current.modal ?? null : null;
   const stale = !!current && (current.geometry !== bodies[0]?.geometry || current.material !== activeMaterial
     || current.elementType !== elementType || current.quality !== quality || current.setup.fixedFace !== setup.fixedFace
+    || (setup.fixedFace === 'faces' && current.setup.fixedFaces !== setup.fixedFaces)
     || current.analysis !== analysis
-    || (current.analysis === 'static' && (current.load !== load || current.setup.loadFace !== setup.loadFace || current.setup.loadDirection !== setup.loadDirection)));
+    || (current.analysis === 'static' && (current.load !== load || current.setup.loadFace !== setup.loadFace || current.setup.loadDirection !== setup.loadDirection
+      || (setup.loadFace === 'faces' && current.setup.loadFaces !== setup.loadFaces))));
+  const problems = analysis === 'modal' ? modalSetupProblems(setup) : setupProblems(setup);
 
   // Show the fixed face and the load on the model while the panel is open
   useEffect(() => {
     setFeaSetupMarkers(minimized ? null : analysis === 'modal' ? { ...setup, fixedOnly: true } : setup);
   }, [minimized, setup, analysis, setFeaSetupMarkers]);
   useEffect(() => () => setFeaSetupMarkers(null), [setFeaSetupMarkers]);
+  // Picking stops when the panel folds away or closes
+  useEffect(() => { if (minimized) useCADStore.getState().setFeaFacePick(null); }, [minimized]);
+  useEffect(() => () => useCADStore.getState().setFeaFacePick(null), []);
 
   // The plot is shown only for current results (never for an older model state)
   const plotMesh = solved?.mesh ?? null;
@@ -88,7 +96,8 @@ export default function ResultsViewer() {
       displacementVectors: Array.from({ length: n }, (_, i) => new THREE.Vector3(shape[i * 3], shape[i * 3 + 1], shape[i * 3 + 2])),
     };
   }, [modal, modeIndex]);
-  const plotVisible = showPlot && !stale && !!plotMesh && (!!solidResult || !!modeShape);
+  // Hidden while faces are picked: the plot replaces the part, whose faces are clicked
+  const plotVisible = showPlot && !stale && !facePick && !!plotMesh && (!!solidResult || !!modeShape);
   useEffect(() => {
     if (!plotVisible || !plotMesh) { setFeaPlot(null); return; }
     if (modeShape) setFeaPlot(buildResultPlot(plotMesh, modeShape, { quantity: 'displacement', deformed: true }));
@@ -108,19 +117,27 @@ export default function ResultsViewer() {
   const solveRef = useRef<SolveHandle | null>(null);
   useEffect(() => () => solveRef.current?.cancel(), []);
 
+  /** A box side, or picked faces: choosing those starts picking when none are picked yet. */
+  const chooseFace = (which: 'fixed' | 'load', choice: FaceChoice) => {
+    setSetup({ ...setup, [which === 'fixed' ? 'fixedFace' : 'loadFace']: choice });
+    const picked = which === 'fixed' ? setup.fixedFaces : setup.loadFaces;
+    if (choice === 'faces' && !picked?.length) runCommand('simulation.pickFaces', { target: which });
+    else if (choice !== 'faces' && facePick === which) runCommand('simulation.pickFaces', { target: null });
+  };
+
   const handleRunFEA = async () => {
     const geometry = bodies[0]?.geometry;
     if (!geometry) {
       useCADStore.getState().setStatus('FEA: create a 3D solid body first');
       return;
     }
-    const problems = analysis === 'modal' ? [] : setupProblems(setup);
     if (problems.length) {
       useCADStore.getState().setStatus(`FEA: ${problems[0]}`);
       return;
     }
     const mat = materialLibrary.getMaterial(activeMaterial);
     // What this solve is for: compared with the current state to mark results stale
+    useCADStore.getState().setFeaFacePick(null);
     const input = { geometry, material: activeMaterial, load, elementType, quality, setup, documentRevision, analysis };
     const handle = startSolve({
       geometry,
@@ -336,12 +353,14 @@ export default function ResultsViewer() {
               aria-label="Fixed Face"
               className="fea-fixed-face"
               value={setup.fixedFace}
-              onChange={(e) => setSetup({ ...setup, fixedFace: e.target.value as BoxPlane })}
+              onChange={(e) => chooseFace('fixed', e.target.value as FaceChoice)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
             >
               {FACES.map(f => <option key={f} value={f}>{FACE_LABELS[f]}</option>)}
+              <option value="faces">Faces picked on the model</option>
             </select>
           </div>
+          {setup.fixedFace === 'faces' && <PickedFaces which="fixed" />}
           {analysis === 'static' && (<>
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Load On:</span>
@@ -349,12 +368,14 @@ export default function ResultsViewer() {
               aria-label="Load On"
               className="fea-load-face"
               value={setup.loadFace}
-              onChange={(e) => setSetup({ ...setup, loadFace: e.target.value as BoxPlane })}
+              onChange={(e) => chooseFace('load', e.target.value as FaceChoice)}
               style={{ background: '#111', color: '#fff', border: '1px solid #444', borderRadius: 3, padding: '2px 4px', fontSize: 10 }}
             >
               {FACES.map(f => <option key={f} value={f}>{FACE_LABELS[f]}</option>)}
+              <option value="faces">Faces picked on the model</option>
             </select>
           </div>
+          {setup.loadFace === 'faces' && <PickedFaces which="load" />}
           <div style={{ fontSize: 11, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Load Direction:</span>
             <select
@@ -367,7 +388,6 @@ export default function ResultsViewer() {
               {DIRECTIONS.map(d => <option key={d} value={d}>{d.replace('-', '−')}</option>)}
             </select>
           </div>
-          {setupProblems(setup).map(p => <div key={p} className="fea-setup-problem" style={{ fontSize: 10, color: '#f87171', marginBottom: 6 }}>{p}</div>)}
 
           <div style={{ fontSize: 11, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Applied Force:</span>
@@ -382,6 +402,7 @@ export default function ResultsViewer() {
             </div>
           </div>
           </>)}
+          {problems.map(p => <div key={p} className="fea-setup-problem" style={{ fontSize: 10, color: '#f87171', marginBottom: 6 }}>{p}</div>)}
 
           {phase && (
             <div className="fea-solving" style={{ fontSize: 11, color: '#fbbf24', marginBottom: 6 }}>
@@ -392,7 +413,7 @@ export default function ResultsViewer() {
           {modal && (
             <div className="fea-modal" style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 3, opacity: stale ? 0.55 : 1 }}>
               {stale && <div className="fea-stale" style={{ color: '#fbbf24', fontWeight: 600 }}>Out of date — the model or study changed. Press Solve to update.</div>}
-              <div style={{ color: '#94a3b8' }}>Natural frequencies (fixed: {FACE_LABELS[current!.setup.fixedFace]}); click a mode to see its shape:</div>
+              <div style={{ color: '#94a3b8' }}>Natural frequencies (fixed: {faceChoiceLabel(current!.setup, 'fixed', units.system)}); click a mode to see its shape:</div>
               {modal.frequencies.map((f, i) => (
                 <button
                   key={i}
@@ -586,3 +607,33 @@ export default function ResultsViewer() {
   );
 }
 
+
+/** The faces picked for the fixture or the load: Pick / Done, and each face with a remove button. */
+function PickedFaces({ which }: { which: 'fixed' | 'load' }) {
+  const units = useUnits();
+  const faces = useCADStore(s => (which === 'fixed' ? s.feaSetup.fixedFaces : s.feaSetup.loadFaces)) ?? [];
+  const picking = useCADStore(s => s.feaFacePick === which);
+  const toggle = useCADStore(s => s.toggleFeaFace);
+  const color = which === 'fixed' ? '#22c55e' : '#ef4444';
+  return (
+    <div className={`fea-picked-faces fea-picked-${which}`} style={{ fontSize: 10, margin: '-2px 0 6px', padding: '4px 6px', border: `1px solid ${picking ? color : '#333'}`, borderRadius: 3 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <span style={{ color: '#94a3b8' }}>{picking ? 'Click faces on the model' : faces.length ? `${faces.length} face${faces.length === 1 ? '' : 's'}` : 'No face picked'}</span>
+        <button
+          className={`fea-pick-${which}`}
+          onClick={() => runCommand('simulation.pickFaces', { target: picking ? null : which })}
+          aria-pressed={picking}
+          style={{ background: picking ? color : 'transparent', color: picking ? '#000' : color, border: `1px solid ${color}`, borderRadius: 3, padding: '1px 6px', fontSize: 10, cursor: 'pointer' }}
+        >
+          {picking ? 'Done' : 'Pick'}
+        </button>
+      </div>
+      {faces.map((f, i) => (
+        <div key={i} className="fea-picked-face" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+          <span style={{ color }}>{studyFaceLabel(f, units.system)}</span>
+          <button onClick={() => toggle(which, f)} aria-label={`Remove ${studyFaceLabel(f, units.system)}`} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', padding: 0 }}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}

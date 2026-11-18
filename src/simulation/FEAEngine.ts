@@ -63,6 +63,8 @@ export interface SolidMesh {
   geometry: THREE.BufferGeometry;
   boundingBox: THREE.Box3;
   size: THREE.Vector3;
+  /** Grid cell size (mm) of the voxel mesh. */
+  cellSize?: THREE.Vector3;
   elementType: ElementType;
   numNodes: number;
   numElements: number;
@@ -661,6 +663,7 @@ export class FEAEngine {
       geometry,
       boundingBox: box,
       size: new THREE.Vector3(sizeX, sizeY, sizeZ),
+      cellSize: new THREE.Vector3(dx, dy, dz),
       elementType,
       numNodes: nodes.length,
       numElements: elements.length,

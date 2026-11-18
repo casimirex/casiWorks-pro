@@ -936,10 +936,10 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
 </section>
 
 <section class="chapter" id="ch13" data-title="Stress analysis (FEA)" data-part="advanced" data-n="13">
-  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 13 · about 20 min</span></div>
+  <div class="chapter-head"><span class="badge advanced">Advanced</span><span class="meta">Chapter 13 · about 30 min</span></div>
   <h2 class="title">Stress analysis (FEA)</h2>
   <p class="lead">Finite element analysis (FEA) predicts how much a part bends and how hard it is stressed under a load, before you make it.</p>
-  <div class="objectives"><strong>You will learn to</strong><ul><li>Set up a static study: mesh, fixed face, load face, direction and force</li><li>Solve it and read von Mises stress, deflection and the safety factor</li><li>Show the stress and the deformed shape on the model</li><li>Probe values at points and save a study report</li></ul></div>
+  <div class="objectives"><strong>You will learn to</strong><ul><li>Set up a static study: mesh, fixed face, load face, direction and force</li><li>Hold a part by its bolt holes and load a face you pick on the model</li><li>Solve it and read von Mises stress, deflection and the safety factor</li><li>Show the stress and the deformed shape on the model</li><li>Probe values at points and save a study report</li></ul></div>
   <div class="example">
     <div class="example-head"><span class="tag">Example 13.1</span><h4>Is the L-bracket strong enough for 5 kN?</h4><div class="specs"><span>Al 6061-T6</span><span>Tet10 · ~5,000 elements</span><span>5000 N, −Y</span></div></div>
     <div class="example-body">
@@ -983,9 +983,28 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
         <li>The panel lists the six lowest frequencies. Click a mode to see its shape on the model. The shape is drawn exaggerated; only its form matters, not its size.</li>
       </ol>
       <figure class="shot"><img loading="lazy" src="img/30c-fea-modal.webp" alt="Modal analysis: six natural frequencies and the second mode shape"><figcaption>The L-bracket's first six natural frequencies; mode 2 is shown.</figcaption></figure>
-      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Keep clear of the excitation</b><p>A common rule is to keep the first natural frequency at least √2 (about 1.4) times above the highest shaking frequency, ideally 2–3 times. To raise it, make the part stiffer (thicker, ribs, a shorter overhang) or lighter. From code: <code>api.model.naturalFrequencies({ fixedFace: 'zMin', modes: 3 })</code>.</p></div></div>
+      <div class="callout tip"><span class="ic">💡</span><div><b class="label">Keep clear of the excitation</b><p>A common rule is to keep the first natural frequency at least √2 (about 1.4) times above the highest shaking frequency, ideally 2–3 times. To raise it, make the part stiffer (thicker, ribs, a shorter overhang) or lighter. From code: <code>api.model.naturalFrequencies({ fixedFace: 'zMin', modes: 3 })</code>, or held by holes picked with points: <code>{ fixedFaces: [{ x: 20, y: 0, z: 6 }] }</code> (since 1.19).</p></div></div>
     </div>
   </div>
+  <div class="example">
+    <div class="example-head"><span class="tag">Example 13.4</span><h4>Hold the bracket by its bolt holes</h4><div class="specs"><span>2 holes fixed</span><span>Upright end loaded</span><span>5000 N, +X</span></div></div>
+    <div class="example-body">
+      <p>A real bracket is held by its bolts, not by a whole side, and is loaded where something presses on it. You can pick those faces on the model: flat faces, and cylinders such as holes and shafts.</p>
+      <ol class="steps">
+        <li>Open the L-bracket and the FEA panel, with <b>Analysis</b> set to <b>Static</b>.</li>
+        <li>Set <b>Fixed Face</b> to <i>Faces picked on the model</i>. Picking starts: the <b>Pick</b> button turns into a green <b>Done</b>.</li>
+        <li>Click the inside of each bolt hole. Each one turns green on the model and is listed as <i>Hole Ø10 mm</i>. Clicking a picked face again removes it, and so does its <b>×</b> in the list.</li>
+        <li>Set <b>Load On</b> to <i>Faces picked on the model</i>, and click the top end of the upright (<i>Flat face, 480 mm²</i>). Set <b>Load Direction</b> to <i>+X</i> and keep 5000 N. Red arrows spread over the face show the load. Click <b>Done</b> or press <kbd>Esc</kbd> to stop picking.</li>
+        <li>Click <b>Solve</b>. Held only by its two bolts, the bracket reaches 445 MPa at the inside corner, deflects 0.97 mm, and has a safety factor of 0.62. It would bend permanently. With 1000 N it passes, with a safety factor of about 3.1: the stress scales with the load.</li>
+      </ol>
+      <div class="gallery">
+        <figure class="shot"><img loading="lazy" src="img/30d-fea-faces.webp" alt="Bolt holes picked as fixed faces and the upright end picked for the load"><figcaption>The two holes held (green), and the load on the upright's end (red arrows).</figcaption></figure>
+        <figure class="shot"><img loading="lazy" src="img/30e-fea-faces-stress.webp" alt="Stress plot with the peak at the inside corner"><figcaption>The result: the peak stress is at the inside corner.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="callout tip"><span class="ic">💡</span><div><b class="label">Picked faces follow the part</b><p>A picked face is found again after you change the part. Make the plate thicker and its top face is still picked. Move a hole and the hole is still picked. If a face is gone, <b>Solve</b> says so; pick it again. The faces are kept while the part is open, but they are not saved with it, and opening another part clears them. From a script, a point picks the face nearest it: <code>casiworks.commands.execute('simulation.study', { fixed: [{ x: 20, y: 0, z: 6 }], load: 'zMax', direction: '-Y' })</code>.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">How a picked face is meshed</b><p>The FEA mesh is made of small cubes, so a round hole becomes a staircase. The mesh nodes on the staircase next to the picked face, facing the same way, are held or loaded. A face smaller than the cubes, for example a 2 mm hole on a coarse mesh, has no nodes, and <b>Solve</b> asks for a finer mesh.</p></div></div>
   <h3>Reading the numbers like an engineer</h3>
   <div class="cards">
     <div class="card"><b>Safety factor</b><p>Yield strength ÷ peak stress: 276 ÷ 99.1 ≈ 2.79. Most machine parts aim for 1.5–3, so this bracket passes with margin.</p></div>
@@ -993,7 +1012,7 @@ casiworks.commands.execute(<span class="tok-s">'drawing.export'</span>, { format
     <div class="card"><b>Convergence</b><p>Solve on Medium, then on Fine. If the peak stress changes by less than about 5%, the answer is settled.</p></div>
     <div class="card"><b>Out of date</b><p>If you change the part, its material or the load after solving, the results grey out until you solve again.</p></div>
   </div>
-  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limits</b><p>Fixed and loaded faces are the six sides of the part's bounding box. You cannot pick a single hole face yet. The study is linear static: small deflections, no contact. Sharp inside corners give stress peaks that are higher than reality, and a real fillet would lower them.</p></div></div>
+  <div class="callout warn"><span class="ic">⚠</span><div><b class="label">Current limits</b><p>A fixed face holds every direction: there is no sliding or pin support yet, and a load is a force spread evenly over its faces, with no pressure or bearing load. The study is linear static: small deflections, no contact. Sharp inside corners give stress peaks that are higher than reality, and a real fillet would lower them.</p></div></div>
   <div class="exercise"><b>Exercise 13.</b> Solve the bracket again in AISI 1020 Steel and in Titanium Ti-6Al-4V. Make a table of mass, deflection and safety factor for all three materials. Which would you choose for a weight-critical drone mount?<label><input type="checkbox" data-done="ch13"> I've done this</label></div>
 </section>
 
@@ -1069,7 +1088,7 @@ run(<span class="tok-s">'model.setMaterial'</span>, { key: <span class="tok-s">'
     <tr><td><code>api.document</code></td><td><code>new()</code>, <code>load(project)</code></td></tr>
     <tr><td><code>api.sketches</code></td><td><code>create({ plane, entities })</code> (plane: a standard plane, a reference plane id or <code>{ origin, xAxis, normal }</code>, since 1.9), <code>getEntities(id)</code>, <code>constrain</code>, <code>setDimension</code> (number or <code>'wall * 2'</code>, 1.12), <code>status</code> (since 1.11), and since 1.5 <code>trim</code>, <code>extend</code>, <code>offset</code>, <code>mirror</code></td></tr>
     <tr><td><code>api.features</code></td><td><code>list()</code>, <code>extrude()</code>, <code>revolve()</code>, <code>hole({ standard: { size: 'M8' }, type: 'counterbore', … })</code> (since 1.8), <code>referencePlane({ base, offset, angle })</code> (since 1.9), <code>referenceAxis</code>, <code>referencePoint</code>, <code>revolve({ axis })</code> (since 1.10), <code>coordinateSystem({ origin, rotation })</code> (since 1.15), <code>update(id, changes)</code>, <code>remove(id)</code></td></tr>
-    <tr><td><code>api.model</code></td><td><code>massProperties({ coordinateSystem })</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14), <code>rebuild()</code>, <code>errors()</code></td></tr>
+    <tr><td><code>api.model</code></td><td><code>massProperties({ coordinateSystem })</code>, <code>boundingBox()</code>, <code>measure(a, b)</code> (since 1.6), <code>naturalFrequencies(options)</code> (since 1.14; <code>fixedFaces</code> by points, 1.19), <code>rebuild()</code>, <code>errors()</code></td></tr>
     <tr><td><code>api.equations</code> · <code>api.configurations</code></td><td><code>set([{ name, expression }])</code>, <code>link(featureId, 'depth', 'wall * 8')</code>, <code>list()</code> · <code>set([{ name, values }])</code>, <code>activate('Large')</code> (since 1.5)</td></tr>
     <tr><td><code>api.assembly</code></td><td><code>insert({ name, shape })</code>, <code>mate({ type, component1, component2 })</code>, <code>solve()</code>, <code>setMaterial(ids, key)</code>, <code>bom()</code> (since 1.5), <code>interference()</code> (since 1.13)</td></tr>
     <tr><td><code>api.drawings</code></td><td><code>setOptions({ subject: 'assembly' })</code>, <code>svg()</code>, <code>dxf()</code>, <code>pdf()</code> (1.7): the drawing sheet, also headless (since 1.5); <code>addDimension({ view, points })</code>, <code>dimensions()</code>, <code>removeDimension(id)</code> (since 1.17); <code>getTitleBlock()</code>, <code>setTitleBlock({ company, … })</code> (since 1.18)</td></tr>
@@ -1260,7 +1279,7 @@ curl -s -H "Authorization: Bearer $KEY" -o bracket.stl \
     <tr><td>Fillet, Chamfer, Shell</td><td>Added to the tree with ⚠ and not applied.</td><td>Round corners with sketch arcs and Trim; hollow parts with an inward Offset and Extrude Cut.</td></tr>
     <tr><td>Surfaces and sheet metal</td><td>Not available: there are no surface or sheet-metal tools.</td><td>Model thin parts as extrudes (see the U-Channel example).</td></tr>
     <tr><td>Drawing sheet</td><td>Views are placed for you; no section or detail views. You can add your own dimensions, but the automatic ones and the GD&amp;T cannot be moved.</td><td>Export DXF and add section views in a 2D CAD program.</td></tr>
-    <tr><td>FEA faces</td><td>Only the six bounding-box sides of the part.</td><td>Orient the part so the support and load are on outer faces.</td></tr>
+    <tr><td>FEA faces</td><td>Flat faces and cylinders can be picked; the mesh is a staircase of cubes next to them, and a face smaller than a cube cannot be used. Fixtures hold every direction.</td><td>Use a finer mesh for small holes; check results near the supports with a convergence run.</td></tr>
     <tr><td>Mates on faces</td><td>Flat faces and cylinders (holes, shafts) are recognised; edges, cones and spheres are not.</td><td>Mate the flat or round face next to the edge, or use a bounding-box face from a script.</td></tr>
     <tr><td>STEP and IGES export</td><td>Faceted (triangles), not exact curves.</td><td>Send a 2D drawing with machined parts.</td></tr>
   </table></div>

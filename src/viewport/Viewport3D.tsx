@@ -20,6 +20,7 @@ import type { EditSession, SketchClick } from './sketchTools.ts';
 import { runCommand } from '../commands/index.ts';
 import { modelEdgesGeometry } from '../drawings/DrawingEngine.ts';
 import { DIRECTION_VECTORS, arrowAnchors, faceRect } from '../simulation/studySetup.ts';
+import { faceAnchors, resolveStudyFace, studyFaceAt, studyFaceLabel } from '../simulation/studyFaces.ts';
 import type { StudySetup } from '../simulation/studySetup.ts';
 import { sketchEngine } from '../kernel/SketchEngine.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
@@ -451,36 +452,63 @@ function FeaSetupMarkers({ setup, geometry }: { setup: StudySetup & { fixedOnly?
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
     const diag = box.getSize(new THREE.Vector3()).length() || 1;
-    const fixed = faceRect(box, setup.fixedFace);
-    // PlaneGeometry lies in XY; turn it to face along the face normal, just outside the part.
-    // size = extents along the two other axes in x, y, z order; after rotateY a plane's
-    // width runs along Z, so an x face is built as (z extent, y extent).
-    const normal = new THREE.Vector3(...fixed.normal);
-    const k = Math.abs(normal.x) > 0 ? 'x' : Math.abs(normal.y) > 0 ? 'y' : 'z';
-    const plane = k === 'x' ? new THREE.PlaneGeometry(fixed.size[1], fixed.size[0]) : new THREE.PlaneGeometry(fixed.size[0], fixed.size[1]);
-    if (k === 'x') plane.rotateY(Math.PI / 2);
-    else if (k === 'y') plane.rotateX(Math.PI / 2);
-    plane.translate(...(new THREE.Vector3(...fixed.center).addScaledVector(normal, diag * 0.002).toArray() as [number, number, number]));
+    /** Picked faces as one triangle mesh, and its triangle positions (faces gone from the part are left out). */
+    const picked = (faces: typeof setup.fixedFaces) => {
+      const parts = (faces ?? []).map(f => resolveStudyFace(geometry, f)).filter((p): p is Float32Array => !!p);
+      const all = new Float32Array(parts.reduce((a, p) => a + p.length, 0));
+      let at = 0;
+      for (const p of parts) { all.set(p, at); at += p.length; }
+      return all;
+    };
+    let fixedGeometry: THREE.BufferGeometry;
+    if (setup.fixedFace === 'faces') {
+      fixedGeometry = new THREE.BufferGeometry();
+      fixedGeometry.setAttribute('position', new THREE.BufferAttribute(picked(setup.fixedFaces), 3));
+    } else {
+      const fixed = faceRect(box, setup.fixedFace);
+      // PlaneGeometry lies in XY; turn it to face along the face normal, just outside the part.
+      // size = extents along the two other axes in x, y, z order; after rotateY a plane's
+      // width runs along Z, so an x face is built as (z extent, y extent).
+      const normal = new THREE.Vector3(...fixed.normal);
+      const k = Math.abs(normal.x) > 0 ? 'x' : Math.abs(normal.y) > 0 ? 'y' : 'z';
+      fixedGeometry = k === 'x' ? new THREE.PlaneGeometry(fixed.size[1], fixed.size[0]) : new THREE.PlaneGeometry(fixed.size[0], fixed.size[1]);
+      if (k === 'x') fixedGeometry.rotateY(Math.PI / 2);
+      else if (k === 'y') fixedGeometry.rotateX(Math.PI / 2);
+      fixedGeometry.translate(...(new THREE.Vector3(...fixed.center).addScaledVector(normal, diag * 0.002).toArray() as [number, number, number]));
+    }
 
     const dir = new THREE.Vector3(...DIRECTION_VECTORS[setup.loadDirection]);
     const len = diag * 0.18;
-    const arrows = setup.fixedOnly ? [] : arrowAnchors(box, setup.loadFace, 3).map(p => {
-      // Arrow ends on the face, pointing the way the load acts
-      const tip = new THREE.Vector3(...p);
-      return new THREE.ArrowHelper(dir, tip.clone().addScaledVector(dir, -len), len, 0xef4444, len * 0.3, len * 0.15);
-    });
-    return { plane, arrows };
+    let loadGeometry: THREE.BufferGeometry | null = null;
+    let anchors: THREE.Vector3[] = [];
+    if (!setup.fixedOnly) {
+      if (setup.loadFace === 'faces') {
+        const tris = picked(setup.loadFaces);
+        loadGeometry = new THREE.BufferGeometry();
+        loadGeometry.setAttribute('position', new THREE.BufferAttribute(tris, 3));
+        anchors = faceAnchors(tris, 7);
+      } else anchors = arrowAnchors(box, setup.loadFace, 3).map(p => new THREE.Vector3(...p));
+    }
+    // Arrows end on the face, pointing the way the load acts
+    const arrows = anchors.map(tip => new THREE.ArrowHelper(dir, tip.clone().addScaledVector(dir, -len), len, 0xef4444, len * 0.3, len * 0.15));
+    return { fixedGeometry, loadGeometry, arrows };
   }, [setup, geometry]);
   useEffect(() => () => {
-    markers.plane.dispose();
+    markers.fixedGeometry.dispose();
+    markers.loadGeometry?.dispose();
     markers.arrows.forEach(a => a.dispose());
   }, [markers]);
 
   return (
     <group name="FeaSetupMarkers">
-      <mesh geometry={markers.plane} renderOrder={5}>
-        <meshBasicMaterial color="#22c55e" transparent opacity={0.45} side={THREE.DoubleSide} depthWrite={false} />
+      <mesh geometry={markers.fixedGeometry} renderOrder={5} name="FeaFixedFaces">
+        <meshBasicMaterial color="#22c55e" transparent opacity={0.45} side={THREE.DoubleSide} depthWrite={false} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
       </mesh>
+      {markers.loadGeometry && (
+        <mesh geometry={markers.loadGeometry} renderOrder={5} name="FeaLoadFaces">
+          <meshBasicMaterial color="#ef4444" transparent opacity={0.35} side={THREE.DoubleSide} depthWrite={false} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
+        </mesh>
+      )}
       {markers.arrows.map((a, i) => <primitive key={i} object={a} />)}
     </group>
   );
@@ -869,6 +897,8 @@ export default function Viewport3D() {
   const interference = useCADStore(s => s.interference);
   const addFeaProbe = useCADStore(s => s.addFeaProbe);
   const feaSetupMarkers = useCADStore(s => s.feaSetupMarkers);
+  const feaFacePick = useCADStore(s => s.feaFacePick);
+  const toggleFeaFace = useCADStore(s => s.toggleFeaFace);
   const assemblyComponents = useCADStore(s => s.assemblyComponents);
   const mates = useCADStore(s => s.mates);
   const explodedView = useCADStore(s => s.explodedView);
@@ -1248,6 +1278,18 @@ export default function Viewport3D() {
             edgeDisplay={edgeDisplay}
             materialKey={activeMaterial}
             onMeasure={activeTool === TOOLS.MEASURE ? addMeasurePick : activeTool === TOOLS.SKETCH_ON_FACE ? startSketchOnFace : undefined}
+            onFacePick={feaFacePick && activeTool === TOOLS.SELECT ? (tri) => {
+              // FEA study: a click adds the face to the fixture or the load (or removes it)
+              const face = studyFaceAt(body.geometry, tri);
+              if (!face) return;
+              const key = feaFacePick === 'fixed' ? 'fixedFaces' : 'loadFaces';
+              const before = useCADStore.getState().feaSetup[key]?.length ?? 0;
+              toggleFeaFace(feaFacePick, face);
+              const after = useCADStore.getState().feaSetup[key]?.length ?? 0;
+              const name = studyFaceLabel(face, useCADStore.getState().settings.units);
+              const role = feaFacePick === 'fixed' ? 'fixed' : 'loaded';
+              setStatus(`${after > before ? `Added ${name} to the ${role} faces` : `Removed ${name} from the ${role} faces`} (${after} picked). Esc finishes`);
+            } : undefined}
           />
         ))}
 

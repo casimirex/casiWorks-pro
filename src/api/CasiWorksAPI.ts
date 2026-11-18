@@ -29,6 +29,8 @@ import { naturalFrequencies } from '../simulation/modal.ts';
 import { featureFrame, massPropertiesIn } from '../features/coordinateSystems.ts';
 import type { CoordinateFrame } from '../features/coordinateSystems.ts';
 import { FACES } from '../simulation/studySetup.ts';
+import { studyFacesAtPoints } from '../simulation/studyFaces.ts';
+import type { StudyFace } from '../simulation/studyFaces.ts';
 import { buildDrawingSheet, dimensionInfo, drawingFile, newDimension, titleBlockFields } from '../drawings/drawingSheet.ts';
 import { TITLE_BLOCK_FIELDS } from '../drawings/titleBlock.ts';
 import { DIMENSION_KINDS, DIMENSION_VIEWS } from '../drawings/associative.ts';
@@ -67,7 +69,7 @@ import type {
   PlaneFrame,
 } from '../types/cad.ts';
 
-export const API_VERSION = '1.18.0';
+export const API_VERSION = '1.19.0';
 
 // =====================================================================
 // Public types
@@ -355,9 +357,12 @@ export interface ModelAPI {
   /**
    * Modal analysis: the part's natural frequencies (Hz, lowest first) in its material,
    * with one face held fixed. Meshes with Tet10 coarse unless told otherwise. Since 1.14.
+   * `fixedFaces` (since 1.19) holds faces picked by points (mm) instead: each point
+   * picks the face nearest it, a flat face or a cylinder such as a bolt hole.
    * @example api.model.naturalFrequencies({ fixedFace: 'zMin', modes: 3 }).frequencies // [813.6, 813.6, 4874.7]
+   * @example api.model.naturalFrequencies({ fixedFaces: [{ x: 20, y: 0, z: 6 }, { x: -5, y: 0, z: 6 }] })
    */
-  naturalFrequencies(options?: { fixedFace?: 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax'; modes?: number; elementType?: 'tet10' | 'tet4'; quality?: 'coarse' | 'medium' | 'fine' }): { frequencies: number[]; mass: number; elements: number };
+  naturalFrequencies(options?: { fixedFace?: 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax'; fixedFaces?: Point3D[]; modes?: number; elementType?: 'tet10' | 'tet4'; quality?: 'coarse' | 'medium' | 'fine' }): { frequencies: number[]; mass: number; elements: number };
 }
 
 /** A point or direction in model space (mm). */
@@ -1451,12 +1456,20 @@ export function createCasiWorksAPI(store: ApiStore, options: CasiWorksAPIOptions
     naturalFrequencies(options = {}) {
       const geometry = currentGeometry();
       if (!geometry) fail('OPERATION_FAILED', 'There is no body to analyse');
-      const o = options as { fixedFace?: string; modes?: number; elementType?: string; quality?: string };
+      const o = options as { fixedFace?: string; fixedFaces?: unknown; modes?: number; elementType?: string; quality?: string };
       if (o.fixedFace !== undefined && !FACES.includes(o.fixedFace as never)) fail('INVALID_ARGUMENT', `fixedFace must be one of ${FACES.join(', ')}`);
+      let fixedFaces: StudyFace[] | undefined;
+      if (o.fixedFaces !== undefined) {
+        const pts = o.fixedFaces;
+        if (!Array.isArray(pts) || !pts.length || pts.some(p => !p || typeof p !== 'object' || !['x', 'y', 'z'].every(k => Number.isFinite((p as Record<string, unknown>)[k])))) {
+          fail('INVALID_ARGUMENT', 'fixedFaces must be a non-empty array of points { x, y, z }');
+        }
+        fixedFaces = studyFacesAtPoints(geometry!, pts as Point3D[]) ?? fail('INVALID_ARGUMENT', 'No face of the part found at one of the fixedFaces points');
+      }
       if (o.modes !== undefined && !(Number.isInteger(o.modes) && o.modes >= 1 && o.modes <= 20)) fail('INVALID_ARGUMENT', 'modes must be a whole number from 1 to 20');
       if (o.elementType !== undefined && o.elementType !== 'tet10' && o.elementType !== 'tet4') fail('INVALID_ARGUMENT', "elementType must be 'tet10' or 'tet4'");
       if (o.quality !== undefined && !['coarse', 'medium', 'fine'].includes(o.quality)) fail('INVALID_ARGUMENT', "quality must be 'coarse', 'medium' or 'fine'");
-      const r = naturalFrequencies(geometry!, materialLibrary.getMaterial(get().activeMaterial), options);
+      const r = naturalFrequencies(geometry!, materialLibrary.getMaterial(get().activeMaterial), { ...(options as object), fixedFaces } as never);
       return { frequencies: r.frequencies, mass: r.mass, elements: r.elements };
     },
     boundingBox() {

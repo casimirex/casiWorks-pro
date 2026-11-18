@@ -1,7 +1,7 @@
 // CasiWorks Pro - FEA study report: one self-contained HTML page to save, print or send
 //
 // Pure: everything it shows is passed in, so it is tested without the app.
-import { FACE_LABELS } from './studySetup.ts';
+import { faceChoiceLabel } from './studySetup.ts';
 import type { StudySetup } from './studySetup.ts';
 import type { FeaProbe } from './resultPlot.ts';
 import type { MeshInfo } from './autoMesh.ts';
@@ -76,9 +76,9 @@ ${d.stale ? '<p class="warn">These results were computed for an earlier state of
 ${image}
 <h2>Study</h2>
 <table class="kv">${rows([
-    ['Fixed face', esc(FACE_LABELS[d.setup.fixedFace] ?? d.setup.fixedFace)],
-    ['Loaded face', esc(FACE_LABELS[d.setup.loadFace] ?? d.setup.loadFace)],
-    ['Load', `${num(d.load, 6)} N towards ${esc(d.setup.loadDirection)}, spread over the face`],
+    ['Fixed face', esc(faceChoiceLabel(d.setup, 'fixed'))],
+    ['Loaded face', esc(faceChoiceLabel(d.setup, 'load'))],
+    ['Load', `${num(d.load, 6)} N towards ${esc(d.setup.loadDirection)}, spread over the face${d.setup.loadFace === 'faces' && (d.setup.loadFaces?.length ?? 0) > 1 ? 's' : ''}`],
     ['Analysis', 'Linear static, small displacements, no contact'],
   ])}</table>
 <h2>Material</h2>

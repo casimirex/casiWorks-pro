@@ -450,6 +450,7 @@ The suite runs in CI-friendly Node with no browser: `npm test`. Run `npm run bui
    - Automated Tet4/Tet10 tetrahedral mesh generation.
    - 3D elasticity stiffness matrix solution ($12 \times 12$ per element).
    - Preconditioned Conjugate Gradient (PCG) solver with Dirichlet fixture boundary conditions.
+   - Fixtures and loads on the bounding-box sides or on faces picked on the model (flat faces and cylinders such as bolt holes), found again after the part changes.
    - Cauchy stress components, analytical principal stresses, von Mises equivalent stress, and Factor of Safety (FOS) contour colormap.
 
 6. **2D Engineering Drawings & GD&T**:

@@ -1,4 +1,5 @@
 // CasiWorks Pro - Built-in commands: everything the ribbon, status bar and keyboard do
+import type * as THREE from 'three';
 import { SHEET_SIZE_KEYS } from '../drawings/DrawingEngine.ts';
 import { CommandError, CommandRegistry } from './CommandRegistry.ts';
 import type { CommandDefinition, MacroStep } from './CommandRegistry.ts';
@@ -17,7 +18,9 @@ import { findInterferences } from '../assembly/interference.ts';
 import { naturalFrequencies } from '../simulation/modal.ts';
 import { rebuildModel } from '../features/rebuildModel.ts';
 import { saveToLibrary } from '../library/actions.ts';
-import { FACES } from '../simulation/studySetup.ts';
+import { DIRECTIONS, FACES, faceChoiceLabel, setupProblems } from '../simulation/studySetup.ts';
+import type { Direction, StudySetup } from '../simulation/studySetup.ts';
+import { studyFacesAtPoints } from '../simulation/studyFaces.ts';
 import { materialLibrary } from '../kernel/MaterialLibrary.ts';
 import { RELATIONS, dimensionConstraint, measureForDimension } from '../kernel/sketchSolve.ts';
 import type { RelationKind, SketchPick } from '../kernel/sketchSolve.ts';
@@ -165,6 +168,17 @@ interface MateArgs {
   ref1?: string;
   ref2?: string;
   offset?: number;
+}
+
+
+/** Study faces picked by points (mm): an array of { x, y, z }, each the face nearest it. */
+function pointFaces(geometry: THREE.BufferGeometry, v: unknown, what: string) {
+  if (!Array.isArray(v) || !v.length || v.some(p => !p || typeof p !== 'object' || !['x', 'y', 'z'].every(k => Number.isFinite((p as Record<string, unknown>)[k])))) {
+    throw new CommandError('INVALID_ARGUMENT', `${what} must be a non-empty array of points { x, y, z }`);
+  }
+  const faces = studyFacesAtPoints(geometry, v as Array<{ x: number; y: number; z: number }>);
+  if (!faces) throw new CommandError('INVALID_ARGUMENT', `No face of the part found at one of the ${what} points`);
+  return faces;
 }
 
 export const BUILTIN_COMMANDS: Array<Def<never>> = [
@@ -584,8 +598,8 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
   },
   {
     id: 'simulation.modal', label: 'Natural frequencies', category: 'Simulation', record: false,
-    description: "Modal analysis of the part in its material with one face held. args: { fixedFace?: 'xMin'…'zMax' (default zMin), modes?: 1–20 (default 6), elementType?: 'tet10' | 'tet4', quality?: 'coarse' | 'medium' | 'fine' }. Returns { frequencies (Hz, lowest first), mass (kg), elements }",
-    run: ({ state }, args?: { fixedFace?: string; modes?: number; elementType?: string; quality?: string }) => {
+    description: "Modal analysis of the part in its material with one face held. args: { fixedFace?: 'xMin'…'zMax' (default zMin), fixedFaces?: [{ x, y, z }] (faces held instead: each point picks the face nearest it, in mm), modes?: 1–20 (default 6), elementType?: 'tet10' | 'tet4', quality?: 'coarse' | 'medium' | 'fine' }. Returns { frequencies (Hz, lowest first), mass (kg), elements }",
+    run: ({ state }, args?: { fixedFace?: string; fixedFaces?: unknown; modes?: number; elementType?: string; quality?: string }) => {
       const a = args ?? {};
       if (a.fixedFace !== undefined && !FACES.includes(a.fixedFace as never)) throw new CommandError('INVALID_ARGUMENT', `fixedFace must be one of ${FACES.join(', ')}`);
       if (a.modes !== undefined && !(Number.isInteger(a.modes) && a.modes >= 1 && a.modes <= 20)) throw new CommandError('INVALID_ARGUMENT', 'modes must be a whole number from 1 to 20');
@@ -594,9 +608,53 @@ export const BUILTIN_COMMANDS: Array<Def<never>> = [
       if (state().needsRebuild) rebuildModel({ getState: state });
       const geometry = state().bodies.find(b => b.visible !== false && b.geometry)?.geometry;
       if (!geometry) throw new CommandError('NOT_AVAILABLE', 'Create a 3D solid body first');
-      const r = naturalFrequencies(geometry, materialLibrary.getMaterial(state().activeMaterial), a as never);
+      const study = { ...a, fixedFaces: a.fixedFaces === undefined ? undefined : pointFaces(geometry, a.fixedFaces, 'fixedFaces') };
+      const r = naturalFrequencies(geometry, materialLibrary.getMaterial(state().activeMaterial), study as never);
       state().setStatus(`Natural frequencies: ${r.frequencies.slice(0, 3).map(f => `${f.toFixed(1)} Hz`).join(', ')}${r.frequencies.length > 3 ? '…' : ''}`);
       return { frequencies: r.frequencies, mass: r.mass, elements: r.elements };
+    },
+  },
+  {
+    id: 'simulation.pickFaces', label: 'Pick study faces', category: 'Simulation', record: false,
+    description: "args: { target: 'fixed' | 'load' | null } — clicks on the part add (or remove) faces for the fixture or the load in the FEA panel; null stops picking",
+    run: ({ state }, args?: { target?: string | null }) => {
+      const target = args?.target ?? null;
+      if (target !== null && target !== 'fixed' && target !== 'load') throw new CommandError('INVALID_ARGUMENT', "target must be 'fixed', 'load' or null");
+      state().setFeaFacePick(target);
+      if (target) {
+        const key = target === 'fixed' ? 'fixedFace' : 'loadFace';
+        if (state().feaSetup[key] !== 'faces') state().setFeaSetup({ ...state().feaSetup, [key]: 'faces' });
+      } else state().setStatus('Ready');
+      return { target };
+    },
+  },
+  {
+    id: 'simulation.study', label: 'FEA study setup', category: 'Simulation', record: false,
+    description: "args: { fixed?: 'xMin'…'zMax' | [{ x, y, z }], load?: 'xMin'…'zMax' | [{ x, y, z }], direction?: '+X'…'-Z' } — a bounding-box side, or faces picked by points (mm, each picks the nearest face: a flat face or a cylinder such as a hole); only the given ones change. Returns { fixed, load, direction, problems }",
+    run: ({ state }, args?: { fixed?: unknown; load?: unknown; direction?: string }) => {
+      let next: StudySetup = { ...state().feaSetup };
+      const geometry = () => {
+        if (state().needsRebuild) rebuildModel({ getState: state });
+        const g = state().bodies.find(b => b.visible !== false && b.geometry)?.geometry;
+        if (!g) throw new CommandError('NOT_AVAILABLE', 'Create a 3D solid body first');
+        return g;
+      };
+      for (const which of ['fixed', 'load'] as const) {
+        const v = args?.[which];
+        if (v === undefined) continue;
+        const face = which === 'fixed' ? 'fixedFace' : 'loadFace', list = which === 'fixed' ? 'fixedFaces' : 'loadFaces';
+        if (typeof v === 'string') {
+          if (!FACES.includes(v as never)) throw new CommandError('INVALID_ARGUMENT', `${which} must be one of ${FACES.join(', ')} or an array of points`);
+          next = { ...next, [face]: v };
+        } else next = { ...next, [face]: 'faces', [list]: pointFaces(geometry(), v, which) };
+      }
+      if (args?.direction !== undefined) {
+        if (!DIRECTIONS.includes(args.direction as Direction)) throw new CommandError('INVALID_ARGUMENT', `direction must be one of ${DIRECTIONS.join(', ')}`);
+        next = { ...next, loadDirection: args.direction as Direction };
+      }
+      state().setFeaSetup(next);
+      const units = state().settings.units;
+      return { fixed: faceChoiceLabel(next, 'fixed', units), load: faceChoiceLabel(next, 'load', units), direction: next.loadDirection, problems: setupProblems(next) };
     },
   },
   { id: 'evaluate.clearMeasure', label: 'Clear measurement', category: 'Evaluate', record: false, run: ({ state }) => state().clearMeasure() },

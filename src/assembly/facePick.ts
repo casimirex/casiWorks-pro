@@ -259,6 +259,12 @@ type RefLike = { point?: { x?: number; y?: number; z?: number }; normal?: { x?: 
  * face; a hole that moved keeps its hole). Returns null when nothing like it is left.
  */
 export function remapRef(ref: RefLike, geometry: THREE.BufferGeometry): ReturnType<typeof mateRefOf> | null {
+  const face = findFace(ref, geometry);
+  return face ? mateRefOf(face) : null;
+}
+
+/** The face of the same kind and orientation nearest to a reference (see remapRef), or null. */
+export function findFace(ref: RefLike, geometry: THREE.BufferGeometry): PickedFace | null {
   const mesh = meshOf(geometry);
   const p = new THREE.Vector3(ref.point?.x ?? 0, ref.point?.y ?? 0, ref.point?.z ?? 0);
   const isCyl = !!ref.axis && ref.radius !== undefined;
@@ -294,5 +300,21 @@ export function remapRef(ref: RefLike, geometry: THREE.BufferGeometry): ReturnTy
       if (dmin < bestD) { bestD = dmin; best = face; }
     }
   }
-  return best ? mateRefOf(best) : null;
+  return best;
+}
+
+/** The triangles of `triangles` joined to `seed` through shared corners (one piece of a face). */
+export function connectedTriangles(geometry: THREE.BufferGeometry, triangles: number[], seed: number): number[] {
+  const mesh = meshOf(geometry);
+  const allowed = new Set(triangles);
+  if (!allowed.has(seed)) return triangles;
+  return grow(mesh, seed, t => allowed.has(t));
+}
+
+/** Corner positions of triangles, 9 numbers each (component coordinates). */
+export function trianglePositions(geometry: THREE.BufferGeometry, triangles: number[]): Float32Array {
+  const mesh = meshOf(geometry);
+  const out = new Float32Array(triangles.length * 9);
+  triangles.forEach((t, i) => out.set(mesh.tri.subarray(t * 9, t * 9 + 9), i * 9));
+  return out;
 }

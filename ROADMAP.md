@@ -94,7 +94,7 @@ the foundation of "API support": the UI becomes just one client of the API.
 The 2.1 spike measured the OpenCascade WebAssembly build used by replicad (1.2.1): 22.9 MB raw,
 7.2 MB gzip, 5.0 MB brotli, against 0.48 MB gzip for the whole app today; licence LGPL-2.1
 (replicad itself MIT). The rest of the phase is dropped. Fillet, chamfer and shell stay
-"not applied" with a sketch workaround; STEP/IGES stay faceted; faces cannot be picked one by one.
+"not applied" with a sketch workaround; STEP/IGES stay faceted; faces are picked from the mesh (flat faces and cylinders, as mates and FEA do).
 Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limited to what the mesh kernel can do.
 
 - [x] **2.1** Spike: evaluate OpenCascade via WebAssembly: size and licence measured (above); not adopted
@@ -133,7 +133,7 @@ Items elsewhere that say they need exact geometry (3.9, 5.1, 6.2, 6.3) are limit
 
 - [x] **6.1** Solver in a Web Worker with progress and cancel (phases: meshing / solving; inline fallback where workers are unavailable)
 - [ ] **6.2** Meshing from exact geometry with local refinement (voxel mesh now sized from an element budget — Coarse / Medium / Fine — choosing the grid whose volume best matches the part, with the coverage reported and a warning beyond ±5%; thin-walled parts such as the sheet-metal enclosure still mesh far too thick; local refinement on the mesh kernel only, exact geometry is not planned)
-- [ ] **6.3** Fixtures and loads picked on faces (the FEA panel chooses the fixed face, loaded face and load direction among the six bounding-box faces, shown on the model; picking single faces would need an exact kernel, which is not planned)
+- [x] **6.3** Fixtures and loads picked on faces — flat faces and cylinders (holes, shafts) picked on the model in the FEA panel (*Faces picked on the model*, Pick / Done, several per fixture or load, click again to remove), found again after the part changes, shown on the model (green fixed, red arrows); the voxel mesh nodes on the staircase next to each face are held or loaded (a face smaller than a cell asks for a finer mesh). The six bounding-box sides stay. `simulation.study` / `simulation.pickFaces` commands; API 1.19 `naturalFrequencies({ fixedFaces })`
 - [x] **6.4** Results: deformed shape, probes, report export (colour plot of von Mises / displacement and exaggerated deformed shape; probes: click the plot for stress and displacement at the nearest node, up to 12, labelled on the model and listed; Report: a self-contained printable HTML page with verdict, results, plot picture, study, material, mesh and probes)
 - [x] **6.5** Modal (frequency) analysis (Analysis ▸ Modal in the FEA panel: the lowest natural frequencies and their mode shapes with the fixed face held; lumped mass (HRZ for Tet10), shift-invert Lanczos with a direct envelope Cholesky (RCM ordering; IC(0)-CG past ~100 MB); Tet10 coarse within 1% of the cantilever formula; runs in the solver worker; `simulation.modal` command, `api.model.naturalFrequencies()` since API 1.14)
 

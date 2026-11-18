@@ -52,6 +52,9 @@ import type { Body, RebuildState } from '../features/rebuildModel.ts';
 import type { ApiStoreState } from '../api/CasiWorksAPI.ts';
 import type { ResultPlot } from '../simulation/resultPlot.ts';
 import type { StudySetup } from '../simulation/studySetup.ts';
+import { DEFAULT_SETUP } from '../simulation/studySetup.ts';
+import { sameStudyFace } from '../simulation/studyFaces.ts';
+import type { StudyFace } from '../simulation/studyFaces.ts';
 
 const MAX_UNDO_HISTORY = 40;
 
@@ -246,6 +249,10 @@ export interface CADState {
   /** FEA study setup to mark on the model (fixed face, load arrows); null hides the markers. */
   /** The study shown on the model while the FEA panel is open (fixedOnly: a modal study, no load). */
   feaSetupMarkers: (StudySetup & { fixedOnly?: boolean }) | null;
+  /** The FEA study: fixed face, loaded face, direction; picked faces of this part (not saved with the document). */
+  feaSetup: StudySetup;
+  /** Clicks on the part pick faces for the fixture or the load (null: not picking). */
+  feaFacePick: 'fixed' | 'load' | null;
   activeMaterial: string;
 
   // View
@@ -362,6 +369,10 @@ export interface CADActions {
   setBodies(bodies: Body[]): void;
   setFeaPlot(plot: ResultPlot | null): void;
   setFeaSetupMarkers(setup: (StudySetup & { fixedOnly?: boolean }) | null): void;
+  setFeaSetup(setup: StudySetup): void;
+  setFeaFacePick(target: 'fixed' | 'load' | null): void;
+  /** Add a picked face to the fixture or the load (removed when it is there already). */
+  toggleFeaFace(target: 'fixed' | 'load', face: StudyFace): void;
   setSketchPolygonSides(sides: number): void;
   setSketchOffsetDistance(distance: number): void;
   setSketchRelationKind(kind: RelationKind): void;
@@ -522,6 +533,16 @@ function primitiveGeometry(shape: PrimitiveShape, dims: PrimitiveDims): THREE.Bu
     default:
       return new THREE.BoxGeometry(dims.width || 30, dims.height || 20, dims.depth || 30);
   }
+}
+
+/** A study setup for another part: picked faces dropped, their choice back to the default box side. */
+function withoutPickedFaces(setup: StudySetup): StudySetup {
+  const { fixedFaces: _f, loadFaces: _l, ...rest } = setup;
+  return {
+    ...rest,
+    fixedFace: setup.fixedFace === 'faces' ? DEFAULT_SETUP.fixedFace : setup.fixedFace,
+    loadFace: setup.loadFace === 'faces' ? DEFAULT_SETUP.loadFace : setup.loadFace,
+  };
 }
 
 function snapshotOf(state: Draft<CADStore>): DocumentSnapshot {
@@ -690,6 +711,8 @@ function initialState(): CADState {
     bodies: [],
     feaPlot: null,
     feaSetupMarkers: null,
+    feaSetup: DEFAULT_SETUP,
+    feaFacePick: null,
     activeMaterial: 'Steel_1020',
     viewOrientation: 'isometric',
     viewRequest: 0,
@@ -760,6 +783,7 @@ export const useCADStore = create<CADStore>()(
       state.activeTool = TOOLS.SELECT;
       state.measurePicks = [];
       state.matePicks = [];
+      state.feaFacePick = null;
       state.propertyPanelOpen = false;
       state.propertyPanelContent = null;
       state.statusMessage = 'Ready';
@@ -1099,6 +1123,26 @@ export const useCADStore = create<CADStore>()(
 
     setFeaSetupMarkers: (setup) => set(state => {
       state.feaSetupMarkers = setup;
+    }),
+
+    setFeaSetup: (setup) => set(state => {
+      state.feaSetup = setup as Draft<StudySetup>;
+    }),
+
+    setFeaFacePick: (target) => set(state => {
+      state.feaFacePick = target;
+      if (target) {
+        state.activeTool = TOOLS.SELECT;
+        state.statusMessage = `Click faces on the model to ${target === 'fixed' ? 'fix them' : 'put the load on them'}; click a face again to remove it. Esc finishes`;
+      }
+    }),
+
+    toggleFeaFace: (target, face) => set(state => {
+      const key = target === 'fixed' ? 'fixedFaces' : 'loadFaces';
+      const list = [...((state.feaSetup[key] ?? []) as StudyFace[])];
+      const at = list.findIndex(f => sameStudyFace(f, face));
+      if (at >= 0) list.splice(at, 1); else list.push(face);
+      state.feaSetup = { ...state.feaSetup, [key]: list, [target === 'fixed' ? 'fixedFace' : 'loadFace']: 'faces' } as Draft<StudySetup>;
     }),
 
     setFeaPlot: (plot) => set(state => {
@@ -1616,6 +1660,8 @@ export const useCADStore = create<CADStore>()(
         state.libraryRef = null; // a file; the library sets its own reference after loading
         state.statusMessage = `Loaded: ${state.documentName}`;
         state.documentRevision += 1;
+        state.feaSetup = withoutPickedFaces(state.feaSetup as StudySetup) as Draft<StudySetup>;
+        state.feaFacePick = null;
       } catch (e) {
         state.statusMessage = 'Error loading project: ' + (e instanceof Error ? e.message : String(e));
       }
@@ -1638,6 +1684,8 @@ export const useCADStore = create<CADStore>()(
       state.needsRebuild = true;
       state.statusMessage = `Loaded example: ${example.documentName}`;
       state.documentRevision += 1;
+      state.feaSetup = withoutPickedFaces(state.feaSetup as StudySetup) as Draft<StudySetup>;
+      state.feaFacePick = null;
     }),
 
     newProject: () => set(state => {
@@ -1647,7 +1695,9 @@ export const useCADStore = create<CADStore>()(
       const { documentRevision, rebuildCount } = state;
       const drawingOptions = { ...state.drawingOptions };
       const units = state.settings.units;
+      const feaSetup = withoutPickedFaces(state.feaSetup as StudySetup);
       Object.assign(state, initialState());
+      state.feaSetup = feaSetup as Draft<StudySetup>;
       // Counters keep counting across documents; the drawing preferences and the unit system stay
       state.documentRevision = documentRevision + 1;
       state.rebuildCount = rebuildCount;

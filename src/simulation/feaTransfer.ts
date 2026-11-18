@@ -9,7 +9,7 @@ import type { ElementType, FEAResults, SolidResult } from './FEAEngine.ts';
 import type { PlotMesh } from './resultPlot.ts';
 import { autoMesh } from './autoMesh.ts';
 import type { MeshInfo, MeshQuality } from './autoMesh.ts';
-import { fixturesFor, loadsFor } from './studySetup.ts';
+import { DEFAULT_SETUP, studyBoundary } from './studySetup.ts';
 import type { StudySetup } from './studySetup.ts';
 import { solveModal } from './modal.ts';
 
@@ -68,10 +68,12 @@ export function runSolve(req: SolveRequest, onPhase: (phase: SolvePhase) => void
   onPhase('meshing');
   const meshInfo = autoMesh(fea, geometry, req.elementType, req.quality ?? 'medium');
   onPhase('solving');
+  // Fixtures and loads: picked faces become the mesh nodes on them
+  const boundary = studyBoundary(req.setup ?? DEFAULT_SETUP, geometry, fea.solidMesh!, req.load);
   if (req.analysis === 'modal') {
     const m = solveModal(fea, {
       youngsModulus: req.youngsModulus, poissonRatio: req.poissonRatio, density: req.density ?? 7850,
-      fixtures: fixturesFor(req.setup ?? { fixedFace: 'zMin', loadFace: 'zMax', loadDirection: '-Y' }), modes: req.modes,
+      fixtures: boundary.fixtures, modes: req.modes,
     });
     const shapes = new Float64Array(m.shapes.reduce((a, s) => a + s.length, 0));
     let at = 0;
@@ -79,8 +81,7 @@ export function runSolve(req: SolveRequest, onPhase: (phase: SolvePhase) => void
     const packed = pack(null, fea.solidMesh);
     return { results: null, mesh: packed.mesh, meshInfo, modal: { frequencies: m.frequencies, shapes, mass: m.mass } };
   }
-  const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio,
-    req.setup ? { fixtures: fixturesFor(req.setup), loads: loadsFor(req.setup, req.load) } : {});
+  const res = fea.solve(req.load, req.yieldStrength, req.youngsModulus, req.poissonRatio, req.setup ? boundary : {});
   return { ...pack(res, fea.solidMesh), meshInfo };
 }
 

@@ -686,6 +686,73 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: 'FEA faces picked on the model: fixed and loaded faces by clicks, same answer as the box sides',
+    async run(p) {
+      const pick = (cls: string, value: string) => p.eval(`(() => {
+        const sel = document.querySelector('.${cls}');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, ${JSON.stringify(value)});
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await p.eval(`window.casiworks.commands.execute('document.new')`);
+      await p.eval(`(() => {
+        const s = window.casiworks.sketches.create({ entities: [{ type: 'rectangle', corner1: { x: -30, y: -20 }, corner2: { x: 30, y: 20 } }] });
+        window.casiworks.features.extrude({ sketchId: s.sketchId, depth: 20 });
+      })()`);
+      await sleep(1000);
+      await pick('fea-analysis', 'static');
+      await pick('fea-mesh-quality', 'coarse');
+      const r = JSON.parse(await p.eval<string>(`JSON.stringify(document.querySelector('canvas').getBoundingClientRect())`));
+      const centre = () => p.mouseClick(r.left + r.width * 0.5, r.top + r.height * 0.5);
+      // Fixed: choosing "picked" starts picking; a click on the front face adds it
+      await pick('fea-fixed-face', 'faces');
+      await sleep(200);
+      const picking = await p.eval<string>(`document.querySelector('.fea-pick-fixed')?.textContent ?? ''`);
+      await p.eval(`window.casiworks.commands.execute('view.front')`);
+      await sleep(600);
+      await centre();
+      await sleep(300);
+      const fixed = await p.eval<string>(`document.querySelector('.fea-picked-fixed .fea-picked-face span')?.textContent ?? ''`);
+      // Load: the back face; a second click removes it, a third adds it again
+      await pick('fea-load-face', 'faces');
+      await p.eval(`window.casiworks.commands.execute('view.back')`);
+      await sleep(600);
+      await centre();
+      await sleep(250);
+      await centre();
+      await sleep(250);
+      const afterToggle = await p.eval<number>(`document.querySelectorAll('.fea-picked-load .fea-picked-face').length`);
+      await centre();
+      await sleep(250);
+      const loaded = await p.eval<string>(`document.querySelector('.fea-picked-load .fea-picked-face span')?.textContent ?? ''`);
+      await pick('fea-load-direction', '-Z');
+      await p.eval(`window.casiworks.commands.execute('view.isometric')`);
+      await sleep(500);
+      await p.screenshot('04e-fea-picked-faces');
+      await p.click('Done', 200);
+      const stopped = await p.eval<boolean>(`!document.querySelector('.fea-pick-load[aria-pressed="true"]')`);
+      await p.click('Solve', 300);
+      const deflection = () => waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max Deflection:\\s*([\\d.]+)/)?.[1]`), 'FEA results', 60000);
+      const pickedDefl = Number(await deflection());
+      // The same study with the box sides: fixed front (+Z), load on the back (−Z)
+      await pick('fea-fixed-face', 'zMax');
+      await pick('fea-load-face', 'zMin');
+      await sleep(200);
+      await p.click('Solve', 300);
+      await waitFor(() => p.eval<boolean>(`!document.querySelector('.fea-solving') && !document.querySelector('.fea-stale') || null`), 'second solve', 60000);
+      const boxDefl = Number(await deflection());
+      assert(picking === 'Done', `picking started when "picked faces" was chosen: ${picking}`);
+      assert(/^Flat face, 2400 mm²$/.test(fixed) && /^Flat face, 2400 mm²$/.test(loaded), `picked "${fixed}" / "${loaded}"`);
+      assert(afterToggle === 0, `a second click removes the face: ${afterToggle} left`);
+      assert(stopped, 'Done stops picking');
+      assert(pickedDefl > 0 && Math.abs(pickedDefl - boxDefl) <= 1e-3 * boxDefl + 1e-3, `picked faces ${pickedDefl} μm vs box sides ${boxDefl} μm`);
+      await pick('fea-fixed-face', 'zMin');
+      await pick('fea-load-face', 'zMax');
+      await pick('fea-load-direction', '-Y');
+      await pick('fea-mesh-quality', 'medium');
+      return `fixed "${fixed}", loaded "${loaded}" by clicks (toggle works); ${pickedDefl} μm = box sides ${boxDefl} μm`;
+    },
+  },
+  {
     name: 'modal analysis lists natural frequencies and plots the chosen mode shape',
     async run(p) {
       const pick = (cls: string, value: string) => p.eval(`(() => {

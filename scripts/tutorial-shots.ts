@@ -573,6 +573,22 @@ const SHOTS: Shot[] = [
       await feaPanel(p, false);
     },
   },
+  {
+    name: '30d-fea-faces', async run(p) {
+      // Held by its two bolt holes, pushed sideways at the top of the upright
+      await example(p, 'l_bracket'); await iso(p);
+      await feaPanel(p, true);
+      await run(p, 'simulation.study', { fixed: [{ x: 20, y: 0, z: 6 }, { x: -5, y: 0, z: 6 }], load: [{ x: -29, y: 0, z: 55 }], direction: '+X' }, 600);
+      await p.screenshot('30d-fea-faces');
+      await p.eval(`[...document.querySelectorAll('.fea-panel button')].find(b => b.textContent.trim() === 'Solve').click()`);
+      await waitFor(() => p.eval<string>(`document.querySelector('.fea-panel')?.innerText.match(/Max von Mises:[^\\n]*/)?.[0]`), 'FEA results', 60000);
+      await sleep(800);
+      console.log('    ' + (await p.eval<string>(`document.querySelector('.fea-results')?.innerText.replace(/\\n+/g, ' | ').slice(0, 300) ?? ''`)));
+      await p.screenshot('30e-fea-faces-stress');
+      await run(p, 'simulation.study', { fixed: 'zMin', load: 'zMax', direction: '-Y' }, 300);
+      await feaPanel(p, false);
+    },
+  },
   // -------------------------------------------------------- Part 4: professional
   {
     name: '36-library', async run(p) {
