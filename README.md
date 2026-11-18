@@ -507,6 +507,15 @@ npm run build
 ```
 Production assets are generated cleanly in `dist/`.
 
+### Local settings (`.env`)
+
+Optional settings live in a `.env` file in the project folder; `npm run server`, `npm run e2e`, `npm run perf` and `npm run docs:tutorial-shots` read it automatically.
+Start from the template, which lists every setting (`CASIWORKS_DATA`, `PORT`, `CHROME_PATH`, `E2E_ONLY`):
+```bash
+cp .env.example .env
+```
+`.env` and any `.env.*` file are ignored by git, so tokens kept there are never committed; only `.env.example` (no secrets) is. An empty value counts as unset, and command-line flags (`--data`, `--port`) win over `.env`.
+
 ### Local document library and REST API (`npm run server`)
 
 ```bash

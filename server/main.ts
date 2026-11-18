@@ -24,8 +24,10 @@ const { Library } = await import('./library.ts');
 
 const args = process.argv.slice(2);
 const flag = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args.splice(i, 2)[1] : undefined; };
-const dataDir = resolve(flag('data') ?? process.env.CASIWORKS_DATA ?? join(homedir(), '.casiworks'));
-const port = Number(flag('port') ?? process.env.PORT ?? 5180);
+// Settings from flags, then the environment (.env); an empty value counts as unset
+const env = (name: string) => process.env[name]?.trim() || undefined;
+const dataDir = resolve(flag('data') ?? env('CASIWORKS_DATA') ?? join(homedir(), '.casiworks'));
+const port = Number(flag('port') ?? env('PORT') ?? 5180);
 const distDir = resolve(flag('dist') ?? 'dist');
 
 if (args[0] === 'key') {
